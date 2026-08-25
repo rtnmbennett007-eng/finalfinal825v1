@@ -1,0 +1,6 @@
+{
+  "name": "Maple X Financial Operations Portal",
+  "description": "Internal operating system and deal lifecycle management portal for Maple X Financial staff and administrators.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

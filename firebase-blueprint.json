@@ -1,0 +1,195 @@
+{
+  "entities": {
+    "UserProfile": {
+      "title": "UserProfile",
+      "description": "User authentication profile and role metadata",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string" },
+        "email": { "type": "string" },
+        "role": { "type": "string" },
+        "clientId": { "type": "string" },
+        "staffId": { "type": "string" },
+        "name": { "type": "string" },
+        "active": { "type": "boolean" },
+        "createdAt": { "type": "string" },
+        "updatedAt": { "type": "string" }
+      },
+      "required": ["uid", "email", "role", "name"]
+    },
+    "Client": {
+      "title": "Client",
+      "description": "Commercial funding client applicant and business profile",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "firstName": { "type": "string" },
+        "lastName": { "type": "string" },
+        "businessName": { "type": "string" },
+        "email": { "type": "string" },
+        "phone": { "type": "string" },
+        "currentStatus": { "type": "string" },
+        "creditScore": { "type": "number" },
+        "annualRevenue": { "type": "number" },
+        "assignedStaff": { "type": "string" },
+        "createdAt": { "type": "string" },
+        "updatedAt": { "type": "string" }
+      },
+      "required": ["id", "firstName", "lastName", "businessName", "email"]
+    },
+    "FundingDeal": {
+      "title": "FundingDeal",
+      "description": "Commercial loan, line of credit, 0% card, or SBA deal",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "clientId": { "type": "string" },
+        "clientName": { "type": "string" },
+        "product": { "type": "string" },
+        "fundingAmount": { "type": "number" },
+        "percentage": { "type": "number" },
+        "status": { "type": "string" },
+        "lenderName": { "type": "string" },
+        "commissionStatus": { "type": "string" },
+        "createdAt": { "type": "string" },
+        "updatedAt": { "type": "string" }
+      },
+      "required": ["id", "clientId", "product", "fundingAmount", "percentage", "status"]
+    },
+    "InternalTask": {
+      "title": "InternalTask",
+      "description": "Internal staff workflow task and notification reminder",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "title": { "type": "string" },
+        "description": { "type": "string" },
+        "clientId": { "type": "string" },
+        "assignedTo": { "type": "string" },
+        "dueDate": { "type": "string" },
+        "priority": { "type": "string" },
+        "status": { "type": "string" },
+        "createdBy": { "type": "string" }
+      },
+      "required": ["id", "title", "assignedTo", "dueDate", "priority", "status"]
+    },
+    "Lead": {
+      "title": "Lead",
+      "description": "Prospective funding applicant",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "firstName": { "type": "string" },
+        "lastName": { "type": "string" },
+        "businessName": { "type": "string" },
+        "email": { "type": "string" },
+        "phone": { "type": "string" },
+        "status": { "type": "string" },
+        "source": { "type": "string" }
+      },
+      "required": ["id", "firstName", "lastName", "businessName", "status"]
+    },
+    "CommissionRecord": {
+      "title": "CommissionRecord",
+      "description": "Commission allocation and participant split",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "dealId": { "type": "string" },
+        "name": { "type": "string" },
+        "type": { "type": "string" },
+        "role": { "type": "string" },
+        "points": { "type": "number" },
+        "dollarAmount": { "type": "number" },
+        "status": { "type": "string" }
+      },
+      "required": ["id", "dealId", "name", "points", "dollarAmount"]
+    },
+    "CommissionRule": {
+      "title": "CommissionRule",
+      "description": "Commission rate configuration by funding and loan type",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "loanType": { "type": "string" },
+        "name": { "type": "string" },
+        "defaultRate": { "type": "number" },
+        "baseFee": { "type": "number" },
+        "active": { "type": "boolean" }
+      },
+      "required": ["id", "loanType", "name", "defaultRate"]
+    },
+    "DocumentMetadata": {
+      "title": "DocumentMetadata",
+      "description": "Metadata for files stored in Firebase Storage",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "fileName": { "type": "string" },
+        "storagePath": { "type": "string" },
+        "downloadUrl": { "type": "string" },
+        "clientId": { "type": "string" },
+        "dealId": { "type": "string" },
+        "documentType": { "type": "string" },
+        "fileType": { "type": "string" },
+        "fileSize": { "type": "number" },
+        "uploadedBy": { "type": "string" },
+        "uploadedAt": { "type": "string" },
+        "status": { "type": "string" }
+      },
+      "required": ["id", "fileName", "storagePath", "clientId", "documentType", "uploadedAt"]
+    },
+    "StaffUser": {
+      "title": "StaffUser",
+      "description": "Internal team member and operational administrator",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "email": { "type": "string" },
+        "role": { "type": "string" },
+        "jobTitle": { "type": "string" },
+        "active": { "type": "boolean" }
+      },
+      "required": ["id", "name", "email", "role"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": "UserProfile",
+      "description": "User profiles and RBAC role data"
+    },
+    "/clients/{clientId}": {
+      "schema": "Client",
+      "description": "Master client records"
+    },
+    "/deals/{dealId}": {
+      "schema": "FundingDeal",
+      "description": "Funding deals and commission tracking"
+    },
+    "/tasks/{taskId}": {
+      "schema": "InternalTask",
+      "description": "Internal staff tasks"
+    },
+    "/leads/{leadId}": {
+      "schema": "Lead",
+      "description": "Inbound intake leads"
+    },
+    "/commissions/{commissionId}": {
+      "schema": "CommissionRecord",
+      "description": "Deal commission participant allocations"
+    },
+    "/commissionRules/{ruleId}": {
+      "schema": "CommissionRule",
+      "description": "Commission rules configured by loan/funding type"
+    },
+    "/documents/{documentId}": {
+      "schema": "DocumentMetadata",
+      "description": "Document vault file metadata linked to Firebase Storage"
+    },
+    "/staff/{staffId}": {
+      "schema": "StaffUser",
+      "description": "Maple X staff directory"
+    }
+  }
+}

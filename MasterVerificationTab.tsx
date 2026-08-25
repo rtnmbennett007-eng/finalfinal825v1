@@ -1,0 +1,2470 @@
+import React, { useState, useEffect } from 'react';
+import {
+  FileCheck2,
+  Save,
+  CheckCircle2,
+  AlertTriangle,
+  Clock,
+  ShieldCheck,
+  User,
+  Building2,
+  Briefcase,
+  DollarSign,
+  CreditCard,
+  Home,
+  CheckSquare,
+  Square,
+  HelpCircle,
+  PhoneCall,
+  Edit3,
+  RefreshCw,
+  Plus,
+  Trash2,
+  AlertCircle,
+  Check,
+  ExternalLink,
+  ChevronRight,
+} from 'lucide-react';
+import {
+  Client,
+  MasterVerificationData,
+  MasterVerificationField,
+  ExistingDebtRecord,
+  CreditCardRecord,
+  RecentCreditActivityRecord,
+  VerificationStatusType,
+  EmploymentSalaryPayrollVerification,
+} from '../../../types';
+import { api } from '../../../services/api';
+import { useData } from '../../../context/DataContext';
+import { useAuth } from '../../../context/AuthContext';
+import { firestoreService } from '../../../services/firestoreService';
+
+interface MasterVerificationTabProps {
+  client: Client;
+  masterVerification?: MasterVerificationData | null;
+  onRefresh: () => void;
+}
+
+export const MasterVerificationTab: React.FC<MasterVerificationTabProps> = ({
+  client,
+  masterVerification,
+  onRefresh,
+}) => {
+  const { addToast, updateClient } = useData();
+  const { currentUser } = useAuth();
+
+  const [isSaving, setIsSaving] = useState(false);
+  const [activeSection, setActiveSection] = useState<string>('identity');
+
+  // Sign-Off States
+  const [verifiedByName, setVerifiedByName] = useState<string>(
+    masterVerification?.verifiedBy || currentUser?.name || 'Staff Underwriter'
+  );
+  const [isCompleting, setIsCompleting] = useState(false);
+
+  // New Debt / Card Modal States
+  const [showAddDebtModal, setShowAddDebtModal] = useState(false);
+  const [newDebtForm, setNewDebtForm] = useState<Partial<ExistingDebtRecord>>({
+    lender: '',
+    loanType: 'Term Loan',
+    originalLoanAmount: 25000,
+    monthlyPayment: 650,
+    currentBalance: 8200,
+    status: 'Current',
+  });
+
+  const [showAddCardModal, setShowAddCardModal] = useState(false);
+  const [newCardForm, setNewCardForm] = useState<Partial<CreditCardRecord>>({
+    cardCategory: 'BUSINESS',
+    issuer: '',
+    cardName: '',
+    creditLimit: 15000,
+    currentBalance: 1200,
+    availableCredit: 13800,
+    monthlyPayment: 50,
+    utilization: 8,
+    lastFourDigits: '1234',
+  });
+
+  // Fallback initial data generator if masterVerification is null
+  const initMasterData = (): MasterVerificationData => {
+    return {
+      id: masterVerification?.id || `mv-${client.id}`,
+      clientId: client.id,
+      verificationSpecialist: masterVerification?.verificationSpecialist || currentUser?.name || 'Dana',
+      date: masterVerification?.date || new Date().toISOString().split('T')[0],
+      status: masterVerification?.status || 'IN_PROGRESS',
+      overallResult: masterVerification?.overallResult || 'APPROVED_FOR_UNDERWRITING',
+      callSummary: masterVerification?.callSummary || '',
+      internalNotesRedFlags: masterVerification?.internalNotesRedFlags || '',
+      verifiedBy: masterVerification?.verifiedBy || '',
+      verifiedAt: masterVerification?.verifiedAt || '',
+
+      preCallReview: {
+        clientName: masterVerification?.preCallReview?.clientName ?? true,
+        businessName: masterVerification?.preCallReview?.businessName ?? true,
+        phone: masterVerification?.preCallReview?.phone ?? true,
+        email: masterVerification?.preCallReview?.email ?? true,
+        businessAddress: masterVerification?.preCallReview?.businessAddress ?? true,
+        entityType: masterVerification?.preCallReview?.entityType ?? true,
+        ein: masterVerification?.preCallReview?.ein ?? true,
+        timeInBusiness: masterVerification?.preCallReview?.timeInBusiness ?? true,
+        ownershipPercentage: masterVerification?.preCallReview?.ownershipPercentage ?? true,
+        monthlyRevenue: masterVerification?.preCallReview?.monthlyRevenue ?? true,
+        personalAnnualIncome: masterVerification?.preCallReview?.personalAnnualIncome ?? true,
+        requestedFunding: masterVerification?.preCallReview?.requestedFunding ?? true,
+        purposeOfFunds: masterVerification?.preCallReview?.purposeOfFunds ?? true,
+        uploadedDocuments: masterVerification?.preCallReview?.uploadedDocuments ?? true,
+        ssn: masterVerification?.preCallReview?.ssn ?? true,
+        dob: masterVerification?.preCallReview?.dob ?? true,
+        stateOfIncorporation: masterVerification?.preCallReview?.stateOfIncorporation ?? true,
+        creditScore: masterVerification?.preCallReview?.creditScore ?? true,
+        missingInfoNotes: masterVerification?.preCallReview?.missingInfoNotes || '',
+      },
+
+      openingScript: {
+        answered: masterVerification?.openingScript?.answered ?? true,
+        continueNow: masterVerification?.openingScript?.continueNow ?? true,
+        rescheduleDate: masterVerification?.openingScript?.rescheduleDate || '',
+        rescheduleNotes: masterVerification?.openingScript?.rescheduleNotes || '',
+      },
+
+      identity: {
+        legalName: masterVerification?.identity?.legalName || {
+          asApplied: `${client.firstName} ${client.lastName}`,
+          verified: `${client.firstName} ${client.lastName}`,
+          status: 'Unverified',
+          notes: '',
+        },
+        phone: masterVerification?.identity?.phone || {
+          asApplied: client.phone || '',
+          verified: client.phone || '',
+          status: 'Unverified',
+          notes: '',
+        },
+        email: masterVerification?.identity?.email || {
+          asApplied: client.email || '',
+          verified: client.email || '',
+          status: 'Unverified',
+          notes: '',
+        },
+        dob: masterVerification?.identity?.dob || {
+          asApplied: client.dob || '1982-04-12',
+          verified: client.dob || '1982-04-12',
+          status: 'Unverified',
+          notes: '',
+        },
+        ssnLast4: masterVerification?.identity?.ssnLast4 || {
+          asApplied: client.ssn ? client.ssn.slice(-4) : '4829',
+          verified: client.ssn ? client.ssn.slice(-4) : '4829',
+          status: 'Unverified',
+          notes: '',
+        },
+      },
+
+      business: {
+        businessName: masterVerification?.business?.businessName || {
+          asApplied: client.businessName || '',
+          verified: client.businessName || '',
+          status: 'Unverified',
+          notes: '',
+        },
+        dba: masterVerification?.business?.dba || {
+          asApplied: client.dba || 'N/A',
+          verified: client.dba || 'N/A',
+          status: 'Unverified',
+          notes: '',
+        },
+        businessAddress: masterVerification?.business?.businessAddress || {
+          asApplied: client.businessAddress || `${client.address}, ${client.city}, ${client.state}`,
+          verified: client.businessAddress || `${client.address}, ${client.city}, ${client.state}`,
+          status: 'Unverified',
+          notes: '',
+        },
+        ein: masterVerification?.business?.ein || {
+          asApplied: client.federalTaxId || '84-9281726',
+          verified: client.federalTaxId || '84-9281726',
+          status: 'Unverified',
+          notes: '',
+        },
+        stateOfIncorporation: masterVerification?.business?.stateOfIncorporation || {
+          asApplied: client.stateOfOrganization || client.state || 'DE',
+          verified: client.stateOfOrganization || client.state || 'DE',
+          status: 'Unverified',
+          notes: '',
+        },
+        entityType: masterVerification?.business?.entityType || {
+          asApplied: client.entityType || 'LLC',
+          verified: client.entityType || 'LLC',
+          status: 'Unverified',
+          notes: '',
+        },
+        businessStartDate: masterVerification?.business?.businessStartDate || {
+          asApplied: client.businessStartDate || '2019-03-15',
+          verified: client.businessStartDate || '2019-03-15',
+          status: 'Unverified',
+          notes: '',
+        },
+        timeInBusiness: masterVerification?.business?.timeInBusiness || {
+          asApplied: '5+ Years',
+          verified: '5+ Years',
+          status: 'Unverified',
+          notes: '',
+        },
+        industry: masterVerification?.business?.industry || {
+          asApplied: client.industry || 'Logistics & Transportation',
+          verified: client.industry || 'Logistics & Transportation',
+          status: 'Unverified',
+          notes: '',
+        },
+        businessDescription: masterVerification?.business?.businessDescription || {
+          asApplied: client.businessDescription || 'Regional freight dispatch and supply chain logistics.',
+          verified: client.businessDescription || 'Regional freight dispatch and supply chain logistics.',
+          status: 'Unverified',
+          notes: '',
+        },
+        ownershipPercentage: masterVerification?.business?.ownershipPercentage || {
+          asApplied: `${client.ownershipPercentage || 100}%`,
+          verified: `${client.ownershipPercentage || 100}%`,
+          status: 'Unverified',
+          notes: '',
+        },
+        ownerTitle: masterVerification?.business?.ownerTitle || {
+          asApplied: client.ownerTitle || 'Managing Member',
+          verified: client.ownerTitle || 'Managing Member',
+          status: 'Unverified',
+          notes: '',
+        },
+      },
+
+      employment: {
+        selfEmployedOnly: masterVerification?.employment?.selfEmployedOnly ?? true,
+        alsoEmployedFullTime: masterVerification?.employment?.alsoEmployedFullTime ?? false,
+        employer: masterVerification?.employment?.employer || client.businessName || '',
+        position: masterVerification?.employment?.position || 'Owner / Operator',
+        yearsEmployed: masterVerification?.employment?.yearsEmployed || '5 Years',
+        employmentStartDate: masterVerification?.employment?.employmentStartDate || '2019-03-15',
+        employmentStatus: masterVerification?.employment?.employmentStatus || 'Active Self-Employed',
+        annualSalary: masterVerification?.employment?.annualSalary || 180000,
+        monthlySalary: masterVerification?.employment?.monthlySalary || 15000,
+        payFrequency: masterVerification?.employment?.payFrequency || 'Bi-Weekly',
+        otherEmploymentIncome: masterVerification?.employment?.otherEmploymentIncome || 'None',
+        employmentNotes: masterVerification?.employment?.employmentNotes || 'Draws direct distributions from corporate checking.',
+        redFlags: masterVerification?.employment?.redFlags || 'None',
+      },
+
+      employmentVerification: {
+        sectionStatus: masterVerification?.employmentVerification?.sectionStatus || 'Unverified',
+        currentlyWorking: masterVerification?.employmentVerification?.currentlyWorking || {
+          asApplied: 'Yes',
+          verified: 'Yes',
+          status: 'Unverified',
+          notes: '',
+          script: 'Are you currently working, either for your own business or for another employer?',
+        },
+        selfEmployed: masterVerification?.employmentVerification?.selfEmployed || {
+          asApplied: 'Yes',
+          verified: 'Yes',
+          status: 'Unverified',
+          notes: '',
+          script: 'Are you currently self-employed or do you work for another employer?',
+        },
+        employedByAnotherCompany: masterVerification?.employmentVerification?.employedByAnotherCompany || {
+          asApplied: 'Yes',
+          verified: 'Yes',
+          status: 'Unverified',
+          notes: '',
+          script: 'Are you currently employed by another company in addition to owning your business?',
+        },
+        employerName: masterVerification?.employmentVerification?.employerName || {
+          asApplied: 'Apex Healthcare Systems Inc.',
+          verified: 'Apex Healthcare Systems Inc.',
+          status: 'Unverified',
+          notes: '',
+          script: 'What is the name of your current employer?',
+        },
+        jobTitle: masterVerification?.employmentVerification?.jobTitle || {
+          asApplied: 'Senior Operations Director',
+          verified: 'Senior Operations Director',
+          status: 'Unverified',
+          notes: '',
+          script: 'What is your current job title or position?',
+        },
+        jobOccupation: masterVerification?.employmentVerification?.jobOccupation || {
+          asApplied: 'Healthcare Management',
+          verified: 'Healthcare Management',
+          status: 'Unverified',
+          notes: '',
+          script: 'What do you do in your current job?',
+        },
+        jobDescription: masterVerification?.employmentVerification?.jobDescription || {
+          asApplied: 'Directs regional healthcare clinical logistics, procurement, and staff oversight.',
+          verified: 'Directs regional healthcare clinical logistics, procurement, and staff oversight.',
+          status: 'Unverified',
+          notes: '',
+          script: 'Can you briefly explain what your responsibilities are in your current job?',
+        },
+        employmentStartDate: masterVerification?.employmentVerification?.employmentStartDate || {
+          asApplied: '2020-03-01',
+          verified: '2020-03-01',
+          status: 'Unverified',
+          notes: '',
+          script: 'When did you start working for your current employer?',
+        },
+        yearsWithEmployer: masterVerification?.employmentVerification?.yearsWithEmployer || {
+          asApplied: '4.5 Years',
+          verified: '4.5 Years',
+          status: 'Unverified',
+          notes: '',
+          script: 'How long have you been with your current employer?',
+        },
+        employmentTypeStatus: masterVerification?.employmentVerification?.employmentTypeStatus || {
+          asApplied: 'Full-Time',
+          verified: 'Full-Time',
+          status: 'Unverified',
+          notes: '',
+          script: 'Would you consider your current employment full-time, part-time, contract, seasonal, or other?',
+        },
+        annualSalary: masterVerification?.employmentVerification?.annualSalary || {
+          asApplied: '$145,000',
+          verified: '$145,000',
+          status: 'Unverified',
+          notes: '',
+          script: 'What is your current annual salary?',
+        },
+        monthlySalary: masterVerification?.employmentVerification?.monthlySalary || {
+          asApplied: '$12,083',
+          verified: '$12,083',
+          status: 'Unverified',
+          notes: '',
+          script: 'Approximately how much do you earn from your employment each month?',
+        },
+        annualEmploymentIncome: masterVerification?.employmentVerification?.annualEmploymentIncome || {
+          asApplied: '$160,000',
+          verified: '$160,000',
+          status: 'Unverified',
+          notes: '',
+          script: 'What is your total annual employment income?',
+        },
+        monthlyEmploymentIncome: masterVerification?.employmentVerification?.monthlyEmploymentIncome || {
+          asApplied: '$13,333',
+          verified: '$13,333',
+          status: 'Unverified',
+          notes: '',
+          script: 'What is your total monthly employment income?',
+        },
+        otherMonthlyIncome: masterVerification?.employmentVerification?.otherMonthlyIncome || {
+          asApplied: '$2,500',
+          verified: '$2,500',
+          status: 'Unverified',
+          notes: '',
+          script: 'Do you have any other regular monthly income outside of your business or employment?',
+        },
+        otherIncomeSource: masterVerification?.employmentVerification?.otherIncomeSource || {
+          asApplied: 'Rental Property / Investment',
+          verified: 'Rental Property / Investment',
+          status: 'Unverified',
+          notes: '',
+          script: 'What is the source of that additional income?',
+        },
+        receivesPayStubs: masterVerification?.employmentVerification?.receivesPayStubs || {
+          asApplied: 'Yes',
+          verified: 'Yes',
+          status: 'Unverified',
+          notes: '',
+          script: 'Do you receive pay stubs from your employer?',
+        },
+        paidThroughPayroll: masterVerification?.employmentVerification?.paidThroughPayroll || {
+          asApplied: 'Yes',
+          verified: 'Yes',
+          status: 'Unverified',
+          notes: '',
+          script: 'Are you currently paid through a formal payroll system?',
+        },
+        payFrequency: masterVerification?.employmentVerification?.payFrequency || {
+          asApplied: 'Biweekly',
+          verified: 'Biweekly',
+          status: 'Unverified',
+          notes: '',
+          script: 'How often do you receive your paycheck?',
+        },
+        mostRecentPayStubDate: masterVerification?.employmentVerification?.mostRecentPayStubDate || {
+          asApplied: '2026-08-15',
+          verified: '2026-08-15',
+          status: 'Unverified',
+          notes: '',
+          script: 'What is the date of your most recent pay stub?',
+        },
+        payStubReceived: masterVerification?.employmentVerification?.payStubReceived || {
+          asApplied: 'Yes',
+          verified: 'Yes',
+          status: 'Unverified',
+          notes: '',
+          script: 'Has the pay stub document been received?',
+        },
+        payStubReviewed: masterVerification?.employmentVerification?.payStubReviewed || {
+          asApplied: 'Yes',
+          verified: 'Yes',
+          status: 'Unverified',
+          notes: '',
+          script: 'Has the pay stub been reviewed for accuracy?',
+        },
+        employmentIncomeNotes: masterVerification?.employmentVerification?.employmentIncomeNotes || '',
+        redFlags: masterVerification?.employmentVerification?.redFlags || 'None',
+        updatedAt: masterVerification?.employmentVerification?.updatedAt || new Date().toISOString(),
+        updatedBy: masterVerification?.employmentVerification?.updatedBy || client?.assignedStaff || 'Dana',
+      },
+
+      income: {
+        personalAnnualIncome: masterVerification?.income?.personalAnnualIncome || 180000,
+        monthlyBusinessRevenue: masterVerification?.income?.monthlyBusinessRevenue || client.monthlyRevenue || 75000,
+        verifiedPersonalAnnualIncome: masterVerification?.income?.verifiedPersonalAnnualIncome || 180000,
+        verifiedMonthlyBusinessRevenue: masterVerification?.income?.verifiedMonthlyBusinessRevenue || client.monthlyRevenue || 75000,
+        exactCreditScore: masterVerification?.income?.exactCreditScore || client.creditScore || 712,
+        revenueTrend: masterVerification?.income?.revenueTrend || 'Consistent',
+        revenueTrendExplanation: masterVerification?.income?.revenueTrendExplanation || 'Consistent monthly revenue between $72k-$78k over last 6 months.',
+        incomeNotes: masterVerification?.income?.incomeNotes || 'Bank deposits corroborate $75k/month revenue flow.',
+        redFlags: masterVerification?.income?.redFlags || 'None',
+      },
+
+      payroll: {
+        paysSelfThroughPayroll: masterVerification?.payroll?.paysSelfThroughPayroll ?? true,
+        issuesPayStubs: masterVerification?.payroll?.issuesPayStubs ?? true,
+        salary: masterVerification?.payroll?.salary || 180000,
+        grossPay: masterVerification?.payroll?.grossPay || 6923,
+        netPay: masterVerification?.payroll?.netPay || 5120,
+        payFrequency: masterVerification?.payroll?.payFrequency || 'Bi-Weekly',
+        payrollStartDate: masterVerification?.payroll?.payrollStartDate || '2020-01-01',
+        latestPayStubDate: masterVerification?.payroll?.latestPayStubDate || '2026-02-15',
+        payStubReceived: masterVerification?.payroll?.payStubReceived ?? true,
+        payStubReviewed: masterVerification?.payroll?.payStubReviewed ?? true,
+        payrollNotes: masterVerification?.payroll?.payrollNotes || 'Gusto payroll reports received and reviewed.',
+        redFlags: masterVerification?.payroll?.redFlags || 'None',
+      },
+
+      banking: {
+        primaryBank: masterVerification?.banking?.primaryBank || 'JPMorgan Chase',
+        dedicatedBusinessChecking: masterVerification?.banking?.dedicatedBusinessChecking ?? true,
+        businessAccount: masterVerification?.banking?.businessAccount || 'Chase Commercial *7821',
+        personalAccountUsedForBusiness: masterVerification?.banking?.personalAccountUsedForBusiness ?? false,
+        businessIncomeDepositedIntoPersonal: masterVerification?.banking?.businessIncomeDepositedIntoPersonal ?? false,
+        regularBusinessToPersonalTransfers: masterVerification?.banking?.regularBusinessToPersonalTransfers ?? true,
+        transferFrequency: masterVerification?.banking?.transferFrequency || 'Bi-Weekly',
+        approximateTransferAmount: masterVerification?.banking?.approximateTransferAmount || 5000,
+        bankingExplanation: masterVerification?.banking?.bankingExplanation || 'Clean separation of personal and business accounts.',
+        bankingNotes: masterVerification?.banking?.bankingNotes || 'Average daily balance > $25,000 across 4 statements.',
+        redFlags: masterVerification?.banking?.redFlags || 'None',
+      },
+
+      documentChecklist: masterVerification?.documentChecklist || {
+        driversLicense: { received: true, stillNeeded: false, sentAfterCall: false, reviewed: true, notes: 'Valid photo ID on file' },
+        bankStatements: { received: true, stillNeeded: false, sentAfterCall: false, reviewed: true, notes: '4 Months Chase Business Checking' },
+        taxReturns: { received: true, stillNeeded: false, sentAfterCall: false, reviewed: true, notes: '2024 & 2023 Form 1120-S' },
+        voidedCheck: { received: true, stillNeeded: false, sentAfterCall: false, reviewed: true, notes: 'Verified matching EIN' },
+        articlesOfInc: { received: true, stillNeeded: false, sentAfterCall: false, reviewed: true, notes: 'Certificate of Formation DE' },
+        einLetter: { received: true, stillNeeded: false, sentAfterCall: false, reviewed: true, notes: 'CP-575 Letter' },
+        w2Paystubs: { received: true, stillNeeded: false, sentAfterCall: false, reviewed: true, notes: 'Recent 2 pay stubs' },
+        businessLicense: { received: true, stillNeeded: false, sentAfterCall: false, reviewed: true, notes: 'State license active' },
+      },
+
+      existingDebts: masterVerification?.existingDebts || [
+        {
+          id: 'debt-1',
+          clientId: client.id,
+          lender: 'Capital One Commercial',
+          loanType: 'Business Line of Credit',
+          originalLoanAmount: 50000,
+          termMonths: 36,
+          monthlyPayment: 1200,
+          currentBalance: 12000,
+          status: 'Current',
+          notes: 'Good standing, perfect payment history',
+        },
+      ],
+      bankruptcyForeclosureRepossession5Years: masterVerification?.bankruptcyForeclosureRepossession5Years ?? false,
+      bankruptcyForeclosureNotes: masterVerification?.bankruptcyForeclosureNotes || 'Clean public records search.',
+
+      creditCards: masterVerification?.creditCards || [
+        {
+          id: 'cc-1',
+          clientId: client.id,
+          cardCategory: 'BUSINESS',
+          issuer: 'Chase',
+          cardName: 'Chase Ink Business Preferred',
+          cardholder: `${client.firstName} ${client.lastName}`,
+          creditLimit: 30000,
+          currentBalance: 4200,
+          availableCredit: 25800,
+          monthlyPayment: 150,
+          utilization: 14,
+          lastFourDigits: '8821',
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        },
+        {
+          id: 'cc-2',
+          clientId: client.id,
+          cardCategory: 'PERSONAL',
+          issuer: 'American Express',
+          cardName: 'Amex Gold Card',
+          cardholder: `${client.firstName} ${client.lastName}`,
+          creditLimit: 25000,
+          currentBalance: 1800,
+          availableCredit: 23200,
+          monthlyPayment: 85,
+          utilization: 7,
+          lastFourDigits: '3049',
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        },
+      ],
+
+      recentCreditActivity: masterVerification?.recentCreditActivity || [
+        {
+          id: 'act-1',
+          clientId: client.id,
+          lender: 'Chase Bank',
+          dateApplied: '2025-11-10',
+          amountRequested: 25000,
+          product: 'Credit Card Limit Increase',
+          approved: true,
+          result: 'Approved',
+          notes: 'Approved without issue',
+        },
+      ],
+
+      housing: {
+        homeAddressSameAsBusiness: masterVerification?.housing?.homeAddressSameAsBusiness ?? false,
+        homeAddressIfDifferent: masterVerification?.housing?.homeAddressIfDifferent || client.address || '450 Lexington Ave, New York, NY',
+        housingType: masterVerification?.housing?.housingType || 'Homeowner',
+        monthlyMortgageOrRent: masterVerification?.housing?.monthlyMortgageOrRent || 2800,
+        housingNotes: masterVerification?.housing?.housingNotes || 'Mortgage paid on time via AutoPay.',
+        redFlags: masterVerification?.housing?.redFlags || 'None',
+      },
+
+      fundingRequest: {
+        requestedAmount: masterVerification?.fundingRequest?.requestedAmount || client.requestedAmount || 75000,
+        verifiedRequestedAmount: masterVerification?.fundingRequest?.verifiedRequestedAmount || client.requestedAmount || 75000,
+        purposeOfFunds: masterVerification?.fundingRequest?.purposeOfFunds || 'Working Capital',
+        fundingUrgency: masterVerification?.fundingRequest?.fundingUrgency || 'Immediately',
+        purposeNotes: masterVerification?.fundingRequest?.purposeNotes || 'Fleet maintenance, new driver payroll, and software subscriptions.',
+        redFlags: masterVerification?.fundingRequest?.redFlags || 'None',
+      },
+
+      creditVerification: {
+        exactCreditScore: masterVerification?.creditVerification?.exactCreditScore || client.creditScore || 712,
+        creditUnlocked: masterVerification?.creditVerification?.creditUnlocked ?? true,
+        fraudAlert: masterVerification?.creditVerification?.fraudAlert ?? false,
+        securityFreeze: masterVerification?.creditVerification?.securityFreeze ?? false,
+        creditNotes: masterVerification?.creditVerification?.creditNotes || 'Equifax, Experian, TransUnion confirmed open and unblocked.',
+        redFlags: masterVerification?.creditVerification?.redFlags || 'None',
+      },
+
+      underwriterSummary: {
+        overallImpression: masterVerification?.underwriterSummary?.overallImpression || 'Excellent',
+        biggestStrength: masterVerification?.underwriterSummary?.biggestStrength || 'Strong recurring revenue ($75k/mo), established corporate history (5+ yrs), clean banking.',
+        biggestConcern: masterVerification?.underwriterSummary?.biggestConcern || 'Maintain low debt service on simultaneous tier-2 applications.',
+        cashFlowNotes: masterVerification?.underwriterSummary?.cashFlowNotes || 'Consistent positive daily balance over $25k.',
+        businessStabilityNotes: masterVerification?.underwriterSummary?.businessStabilityNotes || 'Established in 2019 with zero legal or tax liens.',
+        additionalDocumentsNeeded: masterVerification?.underwriterSummary?.additionalDocumentsNeeded || 'None. File is complete.',
+        readyForSubmission: masterVerification?.underwriterSummary?.readyForSubmission ?? true,
+        reasonIfNo: masterVerification?.underwriterSummary?.reasonIfNo || '',
+      },
+
+      finalChecklist: {
+        identityVerified: masterVerification?.finalChecklist?.identityVerified ?? true,
+        businessVerified: masterVerification?.finalChecklist?.businessVerified ?? true,
+        incomeVerified: masterVerification?.finalChecklist?.incomeVerified ?? true,
+        employmentVerified: masterVerification?.finalChecklist?.employmentVerified ?? true,
+        bankingVerified: masterVerification?.finalChecklist?.bankingVerified ?? true,
+        documentsReceived: masterVerification?.finalChecklist?.documentsReceived ?? true,
+        existingDebtReviewed: masterVerification?.finalChecklist?.existingDebtReviewed ?? true,
+        housingVerified: masterVerification?.finalChecklist?.housingVerified ?? true,
+        fundingAmountConfirmed: masterVerification?.finalChecklist?.fundingAmountConfirmed ?? true,
+        creditAvailableForPull: masterVerification?.finalChecklist?.creditAvailableForPull ?? true,
+        fileReadyForUnderwriting: masterVerification?.finalChecklist?.fileReadyForUnderwriting ?? true,
+      },
+
+      updatedAt: new Date().toISOString(),
+    };
+  };
+
+  const [formData, setFormData] = useState<MasterVerificationData>(initMasterData);
+
+  useEffect(() => {
+    setFormData(initMasterData());
+  }, [client.id, masterVerification]);
+
+  // Handle Save
+  const handleSave = async () => {
+    setIsSaving(true);
+    try {
+      await api.saveMasterVerification(client.id, formData);
+      addToast(
+        'success',
+        'Verification File Saved',
+        `Master Verification Form for ${client.firstName} ${client.lastName} saved & synchronized to Underwriting.`
+      );
+      onRefresh();
+    } catch (err: any) {
+      addToast('error', 'Save Failed', err.message || 'Could not save verification file.');
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  // Add Debt Handler
+  const handleAddDebt = () => {
+    if (!newDebtForm.lender) {
+      addToast('warning', 'Missing Field', 'Please provide a lender name.');
+      return;
+    }
+    const newDebt: ExistingDebtRecord = {
+      id: `debt-${Date.now()}`,
+      clientId: client.id,
+      lender: newDebtForm.lender || 'Lender',
+      loanType: (newDebtForm.loanType as any) || 'Term Loan',
+      originalLoanAmount: Number(newDebtForm.originalLoanAmount) || 0,
+      termMonths: 36,
+      monthlyPayment: Number(newDebtForm.monthlyPayment) || 0,
+      currentBalance: Number(newDebtForm.currentBalance) || 0,
+      status: (newDebtForm.status as any) || 'Current',
+    };
+    setFormData((prev) => ({
+      ...prev,
+      existingDebts: [...(prev.existingDebts || []), newDebt],
+    }));
+    setShowAddDebtModal(false);
+    setNewDebtForm({
+      lender: '',
+      loanType: 'Term Loan',
+      originalLoanAmount: 25000,
+      monthlyPayment: 650,
+      currentBalance: 8200,
+      status: 'Current',
+    });
+    addToast('success', 'Debt Record Added', `Added ${newDebt.lender} to verification liabilities.`);
+  };
+
+  const handleDeleteDebt = (id: string) => {
+    setFormData((prev) => ({
+      ...prev,
+      existingDebts: (prev.existingDebts || []).filter((d) => d.id !== id),
+    }));
+    addToast('info', 'Record Removed', 'Debt record removed from worksheet.');
+  };
+
+  // Add Card Handler
+  const handleAddCard = () => {
+    if (!newCardForm.issuer) {
+      addToast('warning', 'Missing Field', 'Please provide a card issuer.');
+      return;
+    }
+    const newCard: CreditCardRecord = {
+      id: `card-${Date.now()}`,
+      clientId: client.id,
+      cardCategory: (newCardForm.cardCategory as any) || 'BUSINESS',
+      issuer: newCardForm.issuer || 'Bank',
+      cardName: newCardForm.cardName || 'Business Card',
+      cardholder: `${client.firstName} ${client.lastName}`,
+      creditLimit: Number(newCardForm.creditLimit) || 0,
+      currentBalance: Number(newCardForm.currentBalance) || 0,
+      availableCredit: Math.max(0, (Number(newCardForm.creditLimit) || 0) - (Number(newCardForm.currentBalance) || 0)),
+      monthlyPayment: Number(newCardForm.monthlyPayment) || 0,
+      utilization: Number(newCardForm.creditLimit) > 0 ? Math.round(((Number(newCardForm.currentBalance) || 0) / Number(newCardForm.creditLimit)) * 100) : 0,
+      lastFourDigits: newCardForm.lastFourDigits || '0000',
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
+    setFormData((prev) => ({
+      ...prev,
+      creditCards: [...(prev.creditCards || []), newCard],
+    }));
+    setShowAddCardModal(false);
+    setNewCardForm({
+      cardCategory: 'BUSINESS',
+      issuer: '',
+      cardName: '',
+      creditLimit: 15000,
+      currentBalance: 1200,
+      availableCredit: 13800,
+      monthlyPayment: 50,
+      utilization: 8,
+      lastFourDigits: '1234',
+    });
+    addToast('success', 'Credit Card Added', `Added ${newCard.issuer} to verification profile.`);
+  };
+
+  const handleDeleteCard = (id: string) => {
+    setFormData((prev) => ({
+      ...prev,
+      creditCards: (prev.creditCards || []).filter((c) => c.id !== id),
+    }));
+    addToast('info', 'Card Removed', 'Credit card record removed.');
+  };
+
+  // Helper for MasterVerificationField updates
+  const updateField = (
+    section: 'identity' | 'business',
+    field: string,
+    key: keyof MasterVerificationField,
+    val: string
+  ) => {
+    setFormData((prev: any) => ({
+      ...prev,
+      [section]: {
+        ...prev[section],
+        [field]: {
+          ...prev[section][field],
+          [key]: val,
+        },
+      },
+    }));
+  };
+
+  // Dedicated Helper for Employment, Salary & Payroll Verification Field Updates
+  const updateEmploymentField = (
+    field: keyof EmploymentSalaryPayrollVerification,
+    key: keyof MasterVerificationField,
+    val: string
+  ) => {
+    setFormData((prev: any) => {
+      const existingSection = prev.employmentVerification || {};
+      const existingField = existingSection[field] || {
+        asApplied: '',
+        verified: '',
+        status: 'Unverified',
+        notes: '',
+      };
+      return {
+        ...prev,
+        employmentVerification: {
+          ...existingSection,
+          [field]: {
+            ...existingField,
+            [key]: val,
+          },
+        },
+      };
+    });
+  };
+
+  // Helper for Top-Level Employment Section properties (Notes, Red Flags, Status)
+  const updateEmploymentProperty = (
+    property: 'sectionStatus' | 'employmentIncomeNotes' | 'redFlags',
+    val: any
+  ) => {
+    setFormData((prev: any) => {
+      const existingSection = prev.employmentVerification || {};
+      return {
+        ...prev,
+        employmentVerification: {
+          ...existingSection,
+          [property]: val,
+        },
+      };
+    });
+  };
+
+  // Helper to detect all fields across identity, business, and employment that remain Unverified
+  const getUnverifiedItems = () => {
+    const list: string[] = [];
+
+    if (formData.identity) {
+      Object.entries(formData.identity).forEach(([k, field]) => {
+        if (field && typeof field === 'object' && 'status' in field) {
+          if ((field as any).status === 'Unverified') {
+            list.push(`Identity: ${k}`);
+          }
+        }
+      });
+    }
+
+    if (formData.business) {
+      Object.entries(formData.business).forEach(([k, field]) => {
+        if (field && typeof field === 'object' && 'status' in field) {
+          if ((field as any).status === 'Unverified') {
+            list.push(`Business: ${k}`);
+          }
+        }
+      });
+    }
+
+    if (formData.employmentVerification) {
+      Object.entries(formData.employmentVerification).forEach(([k, field]) => {
+        if (field && typeof field === 'object' && 'status' in field) {
+          if ((field as any).status === 'Unverified') {
+            list.push(`Employment: ${k}`);
+          }
+        }
+      });
+    }
+
+    return list;
+  };
+
+  const unverifiedList = getUnverifiedItems();
+  const hasUnverifiedItems = unverifiedList.length > 0;
+
+  // Handle Mark Verification Complete Sign-Off
+  const handleMarkVerificationComplete = async () => {
+    if (hasUnverifiedItems) {
+      addToast(
+        'error',
+        'Verification Incomplete',
+        `Cannot complete verification. ${unverifiedList.length} item(s) remain marked 'Unverified'. Please review all verification fields.`
+      );
+      return;
+    }
+
+    if (!verifiedByName.trim()) {
+      addToast('warning', 'Missing Sign-Off Name', 'Please enter your name in the "Verified By" field before marking complete.');
+      return;
+    }
+
+    setIsCompleting(true);
+    try {
+      const timestamp = new Date().toISOString();
+      const updatedData: MasterVerificationData = {
+        ...formData,
+        status: 'COMPLETE',
+        overallResult: 'APPROVED_FOR_UNDERWRITING',
+        verifiedBy: verifiedByName.trim(),
+        verifiedAt: timestamp,
+        finalChecklist: {
+          ...formData.finalChecklist,
+          identityVerified: true,
+          businessVerified: true,
+          incomeVerified: true,
+          employmentVerified: true,
+          bankingVerified: true,
+          documentsReceived: true,
+          existingDebtReviewed: true,
+          housingVerified: true,
+          fundingAmountConfirmed: true,
+          creditAvailableForPull: true,
+          fileReadyForUnderwriting: true,
+        },
+      };
+
+      // 1. Save to masterVerifications doc
+      await api.saveMasterVerification(client.id, updatedData);
+
+      // 2. Advance client status to UNDERWRITING
+      await updateClient(client.id, {
+        currentStatus: 'UNDERWRITING',
+      });
+
+      // 3. Log timeline event
+      try {
+        await firestoreService.createTimelineEvent({
+          clientId: client.id,
+          type: 'STATUS_CHANGE',
+          title: 'Master Verification Completed & Signed Off',
+          description: `Master Verification officially signed off by ${verifiedByName.trim()}. Client pipeline stage advanced to Underwriting.`,
+          staffMember: verifiedByName.trim(),
+          timestamp,
+        });
+      } catch (logErr) {
+        console.warn('Could not log timeline event:', logErr);
+      }
+
+      setFormData(updatedData);
+      addToast(
+        'success',
+        'Verification Complete!',
+        `Master Verification successfully signed off by ${verifiedByName.trim()}. Client has been advanced to Underwriting.`
+      );
+      onRefresh();
+    } catch (err: any) {
+      addToast('error', 'Sign-Off Failed', err.message || 'Could not complete verification sign-off.');
+    } finally {
+      setIsCompleting(false);
+    }
+  };
+
+  // Render a standard Verification Field row (As Applied vs Verified + Status + Notes)
+  const renderFieldRow = (
+    section: 'identity' | 'business',
+    fieldKey: string,
+    label: string,
+    fieldData?: MasterVerificationField
+  ) => {
+    const safeFieldData: MasterVerificationField = fieldData || {
+      asApplied: '',
+      verified: '',
+      status: 'Unverified',
+      notes: '',
+    };
+    return (
+      <div key={fieldKey} className="p-3.5 bg-[#070d18] border border-blue-900/40 rounded-xl space-y-2">
+        <div className="flex items-center justify-between">
+          <span className="text-xs font-bold text-slate-100">{label}</span>
+          <select
+            value={safeFieldData.status || 'Unverified'}
+            onChange={(e) => updateField(section, fieldKey, 'status', e.target.value as VerificationStatusType)}
+            className={`text-[10px] font-mono font-bold px-2 py-0.5 rounded border focus:outline-none ${
+              safeFieldData.status === 'Verified' || safeFieldData.status === 'Matches Application'
+                ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40'
+                : safeFieldData.status === 'Client Corrected It'
+                ? 'bg-blue-500/20 text-blue-300 border-blue-500/40'
+                : safeFieldData.status === 'Needs Correction'
+                ? 'bg-amber-500/20 text-amber-300 border-amber-500/40'
+                : 'bg-rose-500/20 text-rose-300 border-rose-500/40'
+            }`}
+          >
+            <option value="Unverified">Unverified</option>
+            <option value="Verified">Verified</option>
+            <option value="Matches Application">Matches Application</option>
+            <option value="Client Corrected It">Client Corrected It</option>
+            <option value="Needs Correction">Needs Correction</option>
+          </select>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs">
+          <div>
+            <label className="block text-[10px] text-slate-400 font-semibold mb-0.5">As Applied</label>
+            <input
+              type="text"
+              value={safeFieldData.asApplied || ''}
+              onChange={(e) => updateField(section, fieldKey, 'asApplied', e.target.value)}
+              className="w-full bg-[#0b1528] border border-blue-900/60 rounded-lg p-2 text-xs text-slate-300 focus:outline-none focus:border-amber-400"
+            />
+          </div>
+
+          <div>
+            <label className="block text-[10px] text-emerald-400 font-semibold mb-0.5">Verified Value</label>
+            <input
+              type="text"
+              value={safeFieldData.verified || ''}
+              onChange={(e) => updateField(section, fieldKey, 'verified', e.target.value)}
+              className="w-full bg-[#0b1528] border border-emerald-500/50 rounded-lg p-2 text-xs text-emerald-200 font-bold focus:outline-none focus:border-emerald-400"
+            />
+          </div>
+        </div>
+
+        <div>
+          <input
+            type="text"
+            value={safeFieldData.notes || ''}
+            onChange={(e) => updateField(section, fieldKey, 'notes', e.target.value)}
+            placeholder="Verification notes or documentation reference..."
+            className="w-full bg-[#0b1528] border border-blue-900/40 rounded-lg px-2.5 py-1.5 text-[11px] text-slate-400 placeholder-slate-600 focus:outline-none focus:border-blue-700"
+          />
+        </div>
+      </div>
+    );
+  };
+
+  // Render a Structured Employment / Salary / Payroll Verification Row with Call Script
+  const renderEmploymentField = (
+    fieldKey: keyof EmploymentSalaryPayrollVerification,
+    label: string,
+    scriptText: string,
+    fieldData?: MasterVerificationField,
+    inputType: 'text' | 'yesno' | 'date' | 'textarea' | 'employmentType' | 'payFrequency' = 'text'
+  ) => {
+    const safeData: MasterVerificationField = fieldData || {
+      asApplied: '',
+      verified: '',
+      status: 'Unverified',
+      notes: '',
+      script: scriptText,
+    };
+
+    return (
+      <div
+        key={fieldKey as string}
+        className="p-4 bg-[#070d18] border border-blue-900/40 rounded-xl space-y-3 hover:border-blue-700/60 transition-colors shadow-sm"
+      >
+        {/* Row Header with Label & Verification Status Selector */}
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-blue-900/30 pb-2">
+          <div className="flex items-center gap-2">
+            <span className="text-xs font-bold text-slate-100 uppercase tracking-wide">{label}</span>
+          </div>
+          <div className="flex items-center gap-2">
+            <span className="text-[10px] text-slate-400 font-semibold uppercase">Status:</span>
+            <select
+              value={safeData.status || 'Unverified'}
+              onChange={(e) => updateEmploymentField(fieldKey, 'status', e.target.value as VerificationStatusType)}
+              className={`text-[11px] font-mono font-bold px-2.5 py-1 rounded-lg border focus:outline-none transition-colors ${
+                safeData.status === 'Verified' || safeData.status === 'Matches Application'
+                  ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40'
+                  : safeData.status === 'Client Corrected It'
+                  ? 'bg-blue-500/20 text-blue-300 border-blue-500/40'
+                  : safeData.status === 'Needs Correction'
+                  ? 'bg-amber-500/20 text-amber-300 border-amber-500/40'
+                  : 'bg-rose-500/20 text-rose-300 border-rose-500/40'
+              }`}
+            >
+              <option value="Unverified">Unverified</option>
+              <option value="Verified">Verified</option>
+              <option value="Matches Application">Matches Application</option>
+              <option value="Client Corrected It">Client Corrected It</option>
+              <option value="Needs Correction">Needs Correction</option>
+              <option value="Pending">Pending</option>
+            </select>
+          </div>
+        </div>
+
+        {/* Script Callout Box */}
+        {scriptText && (
+          <div className="flex items-start gap-2 bg-blue-950/40 border border-blue-800/40 rounded-lg p-2.5 text-xs text-blue-200/90 font-medium italic">
+            <PhoneCall className="w-3.5 h-3.5 text-amber-400 shrink-0 mt-0.5" />
+            <div>
+              <span className="text-[10px] font-bold uppercase tracking-wider text-amber-400 not-italic block mb-0.5">
+                Verification Script
+              </span>
+              <span>"{scriptText}"</span>
+            </div>
+          </div>
+        )}
+
+        {/* As Applied vs Verified Inputs */}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs">
+          <div>
+            <label className="block text-[10px] text-slate-400 font-semibold mb-1 uppercase tracking-wider">
+              As Applied / Application Answer
+            </label>
+            {inputType === 'textarea' ? (
+              <textarea
+                rows={2}
+                value={safeData.asApplied || ''}
+                onChange={(e) => updateEmploymentField(fieldKey, 'asApplied', e.target.value)}
+                placeholder="As reported on intake application..."
+                className="w-full bg-[#0b1528] border border-blue-900/60 rounded-lg p-2 text-xs text-slate-300 focus:outline-none focus:border-amber-400 resize-y"
+              />
+            ) : inputType === 'yesno' ? (
+              <select
+                value={safeData.asApplied || 'Yes'}
+                onChange={(e) => updateEmploymentField(fieldKey, 'asApplied', e.target.value)}
+                className="w-full bg-[#0b1528] border border-blue-900/60 rounded-lg p-2 text-xs text-slate-300 focus:outline-none focus:border-amber-400 font-medium"
+              >
+                <option value="Yes">Yes</option>
+                <option value="No">No</option>
+              </select>
+            ) : inputType === 'employmentType' ? (
+              <select
+                value={safeData.asApplied || 'Full-Time'}
+                onChange={(e) => updateEmploymentField(fieldKey, 'asApplied', e.target.value)}
+                className="w-full bg-[#0b1528] border border-blue-900/60 rounded-lg p-2 text-xs text-slate-300 focus:outline-none focus:border-amber-400"
+              >
+                <option value="Full-Time">Full-Time</option>
+                <option value="Part-Time">Part-Time</option>
+                <option value="Contract">Contract</option>
+                <option value="Seasonal">Seasonal</option>
+                <option value="Other">Other</option>
+              </select>
+            ) : inputType === 'payFrequency' ? (
+              <select
+                value={safeData.asApplied || 'Biweekly'}
+                onChange={(e) => updateEmploymentField(fieldKey, 'asApplied', e.target.value)}
+                className="w-full bg-[#0b1528] border border-blue-900/60 rounded-lg p-2 text-xs text-slate-300 focus:outline-none focus:border-amber-400"
+              >
+                <option value="Weekly">Weekly</option>
+                <option value="Biweekly">Biweekly</option>
+                <option value="Semi-Monthly">Semi-Monthly</option>
+                <option value="Monthly">Monthly</option>
+                <option value="Other">Other</option>
+              </select>
+            ) : (
+              <input
+                type={inputType === 'date' ? 'date' : 'text'}
+                value={safeData.asApplied || ''}
+                onChange={(e) => updateEmploymentField(fieldKey, 'asApplied', e.target.value)}
+                placeholder="As reported..."
+                className="w-full bg-[#0b1528] border border-blue-900/60 rounded-lg p-2 text-xs text-slate-300 focus:outline-none focus:border-amber-400"
+              />
+            )}
+          </div>
+
+          <div>
+            <label className="block text-[10px] text-emerald-400 font-semibold mb-1 uppercase tracking-wider flex items-center justify-between">
+              <span>Verified / Corrected Value</span>
+              <span className="text-[9px] text-emerald-500 font-normal">Active Underwriting Value</span>
+            </label>
+            {inputType === 'textarea' ? (
+              <textarea
+                rows={2}
+                value={safeData.verified || ''}
+                onChange={(e) => updateEmploymentField(fieldKey, 'verified', e.target.value)}
+                placeholder="Verified duties / description..."
+                className="w-full bg-[#0b1528] border border-emerald-500/50 rounded-lg p-2 text-xs text-emerald-200 font-semibold focus:outline-none focus:border-emerald-400 resize-y"
+              />
+            ) : inputType === 'yesno' ? (
+              <select
+                value={safeData.verified || 'Yes'}
+                onChange={(e) => updateEmploymentField(fieldKey, 'verified', e.target.value)}
+                className="w-full bg-[#0b1528] border border-emerald-500/50 rounded-lg p-2 text-xs text-emerald-200 font-bold focus:outline-none focus:border-emerald-400"
+              >
+                <option value="Yes">Yes</option>
+                <option value="No">No</option>
+              </select>
+            ) : inputType === 'employmentType' ? (
+              <select
+                value={safeData.verified || 'Full-Time'}
+                onChange={(e) => updateEmploymentField(fieldKey, 'verified', e.target.value)}
+                className="w-full bg-[#0b1528] border border-emerald-500/50 rounded-lg p-2 text-xs text-emerald-200 font-bold focus:outline-none focus:border-emerald-400"
+              >
+                <option value="Full-Time">Full-Time</option>
+                <option value="Part-Time">Part-Time</option>
+                <option value="Contract">Contract</option>
+                <option value="Seasonal">Seasonal</option>
+                <option value="Other">Other</option>
+              </select>
+            ) : inputType === 'payFrequency' ? (
+              <select
+                value={safeData.verified || 'Biweekly'}
+                onChange={(e) => updateEmploymentField(fieldKey, 'verified', e.target.value)}
+                className="w-full bg-[#0b1528] border border-emerald-500/50 rounded-lg p-2 text-xs text-emerald-200 font-bold focus:outline-none focus:border-emerald-400"
+              >
+                <option value="Weekly">Weekly</option>
+                <option value="Biweekly">Biweekly</option>
+                <option value="Semi-Monthly">Semi-Monthly</option>
+                <option value="Monthly">Monthly</option>
+                <option value="Other">Other</option>
+              </select>
+            ) : (
+              <input
+                type={inputType === 'date' ? 'date' : 'text'}
+                value={safeData.verified || ''}
+                onChange={(e) => updateEmploymentField(fieldKey, 'verified', e.target.value)}
+                placeholder="Verified value..."
+                className="w-full bg-[#0b1528] border border-emerald-500/50 rounded-lg p-2 text-xs text-emerald-200 font-bold focus:outline-none focus:border-emerald-400 font-mono"
+              />
+            )}
+          </div>
+        </div>
+
+        {/* Verification Notes */}
+        <div>
+          <input
+            type="text"
+            value={safeData.notes || ''}
+            onChange={(e) => updateEmploymentField(fieldKey, 'notes', e.target.value)}
+            placeholder={`Verification notes for ${label.toLowerCase()} (e.g. corroborating documents, HR confirmation, pay stub reference)...`}
+            className="w-full bg-[#0b1528] border border-blue-900/40 rounded-lg px-3 py-2 text-xs text-slate-300 placeholder-slate-600 focus:outline-none focus:border-blue-700"
+          />
+        </div>
+      </div>
+    );
+  };
+
+  return (
+    <div className="space-y-6">
+      {/* Top Banner */}
+      <div className="bg-[#0b1528] border border-blue-900/60 p-6 rounded-2xl shadow-xl space-y-4">
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+          <div className="flex items-start space-x-4">
+            <div className="p-3 rounded-2xl bg-amber-500/10 border border-amber-500/30 text-amber-400 shrink-0">
+              <FileCheck2 className="w-6 h-6" />
+            </div>
+            <div>
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 font-bold uppercase">
+                  Master Verification Form
+                </span>
+                <span className={`text-[10px] font-mono px-2 py-0.5 rounded font-bold uppercase border ${
+                  formData.status === 'COMPLETE'
+                    ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40'
+                    : 'bg-amber-500/20 text-amber-300 border-amber-500/40'
+                }`}>
+                  Status: {formData.status || 'IN_PROGRESS'}
+                </span>
+                <span className="text-xs text-slate-400">
+                  Specialist: <strong className="text-slate-200">{formData.verificationSpecialist}</strong>
+                </span>
+                <span className="text-slate-500">•</span>
+                <span className="text-xs text-slate-400 font-mono">Date: {formData.date}</span>
+              </div>
+              <h2 className="text-lg font-bold text-slate-100 mt-1">
+                Live Phone & Underwriting Verification Worksheet
+              </h2>
+              <p className="text-xs text-slate-400">
+                Complete 16-section verification file with "As Applied" vs "Verified" audit synchronization.
+              </p>
+            </div>
+          </div>
+
+          <div className="flex items-center space-x-2.5 shrink-0">
+            <button
+              onClick={handleSave}
+              disabled={isSaving || isCompleting}
+              className="flex items-center space-x-1.5 px-4 py-2.5 bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 rounded-xl text-xs font-bold transition-all disabled:opacity-50"
+            >
+              <Save className="w-4 h-4 text-amber-400" />
+              <span>{isSaving ? 'Saving...' : 'Save Draft'}</span>
+            </button>
+          </div>
+        </div>
+
+        {/* VERIFIED BY SIGN-OFF SECTION */}
+        <div className="mt-4 pt-4 border-t border-blue-900/50 bg-[#070d18] border border-blue-900/60 rounded-xl p-4 flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+          <div className="flex-1 space-y-1.5">
+            <div className="flex items-center gap-2">
+              <ShieldCheck className="w-4 h-4 text-emerald-400" />
+              <span className="text-xs font-bold text-slate-100 uppercase tracking-wider">
+                Underwriting Sign-Off Gatekeeper
+              </span>
+              {hasUnverifiedItems ? (
+                <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-rose-500/20 text-rose-300 border border-rose-500/30 flex items-center gap-1">
+                  <AlertCircle className="w-3 h-3" />
+                  {unverifiedList.length} Unverified Item(s) Remaining
+                </span>
+              ) : (
+                <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 flex items-center gap-1">
+                  <Check className="w-3 h-3" />
+                  All Fields Verified
+                </span>
+              )}
+            </div>
+            <p className="text-[11px] text-slate-400">
+              {formData.status === 'COMPLETE' && formData.verifiedBy ? (
+                <span className="text-emerald-300 font-semibold">
+                  Signed off by <strong className="text-white">{formData.verifiedBy}</strong> on{' '}
+                  {formData.verifiedAt ? new Date(formData.verifiedAt).toLocaleDateString() : 'N/A'}. Client advanced to Underwriting.
+                </span>
+              ) : (
+                'All fields must be confirmed and verified before signing off. Marking complete advances client pipeline to Underwriting.'
+              )}
+            </p>
+          </div>
+
+          <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 shrink-0">
+            <div className="flex items-center gap-2 bg-[#0b1528] border border-blue-900/60 rounded-xl px-3 py-1.5">
+              <label className="text-[10px] font-bold text-slate-400 uppercase whitespace-nowrap">Verified By:</label>
+              <input
+                type="text"
+                value={verifiedByName}
+                onChange={(e) => setVerifiedByName(e.target.value)}
+                placeholder="Underwriter / Staff Name"
+                className="bg-transparent text-xs text-emerald-300 font-semibold focus:outline-none w-36 sm:w-44"
+              />
+            </div>
+
+            <button
+              onClick={handleMarkVerificationComplete}
+              disabled={isCompleting || hasUnverifiedItems}
+              title={
+                hasUnverifiedItems
+                  ? `Cannot mark complete while ${unverifiedList.length} items remain Unverified.`
+                  : 'Sign off verification and advance client to Underwriting'
+              }
+              className={`flex items-center justify-center space-x-2 px-5 py-2.5 rounded-xl text-xs font-bold transition-all shadow-md ${
+                hasUnverifiedItems
+                  ? 'bg-slate-800 text-slate-500 border border-slate-700 cursor-not-allowed'
+                  : 'bg-emerald-600 hover:bg-emerald-500 text-white shadow-emerald-600/30'
+              }`}
+            >
+              <CheckCircle2 className="w-4 h-4 shrink-0" />
+              <span>{isCompleting ? 'Completing...' : 'Mark Verification Complete'}</span>
+            </button>
+          </div>
+        </div>
+      </div>
+
+      {/* Section Navigation Pills */}
+      <div className="flex items-center space-x-2 overflow-x-auto pb-2 border-b border-blue-900/60">
+        {[
+          { id: 'identity', label: '1. Identity & Contact', icon: User },
+          { id: 'business', label: '2. Business Profile', icon: Building2 },
+          { id: 'income', label: '3. Income, Revenue & Employment', icon: DollarSign },
+          { id: 'banking', label: '4. Banking & Accounts', icon: CreditCard },
+          { id: 'debts', label: '5. Existing Debts & Cards', icon: Briefcase },
+          { id: 'housing', label: '6. Housing & Urgency', icon: Home },
+          { id: 'checklist', label: '7. Final 11-Checklist & Summary', icon: ShieldCheck },
+        ].map((sec) => {
+          const Icon = sec.icon;
+          const isActive = activeSection === sec.id;
+          return (
+            <button
+              key={sec.id}
+              onClick={() => setActiveSection(sec.id)}
+              className={`flex items-center space-x-1.5 px-3.5 py-2 rounded-xl text-xs font-bold whitespace-nowrap transition-all ${
+                isActive
+                  ? 'bg-blue-600 text-white shadow-md shadow-blue-600/30'
+                  : 'bg-[#0b1528] text-slate-400 hover:text-slate-200 border border-blue-900/40'
+              }`}
+            >
+              <Icon className="w-3.5 h-3.5" />
+              <span>{sec.label}</span>
+            </button>
+          );
+        })}
+      </div>
+
+      {/* SECTION 1: IDENTITY & CONTACT */}
+      {activeSection === 'identity' && (
+        <div className="bg-[#0b1528] border border-blue-900/60 p-6 rounded-2xl shadow-xl space-y-4">
+          <h3 className="text-sm font-bold text-amber-400 uppercase tracking-wider flex items-center gap-2">
+            <User className="w-4 h-4" />
+            Identity & Contact Information
+          </h3>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {renderFieldRow('identity', 'legalName', 'Client Legal Name', formData.identity.legalName)}
+            {renderFieldRow('identity', 'phone', 'Primary Contact Phone', formData.identity.phone)}
+            {renderFieldRow('identity', 'email', 'Primary Email Address', formData.identity.email)}
+            {renderFieldRow('identity', 'dob', 'Date of Birth', formData.identity.dob)}
+            {renderFieldRow('identity', 'ssnLast4', 'SSN (Last 4 Digits)', formData.identity.ssnLast4)}
+          </div>
+        </div>
+      )}
+
+      {/* SECTION 2: BUSINESS PROFILE */}
+      {activeSection === 'business' && (
+        <div className="bg-[#0b1528] border border-blue-900/60 p-6 rounded-2xl shadow-xl space-y-4">
+          <h3 className="text-sm font-bold text-amber-400 uppercase tracking-wider flex items-center gap-2">
+            <Building2 className="w-4 h-4" />
+            Business Organization & Entity Details
+          </h3>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {renderFieldRow('business', 'businessName', 'Legal Business Name', formData.business.businessName)}
+            {renderFieldRow('business', 'dba', 'DBA (If Applicable)', formData.business.dba)}
+            {renderFieldRow('business', 'businessAddress', 'Physical Business Address', formData.business.businessAddress)}
+            {renderFieldRow('business', 'ein', 'Federal Tax ID (EIN)', formData.business.ein)}
+            {renderFieldRow('business', 'stateOfIncorporation', 'State of Incorporation', formData.business.stateOfIncorporation)}
+            {renderFieldRow('business', 'entityType', 'Entity Structure (LLC, S-Corp, etc.)', formData.business.entityType)}
+            {renderFieldRow('business', 'businessStartDate', 'Business Inception Date', formData.business.businessStartDate)}
+            {renderFieldRow('business', 'ownershipPercentage', 'Ownership Percentage', formData.business.ownershipPercentage)}
+            {renderFieldRow('business', 'industry', 'Industry / NAICS Sector', formData.business.industry)}
+            {renderFieldRow('business', 'businessDescription', 'Business Nature & Description', formData.business.businessDescription)}
+          </div>
+        </div>
+      )}
+
+      {/* SECTION 3: INCOME & REVENUE + EMPLOYMENT, SALARY & PAYROLL */}
+      {activeSection === 'income' && (
+        <div className="space-y-6">
+          {/* Top Card: Verified Monthly Business Revenue, Personal Income, & Credit Score */}
+          <div className="bg-[#0b1528] border border-blue-900/60 p-6 rounded-2xl shadow-xl space-y-5">
+            <h3 className="text-sm font-bold text-amber-400 uppercase tracking-wider flex items-center gap-2">
+              <DollarSign className="w-4 h-4" />
+              Income, Monthly Revenue & Credit Score Verification
+            </h3>
+
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <div className="p-3.5 bg-[#070d18] border border-blue-900/40 rounded-xl">
+                <label className="block text-[10px] text-slate-400 uppercase font-bold mb-1">
+                  Verified Monthly Business Revenue
+                </label>
+                <input
+                  type="number"
+                  value={formData.income.verifiedMonthlyBusinessRevenue}
+                  onChange={(e) =>
+                    setFormData({
+                      ...formData,
+                      income: {
+                        ...formData.income,
+                        verifiedMonthlyBusinessRevenue: parseFloat(e.target.value) || 0,
+                      },
+                    })
+                  }
+                  className="w-full bg-[#0b1528] border border-emerald-500/50 rounded-lg p-2 text-emerald-300 font-bold font-mono text-sm focus:outline-none"
+                />
+              </div>
+
+              <div className="p-3.5 bg-[#070d18] border border-blue-900/40 rounded-xl">
+                <label className="block text-[10px] text-slate-400 uppercase font-bold mb-1">
+                  Verified Personal Annual Income
+                </label>
+                <input
+                  type="number"
+                  value={formData.income.verifiedPersonalAnnualIncome}
+                  onChange={(e) =>
+                    setFormData({
+                      ...formData,
+                      income: {
+                        ...formData.income,
+                        verifiedPersonalAnnualIncome: parseFloat(e.target.value) || 0,
+                      },
+                    })
+                  }
+                  className="w-full bg-[#0b1528] border border-emerald-500/50 rounded-lg p-2 text-emerald-300 font-bold font-mono text-sm focus:outline-none"
+                />
+              </div>
+
+              <div className="p-3.5 bg-[#070d18] border border-blue-900/40 rounded-xl">
+                <label className="block text-[10px] text-slate-400 uppercase font-bold mb-1">
+                  Exact Numeric Credit Score (Bureau Confirmed)
+                </label>
+                <input
+                  type="number"
+                  value={formData.income.exactCreditScore}
+                  onChange={(e) =>
+                    setFormData({
+                      ...formData,
+                      income: {
+                        ...formData.income,
+                        exactCreditScore: parseInt(e.target.value) || 0,
+                      },
+                    })
+                  }
+                  className="w-full bg-[#0b1528] border border-amber-500/50 rounded-lg p-2 text-amber-300 font-bold font-mono text-sm focus:outline-none"
+                />
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <label className="block text-xs font-semibold text-slate-300 mb-1">Revenue Trend</label>
+                <select
+                  value={formData.income.revenueTrend}
+                  onChange={(e) =>
+                    setFormData({
+                      ...formData,
+                      income: {
+                        ...formData.income,
+                        revenueTrend: e.target.value as any,
+                      },
+                    })
+                  }
+                  className="w-full bg-[#070d18] border border-blue-900/70 rounded-xl p-2.5 text-xs text-slate-100 focus:outline-none"
+                >
+                  <option value="Consistent">Consistent Revenue Flow</option>
+                  <option value="Increased">Growing / Increasing Revenue</option>
+                  <option value="Decreased">Declining Revenue</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-300 mb-1">
+                  Revenue Explanation & Consistency Notes
+                </label>
+                <input
+                  type="text"
+                  value={formData.income.revenueTrendExplanation}
+                  onChange={(e) =>
+                    setFormData({
+                      ...formData,
+                      income: {
+                        ...formData.income,
+                        revenueTrendExplanation: e.target.value,
+                      },
+                    })
+                  }
+                  className="w-full bg-[#070d18] border border-blue-900/70 rounded-xl p-2.5 text-xs text-slate-100 focus:outline-none"
+                />
+              </div>
+            </div>
+          </div>
+
+          {/* NEW SECTION: EMPLOYMENT, SALARY & PAYROLL VERIFICATION */}
+          <div className="bg-[#0b1528] border-2 border-amber-500/50 p-6 rounded-2xl shadow-2xl space-y-6">
+            {/* Section Header */}
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-blue-900/60 pb-4">
+              <div className="flex items-center space-x-3">
+                <div className="p-3 rounded-xl bg-amber-500/20 border border-amber-500/40 text-amber-400">
+                  <Briefcase className="w-5 h-5" />
+                </div>
+                <div>
+                  <div className="flex items-center space-x-2">
+                    <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-amber-500/20 text-amber-300 border border-amber-500/40 font-bold uppercase tracking-wider">
+                      Canonical Underwriting Record
+                    </span>
+                    <span className="text-xs text-slate-400">
+                      Syncs to Firebase Verification Database
+                    </span>
+                  </div>
+                  <h2 className="text-base font-bold text-slate-100 mt-1 uppercase tracking-wide">
+                    Employment, Salary & Payroll Verification
+                  </h2>
+                </div>
+              </div>
+
+              {/* Section Status & Save Section Button */}
+              <div className="flex items-center space-x-3">
+                <div className="flex items-center space-x-1.5">
+                  <span className="text-[10px] font-bold uppercase text-slate-400">Section Status:</span>
+                  <select
+                    value={formData.employmentVerification?.sectionStatus || 'Verified'}
+                    onChange={(e) => updateEmploymentProperty('sectionStatus', e.target.value)}
+                    className="bg-[#070d18] border border-blue-900 rounded-lg px-2.5 py-1 text-xs font-bold text-amber-300 focus:outline-none"
+                  >
+                    <option value="Verified">Verified</option>
+                    <option value="In Progress">In Progress</option>
+                    <option value="Pending">Pending</option>
+                    <option value="Needs Correction">Needs Correction</option>
+                    <option value="Unverified">Unverified</option>
+                  </select>
+                </div>
+
+                <button
+                  onClick={handleSave}
+                  disabled={isSaving}
+                  className="flex items-center space-x-1.5 px-3.5 py-1.5 bg-amber-500 hover:bg-amber-400 text-slate-950 rounded-xl text-xs font-bold transition-all shadow-md shadow-amber-500/20 disabled:opacity-50"
+                >
+                  <Save className="w-3.5 h-3.5" />
+                  <span>{isSaving ? 'Saving...' : 'Save Section'}</span>
+                </button>
+              </div>
+            </div>
+
+            {/* Sub-Section 1: Employment Status */}
+            <div className="space-y-4">
+              <div className="flex items-center gap-2 border-b border-blue-900/40 pb-2">
+                <span className="w-2 h-2 rounded-full bg-amber-400" />
+                <h4 className="text-xs font-bold text-amber-300 uppercase tracking-wider">
+                  1. Employment Status
+                </h4>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                {renderEmploymentField(
+                  'currentlyWorking',
+                  'Are you currently working?',
+                  'Are you currently working, either for your own business or for another employer?',
+                  formData.employmentVerification?.currentlyWorking,
+                  'yesno'
+                )}
+
+                {renderEmploymentField(
+                  'selfEmployed',
+                  'Are you self-employed?',
+                  'Are you currently self-employed or do you work for another employer?',
+                  formData.employmentVerification?.selfEmployed,
+                  'yesno'
+                )}
+
+                {renderEmploymentField(
+                  'employedByAnotherCompany',
+                  'Employed by another company?',
+                  'Are you currently employed by another company in addition to owning your business?',
+                  formData.employmentVerification?.employedByAnotherCompany,
+                  'yesno'
+                )}
+              </div>
+            </div>
+
+            {/* Sub-Section 2: Employment & Occupation Details */}
+            <div className="space-y-4 pt-2">
+              <div className="flex items-center gap-2 border-b border-blue-900/40 pb-2">
+                <span className="w-2 h-2 rounded-full bg-blue-400" />
+                <h4 className="text-xs font-bold text-blue-300 uppercase tracking-wider">
+                  2. If Currently Working / Employment & Occupation Details
+                </h4>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {renderEmploymentField(
+                  'employerName',
+                  'Employer Name',
+                  'What is the name of your current employer?',
+                  formData.employmentVerification?.employerName,
+                  'text'
+                )}
+
+                {renderEmploymentField(
+                  'jobTitle',
+                  'Job Title / Position',
+                  'What is your current job title or position?',
+                  formData.employmentVerification?.jobTitle,
+                  'text'
+                )}
+
+                {renderEmploymentField(
+                  'jobOccupation',
+                  'Job / Occupation',
+                  'What do you do in your current job?',
+                  formData.employmentVerification?.jobOccupation,
+                  'text'
+                )}
+
+                {renderEmploymentField(
+                  'employmentTypeStatus',
+                  'Employment Status / Type',
+                  'Would you consider your current employment full-time, part-time, contract, seasonal, or other?',
+                  formData.employmentVerification?.employmentTypeStatus,
+                  'employmentType'
+                )}
+
+                {renderEmploymentField(
+                  'employmentStartDate',
+                  'Employment Start Date',
+                  'When did you start working for your current employer?',
+                  formData.employmentVerification?.employmentStartDate,
+                  'date'
+                )}
+
+                {renderEmploymentField(
+                  'yearsWithEmployer',
+                  'Years With Current Employer',
+                  'How long have you been with your current employer?',
+                  formData.employmentVerification?.yearsWithEmployer,
+                  'text'
+                )}
+              </div>
+
+              {/* Job Description (Full width) */}
+              <div>
+                {renderEmploymentField(
+                  'jobDescription',
+                  'Job Description',
+                  'Can you briefly explain what your responsibilities are in your current job?',
+                  formData.employmentVerification?.jobDescription,
+                  'textarea'
+                )}
+              </div>
+            </div>
+
+            {/* Sub-Section 3: Employment Income */}
+            <div className="space-y-4 pt-2">
+              <div className="flex items-center gap-2 border-b border-blue-900/40 pb-2">
+                <span className="w-2 h-2 rounded-full bg-emerald-400" />
+                <h4 className="text-xs font-bold text-emerald-300 uppercase tracking-wider">
+                  3. Employment Income
+                </h4>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                {renderEmploymentField(
+                  'annualSalary',
+                  'Annual Salary',
+                  'What is your current annual salary?',
+                  formData.employmentVerification?.annualSalary,
+                  'text'
+                )}
+
+                {renderEmploymentField(
+                  'monthlySalary',
+                  'Monthly Salary',
+                  'Approximately how much do you earn from your employment each month?',
+                  formData.employmentVerification?.monthlySalary,
+                  'text'
+                )}
+
+                {renderEmploymentField(
+                  'annualEmploymentIncome',
+                  'Annual Employment Income',
+                  'What is your total annual employment income?',
+                  formData.employmentVerification?.annualEmploymentIncome,
+                  'text'
+                )}
+
+                {renderEmploymentField(
+                  'monthlyEmploymentIncome',
+                  'Monthly Employment Income',
+                  'What is your total monthly employment income?',
+                  formData.employmentVerification?.monthlyEmploymentIncome,
+                  'text'
+                )}
+
+                {renderEmploymentField(
+                  'otherMonthlyIncome',
+                  'Other Monthly Income',
+                  'Do you have any other regular monthly income outside of your business or employment?',
+                  formData.employmentVerification?.otherMonthlyIncome,
+                  'text'
+                )}
+
+                {renderEmploymentField(
+                  'otherIncomeSource',
+                  'Other Income Source',
+                  'What is the source of that additional income?',
+                  formData.employmentVerification?.otherIncomeSource,
+                  'text'
+                )}
+              </div>
+            </div>
+
+            {/* Sub-Section 4: Pay Stub & Payroll Verification */}
+            <div className="space-y-4 pt-2">
+              <div className="flex items-center gap-2 border-b border-blue-900/40 pb-2">
+                <span className="w-2 h-2 rounded-full bg-cyan-400" />
+                <h4 className="text-xs font-bold text-cyan-300 uppercase tracking-wider">
+                  4. Pay Stub & Payroll Verification
+                </h4>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                {renderEmploymentField(
+                  'receivesPayStubs',
+                  'Do you receive pay stubs?',
+                  'Do you receive pay stubs from your employer?',
+                  formData.employmentVerification?.receivesPayStubs,
+                  'yesno'
+                )}
+
+                {renderEmploymentField(
+                  'paidThroughPayroll',
+                  'Paid through payroll?',
+                  'Are you currently paid through a formal payroll system?',
+                  formData.employmentVerification?.paidThroughPayroll,
+                  'yesno'
+                )}
+
+                {renderEmploymentField(
+                  'payFrequency',
+                  'Pay Frequency',
+                  'How often do you receive your paycheck?',
+                  formData.employmentVerification?.payFrequency,
+                  'payFrequency'
+                )}
+
+                {renderEmploymentField(
+                  'mostRecentPayStubDate',
+                  'Most Recent Pay Stub Date',
+                  'What is the date of your most recent pay stub?',
+                  formData.employmentVerification?.mostRecentPayStubDate,
+                  'date'
+                )}
+
+                {renderEmploymentField(
+                  'payStubReceived',
+                  'Pay Stub Received?',
+                  'Has the pay stub document been received?',
+                  formData.employmentVerification?.payStubReceived,
+                  'yesno'
+                )}
+
+                {renderEmploymentField(
+                  'payStubReviewed',
+                  'Pay Stub Reviewed?',
+                  'Has the pay stub been reviewed for accuracy?',
+                  formData.employmentVerification?.payStubReviewed,
+                  'yesno'
+                )}
+              </div>
+            </div>
+
+            {/* Sub-Section 5 & 6: Employment Notes & Red Flags */}
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 pt-2">
+              {/* 5. Employment / Income Notes */}
+              <div className="p-4 bg-[#070d18] border border-blue-900/40 rounded-xl space-y-2">
+                <div className="flex items-center justify-between">
+                  <label className="text-xs font-bold text-slate-100 uppercase tracking-wider flex items-center gap-1.5">
+                    <Edit3 className="w-4 h-4 text-blue-400" />
+                    Employment / Income Notes
+                  </label>
+                  <span className="text-[10px] text-slate-500 font-mono">Verification Call Notes</span>
+                </div>
+                <p className="text-[11px] text-slate-400">
+                  Record nuances, explanations, employer confirmations, or special payroll arrangements discovered during verification:
+                </p>
+                <textarea
+                  rows={4}
+                  value={formData.employmentVerification?.employmentIncomeNotes || ''}
+                  onChange={(e) => updateEmploymentProperty('employmentIncomeNotes', e.target.value)}
+                  placeholder="e.g. Client verified dual income streams: salary from Apex Healthcare plus owner draws from LLC..."
+                  className="w-full bg-[#0b1528] border border-blue-900/60 rounded-xl p-3 text-xs text-slate-200 focus:outline-none focus:border-amber-400 resize-y"
+                />
+              </div>
+
+              {/* 6. Red Flags */}
+              <div className="p-4 bg-rose-950/20 border border-rose-900/50 rounded-xl space-y-2">
+                <div className="flex items-center justify-between">
+                  <label className="text-xs font-bold text-rose-300 uppercase tracking-wider flex items-center gap-1.5">
+                    <AlertTriangle className="w-4 h-4 text-rose-400" />
+                    Red Flags & Underwriting Concerns
+                  </label>
+                  <span className="text-[10px] text-rose-400/80 font-mono">Risk Flagging</span>
+                </div>
+                <p className="text-[11px] text-rose-200/70">
+                  Highlight unverified employment, missing stubs, salary variances, recent job hops, or conflicting employer info:
+                </p>
+                <textarea
+                  rows={4}
+                  value={formData.employmentVerification?.redFlags || ''}
+                  onChange={(e) => updateEmploymentProperty('redFlags', e.target.value)}
+                  placeholder="Record any discrepancies or 'None' if clean..."
+                  className="w-full bg-[#0b1528] border border-rose-900/70 rounded-xl p-3 text-xs text-rose-200 focus:outline-none focus:border-rose-400 resize-y"
+                />
+              </div>
+            </div>
+
+            {/* Bottom Action / Save Bar */}
+            <div className="flex flex-col sm:flex-row items-center justify-between gap-4 pt-4 border-t border-blue-900/60 bg-[#070d18] p-4 rounded-xl">
+              <div className="text-xs text-slate-400">
+                <span>Last updated: </span>
+                <span className="font-mono text-slate-200">
+                  {formData.employmentVerification?.updatedAt
+                    ? new Date(formData.employmentVerification.updatedAt).toLocaleString()
+                    : 'Current session'}
+                </span>
+                <span className="ml-2 text-amber-400 font-semibold">
+                  • Synced with Underwriting & 360 View
+                </span>
+              </div>
+
+              <button
+                onClick={handleSave}
+                disabled={isSaving}
+                className="flex items-center space-x-2 px-6 py-2.5 bg-amber-500 hover:bg-amber-400 text-slate-950 rounded-xl text-xs font-bold transition-all shadow-lg shadow-amber-500/20 disabled:opacity-50"
+              >
+                <Save className="w-4 h-4" />
+                <span>{isSaving ? 'Saving Master Verification...' : 'Save All Verification Changes'}</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* SECTION 4: BANKING */}
+      {activeSection === 'banking' && (
+        <div className="bg-[#0b1528] border border-blue-900/60 p-6 rounded-2xl shadow-xl space-y-4">
+          <h3 className="text-sm font-bold text-amber-400 uppercase tracking-wider flex items-center gap-2">
+            <CreditCard className="w-4 h-4" />
+            Banking & Cashflow Accounts
+          </h3>
+
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div>
+              <label className="block text-xs font-semibold text-slate-300 mb-1">Primary Banking Institution</label>
+              <input
+                type="text"
+                value={formData.banking.primaryBank}
+                onChange={(e) =>
+                  setFormData({
+                    ...formData,
+                    banking: { ...formData.banking, primaryBank: e.target.value },
+                  })
+                }
+                className="w-full bg-[#070d18] border border-blue-900/70 rounded-xl p-2.5 text-xs text-slate-100 focus:outline-none"
+              />
+            </div>
+
+            <div>
+              <label className="block text-xs font-semibold text-slate-300 mb-1">Business Account Title / Number</label>
+              <input
+                type="text"
+                value={formData.banking.businessAccount}
+                onChange={(e) =>
+                  setFormData({
+                    ...formData,
+                    banking: { ...formData.banking, businessAccount: e.target.value },
+                  })
+                }
+                className="w-full bg-[#070d18] border border-blue-900/70 rounded-xl p-2.5 text-xs text-slate-100 focus:outline-none"
+              />
+            </div>
+
+            <div>
+              <label className="block text-xs font-semibold text-slate-300 mb-1">Approximate Monthly Transfer Amount</label>
+              <input
+                type="number"
+                value={formData.banking.approximateTransferAmount}
+                onChange={(e) =>
+                  setFormData({
+                    ...formData,
+                    banking: {
+                      ...formData.banking,
+                      approximateTransferAmount: parseFloat(e.target.value) || 0,
+                    },
+                  })
+                }
+                className="w-full bg-[#070d18] border border-blue-900/70 rounded-xl p-2.5 text-xs text-emerald-300 font-mono focus:outline-none"
+              />
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-2 border-t border-blue-900/40">
+            <label className="flex items-center space-x-2 text-xs text-slate-200 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={formData.banking.dedicatedBusinessChecking}
+                onChange={(e) =>
+                  setFormData({
+                    ...formData,
+                    banking: { ...formData.banking, dedicatedBusinessChecking: e.target.checked },
+                  })
+                }
+                className="rounded border-blue-800 text-amber-500 focus:ring-0"
+              />
+              <span>Dedicated Business Checking Account Used Exclusively</span>
+            </label>
+
+            <label className="flex items-center space-x-2 text-xs text-slate-200 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={formData.banking.regularBusinessToPersonalTransfers}
+                onChange={(e) =>
+                  setFormData({
+                    ...formData,
+                    banking: {
+                      ...formData.banking,
+                      regularBusinessToPersonalTransfers: e.target.checked,
+                    },
+                  })
+                }
+                className="rounded border-blue-800 text-amber-500 focus:ring-0"
+              />
+              <span>Regular Owner Draw / Business-to-Personal Transfers</span>
+            </label>
+          </div>
+        </div>
+      )}
+
+      {/* SECTION 5: DEBTS & CREDIT CARDS */}
+      {activeSection === 'debts' && (
+        <div className="bg-[#0b1528] border border-blue-900/60 p-6 rounded-2xl shadow-xl space-y-6">
+          <div>
+            <div className="flex items-center justify-between">
+              <h3 className="text-sm font-bold text-amber-400 uppercase tracking-wider flex items-center gap-2">
+                <Briefcase className="w-4 h-4" />
+                Existing Loans, Lines of Credit & MCAs ({(formData.existingDebts || []).length} Records)
+              </h3>
+              <button
+                onClick={() => setShowAddDebtModal(true)}
+                className="px-3 py-1.5 bg-amber-500 hover:bg-amber-400 text-slate-950 rounded-xl text-xs font-bold transition-all flex items-center gap-1 shadow-xs"
+              >
+                <Plus className="w-3.5 h-3.5" />
+                <span>Add Existing Debt</span>
+              </button>
+            </div>
+
+            <div className="space-y-3 mt-3">
+              {(formData.existingDebts || []).map((debt, idx) => (
+                <div
+                  key={debt.id || idx}
+                  className="p-3.5 rounded-xl bg-[#070d18] border border-blue-900/40 grid grid-cols-1 md:grid-cols-6 gap-3 text-xs items-center"
+                >
+                  <div>
+                    <span className="text-[10px] text-slate-400 uppercase">Lender</span>
+                    <div className="font-bold text-slate-100">{debt.lender}</div>
+                  </div>
+                  <div>
+                    <span className="text-[10px] text-slate-400 uppercase">Loan Type</span>
+                    <div className="text-amber-300">{debt.loanType}</div>
+                  </div>
+                  <div>
+                    <span className="text-[10px] text-slate-400 uppercase">Monthly Payment</span>
+                    <div className="font-mono font-bold text-slate-200">
+                      ${debt.monthlyPayment?.toLocaleString()}
+                    </div>
+                  </div>
+                  <div>
+                    <span className="text-[10px] text-slate-400 uppercase">Current Balance</span>
+                    <div className="font-mono font-bold text-red-300">
+                      ${debt.currentBalance?.toLocaleString()}
+                    </div>
+                  </div>
+                  <div>
+                    <span className="text-[10px] text-slate-400 uppercase">Status</span>
+                    <div className="text-emerald-400 font-semibold">{debt.status}</div>
+                  </div>
+                  <div className="flex justify-end">
+                    <button
+                      onClick={() => handleDeleteDebt(debt.id)}
+                      className="p-1.5 text-slate-500 hover:text-rose-400 transition-colors"
+                      title="Remove debt record"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                  </div>
+                </div>
+              ))}
+              {(formData.existingDebts || []).length === 0 && (
+                <div className="p-4 text-center text-xs text-slate-500 border border-dashed border-blue-900/40 rounded-xl">
+                  No existing loans or credit lines logged. Click &quot;Add Existing Debt&quot; above.
+                </div>
+              )}
+            </div>
+          </div>
+
+          <div>
+            <div className="flex items-center justify-between">
+              <h3 className="text-sm font-bold text-blue-400 uppercase tracking-wider flex items-center gap-2">
+                <CreditCard className="w-4 h-4" />
+                Business & Personal Credit Cards ({(formData.creditCards || []).length} Records)
+              </h3>
+              <button
+                onClick={() => setShowAddCardModal(true)}
+                className="px-3 py-1.5 bg-blue-600 hover:bg-blue-500 text-white rounded-xl text-xs font-bold transition-all flex items-center gap-1 shadow-xs"
+              >
+                <Plus className="w-3.5 h-3.5" />
+                <span>Add Credit Card</span>
+              </button>
+            </div>
+
+            <div className="space-y-3 mt-3">
+              {(formData.creditCards || []).map((card, idx) => (
+                <div
+                  key={card.id || idx}
+                  className="p-3.5 rounded-xl bg-[#070d18] border border-blue-900/40 grid grid-cols-1 md:grid-cols-6 gap-3 text-xs items-center"
+                >
+                  <div>
+                    <span className="text-[10px] text-slate-400 uppercase">Card & Issuer</span>
+                    <div className="font-bold text-slate-100">{card.issuer} - {card.cardName}</div>
+                  </div>
+                  <div>
+                    <span className="text-[10px] text-slate-400 uppercase">Category</span>
+                    <div className="text-blue-300">{card.cardCategory}</div>
+                  </div>
+                  <div>
+                    <span className="text-[10px] text-slate-400 uppercase">Credit Limit</span>
+                    <div className="font-mono font-bold text-slate-200">
+                      ${card.creditLimit?.toLocaleString()}
+                    </div>
+                  </div>
+                  <div>
+                    <span className="text-[10px] text-slate-400 uppercase">Balance / Utilization</span>
+                    <div className="font-mono font-bold text-amber-300">
+                      ${card.currentBalance?.toLocaleString()} ({card.utilization}%)
+                    </div>
+                  </div>
+                  <div>
+                    <span className="text-[10px] text-slate-400 uppercase">Available</span>
+                    <div className="text-emerald-400 font-mono font-bold">
+                      ${card.availableCredit?.toLocaleString()}
+                    </div>
+                  </div>
+                  <div className="flex justify-end">
+                    <button
+                      onClick={() => handleDeleteCard(card.id)}
+                      className="p-1.5 text-slate-500 hover:text-rose-400 transition-colors"
+                      title="Remove card record"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                  </div>
+                </div>
+              ))}
+              {(formData.creditCards || []).length === 0 && (
+                <div className="p-4 text-center text-xs text-slate-500 border border-dashed border-blue-900/40 rounded-xl">
+                  No credit cards logged. Click &quot;Add Credit Card&quot; above.
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* SECTION 6: HOUSING & FUNDING REQUEST */}
+      {activeSection === 'housing' && (
+        <div className="bg-[#0b1528] border border-blue-900/60 p-6 rounded-2xl shadow-xl space-y-4">
+          <h3 className="text-sm font-bold text-amber-400 uppercase tracking-wider flex items-center gap-2">
+            <Home className="w-4 h-4" />
+            Housing & Funding Request Verification
+          </h3>
+
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div>
+              <label className="block text-xs font-semibold text-slate-300 mb-1">Housing Type</label>
+              <select
+                value={formData.housing.housingType}
+                onChange={(e) =>
+                  setFormData({
+                    ...formData,
+                    housing: { ...formData.housing, housingType: e.target.value as any },
+                  })
+                }
+                className="w-full bg-[#070d18] border border-blue-900/70 rounded-xl p-2.5 text-xs text-slate-100 focus:outline-none"
+              >
+                <option value="Homeowner">Homeowner</option>
+                <option value="Renter">Renter</option>
+                <option value="Other">Other</option>
+              </select>
+            </div>
+
+            <div>
+              <label className="block text-xs font-semibold text-slate-300 mb-1">Monthly Mortgage / Rent</label>
+              <input
+                type="number"
+                value={formData.housing.monthlyMortgageOrRent}
+                onChange={(e) =>
+                  setFormData({
+                    ...formData,
+                    housing: {
+                      ...formData.housing,
+                      monthlyMortgageOrRent: parseFloat(e.target.value) || 0,
+                    },
+                  })
+                }
+                className="w-full bg-[#070d18] border border-blue-900/70 rounded-xl p-2.5 text-xs text-slate-100 focus:outline-none font-mono"
+              />
+            </div>
+
+            <div>
+              <label className="block text-xs font-semibold text-slate-300 mb-1">Funding Urgency</label>
+              <select
+                value={formData.fundingRequest.fundingUrgency}
+                onChange={(e) =>
+                  setFormData({
+                    ...formData,
+                    fundingRequest: {
+                      ...formData.fundingRequest,
+                      fundingUrgency: e.target.value as any,
+                    },
+                  })
+                }
+                className="w-full bg-[#070d18] border border-blue-900/70 rounded-xl p-2.5 text-xs text-amber-300 font-bold focus:outline-none"
+              >
+                <option value="Immediately">Immediately (Within 48 Hours)</option>
+                <option value="This Week">This Week</option>
+                <option value="This Month">This Month</option>
+              </select>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* SECTION 7: FINAL 11-CHECKLIST & SUMMARY */}
+      {activeSection === 'checklist' && (
+        <div className="bg-[#0b1528] border border-blue-900/60 p-6 rounded-2xl shadow-xl space-y-6">
+          <div>
+            <h3 className="text-sm font-bold text-emerald-400 uppercase tracking-wider flex items-center gap-2">
+              <ShieldCheck className="w-4 h-4" />
+              Final 11-Point Verification Audit Checklist
+            </h3>
+            <p className="text-xs text-slate-400 mt-1">
+              All 11 verification milestones must be confirmed prior to submitting the deal file to institutional lenders.
+            </p>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mt-4">
+              {Object.entries(formData.finalChecklist).map(([key, val]) => (
+                <label
+                  key={key}
+                  className={`p-3 rounded-xl border flex items-center justify-between cursor-pointer transition-all ${
+                    val
+                      ? 'bg-emerald-950/20 border-emerald-800/40 text-emerald-200'
+                      : 'bg-[#070d18] border-blue-900/40 text-slate-400'
+                  }`}
+                >
+                  <span className="text-xs font-semibold capitalize">
+                    {key.replace(/([A-Z])/g, ' $1').trim()}
+                  </span>
+                  <input
+                    type="checkbox"
+                    checked={Boolean(val)}
+                    onChange={(e) =>
+                      setFormData({
+                        ...formData,
+                        finalChecklist: {
+                          ...formData.finalChecklist,
+                          [key]: e.target.checked,
+                        },
+                      })
+                    }
+                    className="rounded border-blue-800 text-emerald-500 focus:ring-0"
+                  />
+                </label>
+              ))}
+            </div>
+          </div>
+
+          <div className="pt-4 border-t border-blue-900/60 space-y-4">
+            <h3 className="text-sm font-bold text-slate-200 uppercase tracking-wider">
+              Underwriter Impression & Readiness Decision
+            </h3>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <label className="block text-xs font-semibold text-slate-300 mb-1">Overall Impression</label>
+                <select
+                  value={formData.underwriterSummary.overallImpression}
+                  onChange={(e) =>
+                    setFormData({
+                      ...formData,
+                      underwriterSummary: {
+                        ...formData.underwriterSummary,
+                        overallImpression: e.target.value as any,
+                      },
+                    })
+                  }
+                  className="w-full bg-[#070d18] border border-blue-900/70 rounded-xl p-2.5 text-xs font-bold text-emerald-300 focus:outline-none"
+                >
+                  <option value="Excellent">Excellent Tier-1 Profile</option>
+                  <option value="Good">Good Standard Profile</option>
+                  <option value="Fair">Fair Profile (Requires Mitigating Factors)</option>
+                  <option value="Needs More Info">Needs More Information</option>
+                  <option value="High Risk">High Risk</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-300 mb-1">
+                  Ready for Institutional Submission
+                </label>
+                <select
+                  value={formData.underwriterSummary.readyForSubmission ? 'YES' : 'NO'}
+                  onChange={(e) =>
+                    setFormData({
+                      ...formData,
+                      underwriterSummary: {
+                        ...formData.underwriterSummary,
+                        readyForSubmission: e.target.value === 'YES',
+                      },
+                    })
+                  }
+                  className="w-full bg-[#070d18] border border-blue-900/70 rounded-xl p-2.5 text-xs font-bold text-slate-100 focus:outline-none"
+                >
+                  <option value="YES">YES - Ready for Submission</option>
+                  <option value="NO">NO - Hold for Stips / Corrections</option>
+                </select>
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-xs font-semibold text-slate-300 mb-1">Biggest Core Strength</label>
+              <input
+                type="text"
+                value={formData.underwriterSummary.biggestStrength}
+                onChange={(e) =>
+                  setFormData({
+                    ...formData,
+                    underwriterSummary: {
+                      ...formData.underwriterSummary,
+                      biggestStrength: e.target.value,
+                    },
+                  })
+                }
+                className="w-full bg-[#070d18] border border-blue-900/70 rounded-xl p-2.5 text-xs text-slate-100 focus:outline-none"
+              />
+            </div>
+          </div>
+
+          {/* Section 7 Sign-off Box */}
+          <div className="pt-4 border-t border-blue-900/60 flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-[#070d18] p-4 rounded-xl border border-blue-900/40">
+            <div>
+              <h4 className="text-xs font-bold text-slate-200 uppercase tracking-wide flex items-center gap-1.5">
+                <ShieldCheck className="w-4 h-4 text-emerald-400" />
+                Final Verification Sign-Off & Status Advance
+              </h4>
+              <p className="text-[11px] text-slate-400 mt-0.5">
+                {hasUnverifiedItems ? (
+                  <span className="text-rose-300 font-semibold">
+                    {unverifiedList.length} items remain marked &quot;Unverified&quot;. Resolve them to enable sign-off.
+                  </span>
+                ) : (
+                  'All fields verified. Enter your name and mark complete to move client to UNDERWRITING.'
+                )}
+              </p>
+            </div>
+
+            <div className="flex items-center gap-3 shrink-0">
+              <input
+                type="text"
+                value={verifiedByName}
+                onChange={(e) => setVerifiedByName(e.target.value)}
+                placeholder="Verified By (Your Name)"
+                className="bg-[#0b1528] border border-blue-900/60 rounded-xl px-3 py-2 text-xs text-emerald-300 font-semibold focus:outline-none w-44"
+              />
+              <button
+                type="button"
+                onClick={handleMarkVerificationComplete}
+                disabled={isCompleting || hasUnverifiedItems}
+                className={`px-4 py-2 rounded-xl text-xs font-bold transition-all shadow-md ${
+                  hasUnverifiedItems
+                    ? 'bg-slate-800 text-slate-500 border border-slate-700 cursor-not-allowed'
+                    : 'bg-emerald-600 hover:bg-emerald-500 text-white shadow-emerald-600/30'
+                }`}
+              >
+                {isCompleting ? 'Completing...' : 'Mark Verification Complete'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+      {/* ADD DEBT MODAL */}
+      {showAddDebtModal && (
+        <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-xs flex items-center justify-center p-4 z-50">
+          <div className="bg-[#0b1528] border border-blue-900/80 rounded-2xl max-w-md w-full p-6 space-y-4 shadow-2xl">
+            <h3 className="text-base font-bold text-slate-100 flex items-center gap-2">
+              <Briefcase className="w-5 h-5 text-amber-400" />
+              Add Existing Debt / Loan Record
+            </h3>
+
+            <div className="space-y-3 text-xs">
+              <div>
+                <label className="block text-slate-300 font-semibold mb-1">Lender Name *</label>
+                <input
+                  type="text"
+                  value={newDebtForm.lender}
+                  onChange={(e) => setNewDebtForm({ ...newDebtForm, lender: e.target.value })}
+                  placeholder="e.g. OnDeck / Kabbage / Chase"
+                  className="w-full bg-[#070d18] border border-blue-900/70 rounded-xl p-2.5 text-slate-100 focus:outline-none"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-slate-300 font-semibold mb-1">Loan Type</label>
+                  <select
+                    value={newDebtForm.loanType}
+                    onChange={(e) => setNewDebtForm({ ...newDebtForm, loanType: e.target.value as any })}
+                    className="w-full bg-[#070d18] border border-blue-900/70 rounded-xl p-2.5 text-slate-100 focus:outline-none"
+                  >
+                    <option value="Term Loan">Term Loan</option>
+                    <option value="MCA">MCA</option>
+                    <option value="Business Line of Credit">Business Line of Credit</option>
+                    <option value="Equipment Financing">Equipment Financing</option>
+                    <option value="SBA Loan">SBA Loan</option>
+                    <option value="Other">Other</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-slate-300 font-semibold mb-1">Status</label>
+                  <select
+                    value={newDebtForm.status}
+                    onChange={(e) => setNewDebtForm({ ...newDebtForm, status: e.target.value as any })}
+                    className="w-full bg-[#070d18] border border-blue-900/70 rounded-xl p-2.5 text-slate-100 focus:outline-none"
+                  >
+                    <option value="Current">Current</option>
+                    <option value="Paid in Full">Paid in Full</option>
+                    <option value="Defaulted">Defaulted</option>
+                  </select>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-3 gap-2">
+                <div>
+                  <label className="block text-slate-300 font-semibold mb-1">Original ($)</label>
+                  <input
+                    type="number"
+                    value={newDebtForm.originalLoanAmount}
+                    onChange={(e) => setNewDebtForm({ ...newDebtForm, originalLoanAmount: Number(e.target.value) })}
+                    className="w-full bg-[#070d18] border border-blue-900/70 rounded-xl p-2 text-slate-100 font-mono focus:outline-none"
+                  />
+                </div>
+                <div>
+                  <label className="block text-slate-300 font-semibold mb-1">Current ($)</label>
+                  <input
+                    type="number"
+                    value={newDebtForm.currentBalance}
+                    onChange={(e) => setNewDebtForm({ ...newDebtForm, currentBalance: Number(e.target.value) })}
+                    className="w-full bg-[#070d18] border border-blue-900/70 rounded-xl p-2 text-red-300 font-mono focus:outline-none"
+                  />
+                </div>
+                <div>
+                  <label className="block text-slate-300 font-semibold mb-1">Monthly ($)</label>
+                  <input
+                    type="number"
+                    value={newDebtForm.monthlyPayment}
+                    onChange={(e) => setNewDebtForm({ ...newDebtForm, monthlyPayment: Number(e.target.value) })}
+                    className="w-full bg-[#070d18] border border-blue-900/70 rounded-xl p-2 text-slate-100 font-mono focus:outline-none"
+                  />
+                </div>
+              </div>
+            </div>
+
+            <div className="pt-2 flex items-center justify-end space-x-2">
+              <button
+                type="button"
+                onClick={() => setShowAddDebtModal(false)}
+                className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl text-xs font-semibold"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleAddDebt}
+                className="px-4 py-2 bg-amber-500 hover:bg-amber-400 text-slate-950 rounded-xl text-xs font-bold shadow-md shadow-amber-500/20"
+              >
+                Add Debt Record
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ADD CREDIT CARD MODAL */}
+      {showAddCardModal && (
+        <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-xs flex items-center justify-center p-4 z-50">
+          <div className="bg-[#0b1528] border border-blue-900/80 rounded-2xl max-w-md w-full p-6 space-y-4 shadow-2xl">
+            <h3 className="text-base font-bold text-slate-100 flex items-center gap-2">
+              <CreditCard className="w-5 h-5 text-blue-400" />
+              Add Credit Card Record
+            </h3>
+
+            <div className="space-y-3 text-xs">
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-slate-300 font-semibold mb-1">Issuer / Bank *</label>
+                  <input
+                    type="text"
+                    value={newCardForm.issuer}
+                    onChange={(e) => setNewCardForm({ ...newCardForm, issuer: e.target.value })}
+                    placeholder="e.g. Chase / Amex"
+                    className="w-full bg-[#070d18] border border-blue-900/70 rounded-xl p-2.5 text-slate-100 focus:outline-none"
+                  />
+                </div>
+                <div>
+                  <label className="block text-slate-300 font-semibold mb-1">Card Product</label>
+                  <input
+                    type="text"
+                    value={newCardForm.cardName}
+                    onChange={(e) => setNewCardForm({ ...newCardForm, cardName: e.target.value })}
+                    placeholder="Ink Business / Platinum"
+                    className="w-full bg-[#070d18] border border-blue-900/70 rounded-xl p-2.5 text-slate-100 focus:outline-none"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-slate-300 font-semibold mb-1">Category</label>
+                  <select
+                    value={newCardForm.cardCategory}
+                    onChange={(e) => setNewCardForm({ ...newCardForm, cardCategory: e.target.value as any })}
+                    className="w-full bg-[#070d18] border border-blue-900/70 rounded-xl p-2.5 text-slate-100 focus:outline-none"
+                  >
+                    <option value="BUSINESS">Business Card</option>
+                    <option value="PERSONAL">Personal Card</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-slate-300 font-semibold mb-1">Last 4 Digits</label>
+                  <input
+                    type="text"
+                    maxLength={4}
+                    value={newCardForm.lastFourDigits}
+                    onChange={(e) => setNewCardForm({ ...newCardForm, lastFourDigits: e.target.value })}
+                    placeholder="4412"
+                    className="w-full bg-[#070d18] border border-blue-900/70 rounded-xl p-2.5 text-slate-100 font-mono focus:outline-none"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-3 gap-2">
+                <div>
+                  <label className="block text-slate-300 font-semibold mb-1">Credit Limit ($)</label>
+                  <input
+                    type="number"
+                    value={newCardForm.creditLimit}
+                    onChange={(e) => setNewCardForm({ ...newCardForm, creditLimit: Number(e.target.value) })}
+                    className="w-full bg-[#070d18] border border-blue-900/70 rounded-xl p-2 text-slate-100 font-mono focus:outline-none"
+                  />
+                </div>
+                <div>
+                  <label className="block text-slate-300 font-semibold mb-1">Balance ($)</label>
+                  <input
+                    type="number"
+                    value={newCardForm.currentBalance}
+                    onChange={(e) => setNewCardForm({ ...newCardForm, currentBalance: Number(e.target.value) })}
+                    className="w-full bg-[#070d18] border border-blue-900/70 rounded-xl p-2 text-amber-300 font-mono focus:outline-none"
+                  />
+                </div>
+                <div>
+                  <label className="block text-slate-300 font-semibold mb-1">Min Pay ($)</label>
+                  <input
+                    type="number"
+                    value={newCardForm.monthlyPayment}
+                    onChange={(e) => setNewCardForm({ ...newCardForm, monthlyPayment: Number(e.target.value) })}
+                    className="w-full bg-[#070d18] border border-blue-900/70 rounded-xl p-2 text-slate-100 font-mono focus:outline-none"
+                  />
+                </div>
+              </div>
+            </div>
+
+            <div className="pt-2 flex items-center justify-end space-x-2">
+              <button
+                type="button"
+                onClick={() => setShowAddCardModal(false)}
+                className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl text-xs font-semibold"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleAddCard}
+                className="px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-xl text-xs font-bold shadow-md shadow-blue-600/20"
+              >
+                Add Credit Card
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};

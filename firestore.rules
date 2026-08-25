@@ -1,0 +1,176 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function getUserData() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
+    }
+
+    function isStaffOrAdmin() {
+      return isAuthenticated() && (
+        (exists(/databases/$(database)/documents/users/$(request.auth.uid)) && (
+          getUserData().role == 'admin' ||
+          getUserData().role == 'staff' ||
+          getUserData().role == 'INTERNAL_STAFF_ADMIN' ||
+          getUserData().role == 'Senior Underwriter' ||
+          getUserData().role == 'Operations Specialist'
+        )) ||
+        request.auth.token.email.matches('.*@maplexfinancial[.]com$') ||
+        request.auth.token.email == 'rtnmbennett007@gmail.com' ||
+        request.auth.token.email == 'elev8deals@gmail.com'
+      );
+    }
+
+    function isAdmin() {
+      return isAuthenticated() && (
+        (exists(/databases/$(database)/documents/users/$(request.auth.uid)) && (
+          getUserData().role == 'admin' ||
+          getUserData().role == 'INTERNAL_STAFF_ADMIN'
+        )) ||
+        request.auth.token.email == 'robert@maplexfinancial.com' ||
+        request.auth.token.email == 'dana.javier@maplexfinancial.com' ||
+        request.auth.token.email == 'luke.cowan@maplexfinancial.com' ||
+        request.auth.token.email == 'steve@maplexfinancial.com' ||
+        request.auth.token.email == 'rtnmbennett007@gmail.com' ||
+        request.auth.token.email == 'elev8deals@gmail.com'
+      );
+    }
+
+    function isClientOwner(clientId) {
+      return isAuthenticated() && (
+        (exists(/databases/$(database)/documents/users/$(request.auth.uid)) && getUserData().clientId == clientId) ||
+        request.auth.uid == clientId
+      );
+    }
+
+    // Users Collection
+    match /users/{userId} {
+      allow read: if isAuthenticated() && (request.auth.uid == userId || isStaffOrAdmin());
+      allow create: if isAuthenticated() && (request.auth.uid == userId || isStaffOrAdmin());
+      allow update: if isAuthenticated() && (request.auth.uid == userId || isStaffOrAdmin());
+      allow delete: if isStaffOrAdmin();
+    }
+
+    // Clients Collection
+    match /clients/{clientId} {
+      allow read: if isStaffOrAdmin() || isClientOwner(clientId);
+      allow create: if isStaffOrAdmin();
+      allow update: if isStaffOrAdmin() || isClientOwner(clientId);
+      allow delete: if isStaffOrAdmin();
+    }
+
+    // Deals Collection (Funding Stacking: Multiple deals per client)
+    match /deals/{dealId} {
+      allow read: if isStaffOrAdmin() || (isAuthenticated() && isClientOwner(resource.data.clientId));
+      allow write: if isStaffOrAdmin();
+    }
+
+    // Tasks Collection
+    match /tasks/{taskId} {
+      allow read: if isStaffOrAdmin() || (isAuthenticated() && resource.data.clientId != null && isClientOwner(resource.data.clientId));
+      allow write: if isStaffOrAdmin();
+    }
+
+    // Leads Collection
+    match /leads/{leadId} {
+      allow read, write: if isStaffOrAdmin();
+    }
+
+    // Commissions Collection
+    match /commissions/{commissionId} {
+      allow read: if isStaffOrAdmin();
+      allow write: if isStaffOrAdmin();
+    }
+
+    // Commission Rules Collection (by loan/funding type)
+    match /commissionRules/{ruleId} {
+      allow read: if isStaffOrAdmin();
+      allow write: if isStaffOrAdmin();
+    }
+
+    // Commission Directory
+    match /commissionDirectory/{dirId} {
+      allow read: if isStaffOrAdmin();
+      allow write: if isStaffOrAdmin();
+    }
+
+    // Documents metadata collection (Files in Firebase Storage)
+    match /documents/{docId} {
+      allow read: if isStaffOrAdmin() || (isAuthenticated() && isClientOwner(resource.data.clientId));
+      allow create: if isStaffOrAdmin() || (isAuthenticated() && isClientOwner(request.resource.data.clientId));
+      allow update: if isStaffOrAdmin() || (isAuthenticated() && isClientOwner(resource.data.clientId));
+      allow delete: if isStaffOrAdmin();
+    }
+
+    // Timeline Events & Activity
+    match /timelineEvents/{eventId} {
+      allow read: if isStaffOrAdmin() || (isAuthenticated() && resource.data.clientId != null && isClientOwner(resource.data.clientId));
+      allow write: if isStaffOrAdmin();
+    }
+
+    // Notifications
+    match /notifications/{notifId} {
+      allow read: if isAuthenticated();
+      allow write: if isAuthenticated();
+    }
+
+    // Funding Strategies
+    match /fundingStrategies/{stratId} {
+      allow read, write: if isStaffOrAdmin();
+    }
+
+    // Master Verifications (Worksheet)
+    match /masterVerifications/{clientId} {
+      allow read, write: if isStaffOrAdmin();
+    }
+
+    // Internal Notes
+    match /internalNotes/{noteId} {
+      allow read, write: if isStaffOrAdmin();
+    }
+
+    // Credit Cards
+    match /creditCards/{cardId} {
+      allow read, write: if isStaffOrAdmin();
+    }
+
+    // Lender History
+    match /lenderHistory/{historyId} {
+      allow read, write: if isStaffOrAdmin();
+    }
+
+    // Roles & Staff Directories
+    match /roles/{roleId} {
+      allow read: if isStaffOrAdmin();
+      allow write: if isAdmin();
+    }
+    match /staff/{staffId} {
+      allow read: if isStaffOrAdmin();
+      allow write: if isAdmin();
+    }
+
+    // Settings (Lead Sources, Referral Partners, Integrations)
+    match /settings/{settingId} {
+      allow read, write: if isStaffOrAdmin();
+    }
+
+    // Lead Sources (dropdown options for lead intake)
+    match /leadSources/{sourceId} {
+      allow read, write: if isStaffOrAdmin();
+    }
+
+    // Referral Partners (dropdown options for lead intake)
+    match /referralPartners/{partnerId} {
+      allow read, write: if isStaffOrAdmin();
+    }
+
+    // System connectivity validation
+    match /system/{docId} {
+      allow read, write: if true;
+    }
+  }
+}

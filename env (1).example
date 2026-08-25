@@ -1,0 +1,12 @@
+# Gemini API
+GEMINI_API_KEY=
+
+# Discord Webhook
+DISCORD_WEBHOOK_URL=
+
+# GoHighLevel CRM Integration
+GHL_API_KEY=
+GHL_LOCATION_ID=
+
+# Firebase Client Configuration (Optional overrides)
+FIREBASE_API_KEY=

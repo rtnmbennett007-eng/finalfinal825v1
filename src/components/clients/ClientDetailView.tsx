@@ -70,6 +70,7 @@ import { ClientInfoTab } from './tabs/ClientInfoTab';
 import { BusinessInfoTab } from './tabs/BusinessInfoTab';
 import { ApplicationTab } from './tabs/ApplicationTab';
 import { InternalNotesTab } from './tabs/InternalNotesTab';
+import { FundingDealsTab } from './tabs/FundingDealsTab';
 import { MasterFileEditor } from './MasterFileEditor';
 import { ClientDownloadModal } from './ClientDownloadModal';
 
@@ -1139,76 +1140,13 @@ export const ClientDetailView: React.FC<ClientDetailViewProps> = ({
 
       {/* TAB 5: DEALS & STACKING */}
       {activeTab === 'funding' && (
-        <div className="space-y-6">
-          <div className="bg-[#0b1528] border border-blue-900/60 p-6 rounded-2xl shadow-xl flex flex-col md:flex-row md:items-center justify-between gap-4">
-            <div>
-              <h2 className="text-lg font-bold text-slate-100">Deal Stacking & Tranche Management</h2>
-              <p className="text-xs text-slate-400">
-                Manage multiple stacked tranches for this client. Each deal independently tracks fees,
-                lenders, and commission payouts.
-              </p>
-            </div>
-
-            <button
-              onClick={() => setShowAddDealModal(true)}
-              className="flex items-center space-x-1.5 px-4 py-2.5 bg-amber-500 hover:bg-amber-400 text-slate-950 rounded-xl text-xs font-bold transition-all shadow-md shadow-amber-500/20 shrink-0"
-            >
-              <Plus className="w-4 h-4" />
-              <span>+ Add Stacked Deal</span>
-            </button>
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {safeDeals.map((deal: FundingDeal, idx: number) => (
-              <div
-                key={deal.id}
-                className="bg-[#0b1528] border border-blue-900/60 p-5 rounded-2xl shadow-xl space-y-4 hover:border-blue-700/60 transition-all"
-              >
-                <div className="flex items-center justify-between border-b border-blue-900/60 pb-3">
-                  <div className="flex items-center space-x-2">
-                    <span className="text-xs font-bold text-slate-100">
-                      Tranche #{idx + 1}: {deal.product}
-                    </span>
-                    <StatusBadge status={deal.status} />
-                  </div>
-                  <span className="text-xs font-mono text-slate-400">
-                    Deal #{deal.id.slice(-6)}
-                  </span>
-                </div>
-
-                <div className="grid grid-cols-2 gap-3 text-xs">
-                  <div className="p-2.5 bg-[#070d18] rounded-xl border border-blue-900/40">
-                    <div className="text-[10px] text-slate-400 uppercase">Amount</div>
-                    <div className="font-bold text-slate-100 font-mono text-sm mt-0.5">
-                      ${Number(deal.fundingAmount || 0).toLocaleString()}
-                    </div>
-                  </div>
-
-                  <div className="p-2.5 bg-[#070d18] rounded-xl border border-blue-900/40">
-                    <div className="text-[10px] text-slate-400 uppercase">Fee Rate</div>
-                    <div className="font-bold text-amber-400 font-mono text-sm mt-0.5">
-                      {deal.percentage}% (${((Number(deal.fundingAmount || 0) * Number(deal.percentage || 0)) / 100).toLocaleString()})
-                    </div>
-                  </div>
-
-                  <div className="p-2.5 bg-[#070d18] rounded-xl border border-blue-900/40">
-                    <div className="text-[10px] text-slate-400 uppercase">Lender</div>
-                    <div className="font-semibold text-slate-200 mt-0.5 truncate">
-                      {deal.lenderName || 'Direct'}
-                    </div>
-                  </div>
-
-                  <div className="p-2.5 bg-[#070d18] rounded-xl border border-blue-900/40">
-                    <div className="text-[10px] text-slate-400 uppercase">Commission</div>
-                    <div className="font-semibold text-emerald-400 mt-0.5">
-                      {deal.commissionStatus === 'COLLECTED' ? 'Collected' : 'Pending'}
-                    </div>
-                  </div>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
+        <FundingDealsTab
+          client={client}
+          deals={safeDeals}
+          lenderHistory={safeLenderHistory}
+          onRefresh={loadClientDetails}
+          onNavigateToTab={(tab) => setActiveTab(tab)}
+        />
       )}
 
       {/* TAB 6: COMMISSION DISTRIBUTION */}

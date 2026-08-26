@@ -25,19 +25,60 @@ export function normalizeDealStatus(status: string | undefined | null): string {
 
 /**
  * Checks if a funding deal belongs to ACTIVE PIPELINE
- * Active Pipeline = ONLY UNDERWRITING, PRE-APPROVED, PRE-APPROVAL
+ * An active deal is moving through the funding process and is NOT:
+ * - Funded, Declined, Withdrawn, Expired, Rejected, Archived, or Not Qualified
  */
 export function isDealInActivePipeline(deal: FundingDeal): boolean {
+  if (!deal) return false;
   const s = normalizeDealStatus(deal.status);
-  return s === 'UNDERWRITING' || s === 'PRE_APPROVED' || s === 'PRE_APPROVAL';
+  if (!s) return false;
+  const inactiveStatuses = [
+    'FUNDED',
+    'DECLINED',
+    'WITHDRAWN',
+    'EXPIRED',
+    'ARCHIVED',
+    'REJECTED',
+    'NOT_QUALIFIED',
+    'LOST',
+  ];
+  return !inactiveStatuses.includes(s);
 }
 
 /**
  * Checks if a funding deal is FUNDED
  */
 export function isDealFunded(deal: FundingDeal): boolean {
+  if (!deal) return false;
   const s = normalizeDealStatus(deal.status);
   return s === 'FUNDED';
+}
+
+/**
+ * Checks if a funding deal is Pre-Qualified / Pre-Approved
+ */
+export function isDealPreQualified(deal: FundingDeal): boolean {
+  if (!deal) return false;
+  const s = normalizeDealStatus(deal.status);
+  return s === 'PRE_APPROVED' || s === 'PRE_APPROVAL' || s === 'PRE_QUALIFIED';
+}
+
+/**
+ * Checks if a funding deal is Approved
+ */
+export function isDealApproved(deal: FundingDeal): boolean {
+  if (!deal) return false;
+  const s = normalizeDealStatus(deal.status);
+  return s === 'APPROVED' || s === 'CONDITIONS_MET' || s === 'DOCS_REQUESTED' || s === 'DOCS_RECEIVED';
+}
+
+/**
+ * Checks if a funding deal is Declined
+ */
+export function isDealDeclined(deal: FundingDeal): boolean {
+  if (!deal) return false;
+  const s = normalizeDealStatus(deal.status);
+  return s === 'DECLINED' || s === 'REJECTED' || s === 'NOT_QUALIFIED';
 }
 
 /**
@@ -90,7 +131,7 @@ export function calculateDashboardMetrics(
 
   for (const deal of safeDeals) {
     const fundingAmount = Math.max(0, Number(deal.fundingAmount) || 0);
-    const percentage = Math.max(0, Number(deal.percentage) || 0);
+    const percentage = Number(deal.percentage) > 0 ? Number(deal.percentage) : 6.9;
     const expectedCommission = (fundingAmount * percentage) / 100;
 
     // Check Active Pipeline

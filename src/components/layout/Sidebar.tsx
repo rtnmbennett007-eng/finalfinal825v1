@@ -13,6 +13,7 @@ import {
   CheckCircle2,
 } from 'lucide-react';
 import { useData } from '../../context/DataContext';
+import { isDealInActivePipeline, isDealFunded } from '../../utils/dashboardMetrics';
 
 interface SidebarProps {
   activeTab: string;
@@ -22,12 +23,12 @@ interface SidebarProps {
 export const Sidebar: React.FC<SidebarProps> = ({ activeTab, setActiveTab }) => {
   const { leads, clients, deals, ghlConfig } = useData();
 
-  // Metrics for badges
+  // Metrics for badges synchronized with central command center
   const newLeadsCount = leads.filter((l) => l.status === 'NEW_LEAD' || l.status === 'SALES_CONTACT').length;
-  const pendingVerificationCount = clients.filter((c) => !c.isVerified && c.currentStatus.includes('VERIFICATION')).length;
+  const pendingVerificationCount = clients.filter((c) => !c.isVerified && (c.currentStatus.includes('VERIFICATION') || c.currentStatus === 'APPLICATION_RECEIVED')).length;
   const pendingUnderwritingCount = clients.filter((c) => c.currentStatus === 'UNDERWRITING' || c.currentStatus === 'READY_FOR_LENDER').length;
-  const pendingFundingCount = deals.filter((d) => d.status === 'PRE_APPROVED' || d.status === 'APPROVED' || d.status === 'PROPOSED').length;
-  const uncollectedCommissionsCount = deals.filter((d) => d.status === 'FUNDED' && d.commissionStatus !== 'COLLECTED').length;
+  const activeFundingCount = deals.filter((d) => isDealInActivePipeline(d)).length;
+  const uncollectedCommissionsCount = deals.filter((d) => isDealFunded(d) && d.commissionStatus !== 'COLLECTED').length;
 
   const navItems = [
     { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
@@ -35,9 +36,9 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeTab, setActiveTab }) => 
     { id: 'clients', label: 'Client Master 360', icon: Building2, count: clients.length },
     { id: 'verification', label: 'Verification Hub', icon: FileCheck2, badge: pendingVerificationCount, badgeColor: 'bg-blue-500/20 text-blue-300 border-blue-500/30' },
     { id: 'underwriting', label: 'Underwriting Hub', icon: Scale, badge: pendingUnderwritingCount, badgeColor: 'bg-purple-500/20 text-purple-300 border-purple-500/30' },
-    { id: 'funding', label: 'Funding & Stacking', icon: DollarSign, badge: pendingFundingCount, badgeColor: 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30' },
+    { id: 'funding', label: 'Funding & Stacking', icon: DollarSign, badge: activeFundingCount, badgeColor: 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30' },
     { id: 'documents', label: 'Document Vault', icon: FolderLock },
-    { id: 'reports', label: 'Operations Reports', icon: BarChart3 },
+    { id: 'reports', label: 'Operations Reports', icon: BarChart3, badge: uncollectedCommissionsCount > 0 ? uncollectedCommissionsCount : undefined, badgeColor: 'bg-purple-500/20 text-purple-300 border-purple-500/30' },
     { id: 'settings', label: 'Settings & Integrations', icon: Settings },
   ];
 

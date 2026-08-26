@@ -966,42 +966,42 @@ export const ClientDetailView: React.FC<ClientDetailViewProps> = ({
                 <div className="p-2.5 bg-[#070d18] rounded-xl border border-blue-900/40">
                   <span className="text-[10px] text-slate-400 uppercase font-bold block">Currently Working</span>
                   <span className="font-semibold text-slate-200 mt-0.5 block font-mono">
-                    {masterVerification.employmentVerification.currentlyWorking?.verified || 'Yes'}
+                    {masterVerification.employmentVerification.currentlyWorking?.verified || 'Not Provided'}
                   </span>
                 </div>
 
                 <div className="p-2.5 bg-[#070d18] rounded-xl border border-blue-900/40">
                   <span className="text-[10px] text-slate-400 uppercase font-bold block">Employer Name</span>
-                  <span className="font-semibold text-amber-300 truncate mt-0.5 block" title={masterVerification.employmentVerification.employerName?.verified || 'Apex Healthcare'}>
-                    {masterVerification.employmentVerification.employerName?.verified || 'Apex Healthcare Systems'}
+                  <span className="font-semibold text-amber-300 truncate mt-0.5 block" title={masterVerification.employmentVerification.employerName?.verified || client.businessName || 'Not Provided'}>
+                    {masterVerification.employmentVerification.employerName?.verified || client.businessName || 'Not Provided'}
                   </span>
                 </div>
 
                 <div className="p-2.5 bg-[#070d18] rounded-xl border border-blue-900/40">
                   <span className="text-[10px] text-slate-400 uppercase font-bold block">Job Title</span>
-                  <span className="font-semibold text-slate-200 truncate mt-0.5 block" title={masterVerification.employmentVerification.jobTitle?.verified || 'Director'}>
-                    {masterVerification.employmentVerification.jobTitle?.verified || 'Operations Director'}
+                  <span className="font-semibold text-slate-200 truncate mt-0.5 block" title={masterVerification.employmentVerification.jobTitle?.verified || client.ownerTitle || 'Not Provided'}>
+                    {masterVerification.employmentVerification.jobTitle?.verified || client.ownerTitle || 'Not Provided'}
                   </span>
                 </div>
 
                 <div className="p-2.5 bg-[#070d18] rounded-xl border border-blue-900/40">
                   <span className="text-[10px] text-slate-400 uppercase font-bold block">Annual Salary</span>
                   <span className="font-bold text-emerald-400 font-mono mt-0.5 block">
-                    {masterVerification.employmentVerification.annualSalary?.verified || '$145,000'}
+                    {masterVerification.employmentVerification.annualSalary?.verified || (client.personalAnnualIncome ? `$${Number(client.personalAnnualIncome).toLocaleString()}` : 'Not Provided')}
                   </span>
                 </div>
 
                 <div className="p-2.5 bg-[#070d18] rounded-xl border border-blue-900/40">
                   <span className="text-[10px] text-slate-400 uppercase font-bold block">Pay Frequency</span>
                   <span className="font-semibold text-cyan-300 mt-0.5 block font-mono">
-                    {masterVerification.employmentVerification.payFrequency?.verified || 'Biweekly'}
+                    {masterVerification.employmentVerification.payFrequency?.verified || 'Not Provided'}
                   </span>
                 </div>
 
                 <div className="p-2.5 bg-[#070d18] rounded-xl border border-blue-900/40">
                   <span className="text-[10px] text-slate-400 uppercase font-bold block">Pay Stubs Reviewed</span>
                   <span className="font-bold text-emerald-300 mt-0.5 block font-mono">
-                    {masterVerification.employmentVerification.payStubReviewed?.verified || 'Yes'}
+                    {masterVerification.employmentVerification.payStubReviewed?.verified || 'Not Provided'}
                   </span>
                 </div>
               </div>

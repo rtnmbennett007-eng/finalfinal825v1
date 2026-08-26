@@ -58,47 +58,47 @@ export const UnderwritingEvaluationTab: React.FC<UnderwritingEvaluationTabProps>
   onSaveEvaluation,
   onRefreshClient,
 }) => {
-  // Default Initial 4-Month Banking Breakdown
+  // Default Initial 4-Month Banking Breakdown (Blank / Clean)
   const defaultBankBreakdowns: BankMonthBreakdown[] = [
     {
-      month: 'Month 1 (Most Recent - July)',
-      totalDeposits: 74800,
-      endingBalance: 46200,
+      month: 'Month 1 (Most Recent)',
+      totalDeposits: 0,
+      endingBalance: 0,
       negativeDays: 0,
       nsfs: 0,
-      achDebits: 840,
+      achDebits: 0,
       otherObligations: 0,
-      notes: 'Strong recurring medical clinic deposits.',
+      notes: '',
     },
     {
-      month: 'Month 2 (June)',
-      totalDeposits: 71250,
-      endingBalance: 42100,
+      month: 'Month 2',
+      totalDeposits: 0,
+      endingBalance: 0,
       negativeDays: 0,
       nsfs: 0,
-      achDebits: 840,
+      achDebits: 0,
       otherObligations: 0,
-      notes: 'Clean cash flow, zero returned items.',
+      notes: '',
     },
     {
-      month: 'Month 3 (May)',
-      totalDeposits: 73500,
-      endingBalance: 48900,
+      month: 'Month 3',
+      totalDeposits: 0,
+      endingBalance: 0,
       negativeDays: 0,
       nsfs: 0,
-      achDebits: 840,
+      achDebits: 0,
       otherObligations: 0,
-      notes: 'High average daily balance maintained (> $45k).',
+      notes: '',
     },
     {
-      month: 'Month 4 (April)',
-      totalDeposits: 69900,
-      endingBalance: 39500,
+      month: 'Month 4',
+      totalDeposits: 0,
+      endingBalance: 0,
       negativeDays: 0,
       nsfs: 0,
-      achDebits: 840,
+      achDebits: 0,
       otherObligations: 0,
-      notes: 'Consistent deposit frequency (22 deposits).',
+      notes: '',
     },
   ];
 
@@ -117,71 +117,90 @@ export const UnderwritingEvaluationTab: React.FC<UnderwritingEvaluationTabProps>
     if (initialEvaluation) return initialEvaluation;
 
     const now = new Date().toISOString();
+    const verifiedMonthlyRev = masterVerification?.income?.verifiedMonthlyBusinessRevenue || client.monthlyRevenue || 0;
+    const verifiedAnnualRev = client.annualRevenue || (verifiedMonthlyRev ? verifiedMonthlyRev * 12 : 0);
+    const verifiedScore = masterVerification?.creditVerification?.exactCreditScore || client.creditScore || 0;
+    const existingDebts = masterVerification?.existingDebts || [];
+    const totalDebtMonthly = existingDebts.reduce((sum, d) => sum + (Number(d.monthlyPayment) || 0), 0);
+
+    const positionsFromDebts: ExistingPositionRecord[] = existingDebts.map((d, idx) => ({
+      id: d.id || `pos-${idx + 1}`,
+      lender: d.lender || 'Lender',
+      product: d.loanType || 'Term Loan',
+      originalFunding: d.originalLoanAmount || 0,
+      currentBalance: d.currentBalance || 0,
+      payment: d.monthlyPayment || 0,
+      paymentFrequency: 'Monthly',
+      remainingTerm: `${d.termMonths || 36} Months`,
+      startDate: '',
+      estimatedPayoff: '',
+      position: `${idx + 1}${idx === 0 ? 'st' : idx === 1 ? 'nd' : 'rd'} Position`,
+      notes: d.notes || '',
+      source: 'VERIFIED',
+    }));
+
     return {
       id: `uweval-${client.id}`,
       clientId: client.id,
-      status: 'READY_FOR_LENDER',
-      preparedBy: 'Dana Javier',
+      status: 'IN_REVIEW',
+      preparedBy: client.assignedStaff || 'Staff Underwriter',
       preparedDate: now.split('T')[0],
-      updatedBy: 'Dana Javier',
+      updatedBy: client.assignedStaff || 'Staff Underwriter',
       updatedAt: now,
 
       // Business Profile
-      businessType: client.entityType || 'LLC',
-      industry: client.industry || 'Healthcare Diagnostics & Supplies',
-      yearsInBusiness: '6 Years',
-      ownershipPercentage: client.ownershipPercentage || 100,
-      monthlyRevenue: client.monthlyRevenue || 70833,
-      annualRevenue: client.annualRevenue || 850000,
-      businessModel: 'B2B Diagnostic Equipment Distribution & Clinical Consumables',
-      businessPurpose: 'Capital expansion to service new regional hospital supply contract',
-      geographicLocation: `${client.city || 'Chicago'}, ${client.state || 'IL'}`,
-      numberOfEmployees: 6,
-      businessStability: 'High stability with recurring client retainer accounts',
-      seasonality: 'Non-seasonal steady medical sector demand',
-      businessProfileComments:
-        'Established medical equipment provider with continuous 6-year operational track record. Strong profit margins and zero tax delinquency.',
+      businessType: client.entityType || '',
+      industry: client.industry || '',
+      yearsInBusiness: client.timeInBusiness || '',
+      ownershipPercentage: client.ownershipPercentage || 0,
+      monthlyRevenue: verifiedMonthlyRev,
+      annualRevenue: verifiedAnnualRev,
+      businessModel: client.businessDescription || '',
+      businessPurpose: client.useOfFunds || '',
+      geographicLocation: [client.city, client.state].filter(Boolean).join(', '),
+      numberOfEmployees: client.numberOfEmployees || 0,
+      businessStability: '',
+      seasonality: '',
+      businessProfileComments: '',
 
       // Credit Analysis
-      ficoScore: client.creditScore || 710,
-      experianScore: 715,
-      equifaxScore: 710,
-      transunionScore: 708,
-      creditProfile: 'Prime Tier 1',
-      bankruptcy: 'None reported (Zero lifetime bankruptcies)',
+      ficoScore: verifiedScore,
+      experianScore: verifiedScore,
+      equifaxScore: verifiedScore,
+      transunionScore: verifiedScore,
+      creditProfile: verifiedScore >= 700 ? 'Prime Tier 1' : verifiedScore >= 640 ? 'Near Prime Tier 2' : verifiedScore > 0 ? 'Subprime Tier 3' : 'Unverified',
+      bankruptcy: client.bankruptcy || 'None',
       openCollections: 'None',
-      recentInquiries: '2 inquiries in past 6 months (Commercial equipment leasing)',
+      recentInquiries: '',
       chargeOffs: 'None',
       judgments: 'None',
       taxLiens: 'None',
-      creditUtilization: 18,
-      otherCreditConcerns: 'None',
-      creditAnalysisNotes:
-        'Clean credit bureau report. 100% on-time payment track record across all revolving and installment commercial accounts.',
+      creditUtilization: 0,
+      otherCreditConcerns: '',
+      creditAnalysisNotes: '',
 
       // Bank Statement Analysis
-      bankName: 'JPMorgan Chase Commercial Banking',
+      bankName: masterVerification?.banking?.primaryBank || client.businessBank || '',
       accountType: 'Operating Checking',
-      statementPeriod: 'Last 4 Months (April - July)',
-      monthsReviewed: 4,
-      totalDeposits: 289450,
-      avgMonthlyDeposits: 72362,
-      lowestMonthlyDeposits: 69900,
-      highestMonthlyDeposits: 74800,
-      avgEndingBalance: 44175,
-      lowestEndingBalance: 39500,
-      highestEndingBalance: 48900,
+      statementPeriod: 'Last 4 Months',
+      monthsReviewed: 0,
+      totalDeposits: 0,
+      avgMonthlyDeposits: verifiedMonthlyRev,
+      lowestMonthlyDeposits: 0,
+      highestMonthlyDeposits: 0,
+      avgEndingBalance: 0,
+      lowestEndingBalance: 0,
+      highestEndingBalance: 0,
       negativeDaysTotal: 0,
       nsfsTotal: 0,
       returnedItemsTotal: 0,
-      existingAchPaymentsMonthly: 840,
+      existingAchPaymentsMonthly: totalDebtMonthly,
       existingMcaPaymentsMonthly: 0,
-      avgDailyBalance: 45600,
+      avgDailyBalance: 0,
       cashFlowConsistency: 'Consistent',
-      depositConsistency: 'High',
+      depositConsistency: 'Moderate',
       monthlyBreakdowns: defaultBankBreakdowns,
-      bankAnalysisNotes:
-        'Average monthly revenue exceeds $72,000 with 20+ monthly deposit transactions. No overdrafts, negative balance days, or NSF occurrences in 4 consecutive months.',
+      bankAnalysisNotes: '',
 
       // Red Flags
       redFlags: {
@@ -200,77 +219,49 @@ export const UnderwritingEvaluationTab: React.FC<UnderwritingEvaluationTabProps>
         other: false,
         otherDescription: '',
       },
-      redFlagNotes: 'Zero red flags detected. Clean underwriting profile.',
+      redFlagNotes: '',
 
       // Existing Positions
-      existingPositions: [
-        {
-          id: 'pos-1',
-          lender: 'First Midwest SBA Lending',
-          product: 'SBA 7(a) Term Loan',
-          originalFunding: 60000,
-          currentBalance: 38000,
-          payment: 840,
-          paymentFrequency: 'Monthly',
-          remainingTerm: '48 Months',
-          startDate: '2023-04-10',
-          estimatedPayoff: '2028-04-10',
-          position: '1st Position',
-          notes: 'Standard low-interest SBA facility in good standing.',
-          source: 'VERIFIED',
-        },
-      ],
+      existingPositions: positionsFromDebts,
 
       // Debt Service
       debtService: {
-        monthlyBusinessRevenue: client.monthlyRevenue || 70833,
-        monthlyDeposits: 72362,
-        existingMonthlyObligations: 840,
-        existingAchObligations: 840,
-        existingFundingPayments: 840,
-        proposedNewPayment: 3200,
-        estimatedTotalObligations: 4040,
-        estimatedDebtServiceRatio: 1.85,
-        estimatedPaymentToRevenueRatio: 5.7,
-        obligationNotes:
-          'Payment-to-revenue ratio is a conservative 5.7% ($4,040 total monthly obligations vs $70,833 revenue). Strong capacity for requested facility.',
+        monthlyBusinessRevenue: verifiedMonthlyRev,
+        monthlyDeposits: verifiedMonthlyRev,
+        existingMonthlyObligations: totalDebtMonthly,
+        existingAchObligations: totalDebtMonthly,
+        existingFundingPayments: totalDebtMonthly,
+        proposedNewPayment: 0,
+        estimatedTotalObligations: totalDebtMonthly,
+        estimatedDebtServiceRatio: verifiedMonthlyRev > 0 && totalDebtMonthly > 0 ? Math.round((verifiedMonthlyRev / totalDebtMonthly) * 100) / 100 : 0,
+        estimatedPaymentToRevenueRatio: verifiedMonthlyRev > 0 ? Math.round(((totalDebtMonthly) / verifiedMonthlyRev) * 1000) / 10 : 0,
+        obligationNotes: '',
       },
 
       // Funding Request
       fundingRequest: {
-        requestedAmount: client.requestedAmount || 95000,
-        recommendedAmount: 50000,
-        recommendedProduct: 'Business Line of Credit',
-        recommendedTerm: '12-24 Months Revolving',
-        recommendedPayment: 3200,
-        recommendedStructure: 'Prime Tier-1 Facility with monthly auto-debit',
-        purposeOfFunds: 'Bulk diagnostics inventory procurement and operational liquidity',
-        position: '2nd Position',
-        lenderTarget: 'Maple Direct Capital / Apex Commercial Partners',
+        requestedAmount: masterVerification?.fundingRequest?.verifiedRequestedAmount || client.requestedAmount || 0,
+        recommendedAmount: 0,
+        recommendedProduct: '',
+        recommendedTerm: '',
+        recommendedPayment: 0,
+        recommendedStructure: '',
+        purposeOfFunds: client.useOfFunds || '',
+        position: '1st Position',
+        lenderTarget: '',
       },
 
       // Underwriter Recommendation
-      recommendation: 'RECOMMEND',
-      recommendedFundingAmount: 50000,
-      recommendedProduct: 'Business Line of Credit',
-      recommendedLenderType: 'Tier-1 Prime Commercial Lender',
-      conditionsText:
-        '1. Executed commercial credit agreement\n2. Proof of business insurance listing lender as loss payee\n3. Copy of government photo ID',
-      underwriterComments:
-        'Borrower exhibits prime credit profile (710+ FICO), solid 6-year healthcare operation, and healthy cash flow (> $70k/mo). Low leverage with DSCR of 1.85x. Highly recommended for immediate prime lender submission.',
+      recommendation: 'NEEDS_INFO',
+      recommendedFundingAmount: 0,
+      recommendedProduct: '',
+      recommendedLenderType: '',
+      conditionsText: '',
+      underwriterComments: '',
 
       // Strengths & Weaknesses
-      strengths: [
-        '6+ Years Established Healthcare Business',
-        'Strong $850k Annual Gross Revenue ($70k+/mo)',
-        'Zero MCA Stacking & Zero Derogatory History',
-        'Average Daily Bank Balance Exceeds $45,000',
-        'Prime 710+ FICO Guarantor Score',
-      ],
-      weaknesses: [
-        'Existing SBA 7(a) 1st Lien ($38k Balance)',
-        'Single Guarantor 100% Ownership Concentration',
-      ],
+      strengths: [],
+      weaknesses: [],
 
       // Document Checklist
       documentChecklist: defaultRequiredDocs.map((docDef) => {
@@ -278,39 +269,18 @@ export const UnderwritingEvaluationTab: React.FC<UnderwritingEvaluationTabProps>
         return {
           name: docDef.name,
           category: docDef.category,
-          status: matchingVaultDoc ? 'Verified' : docDef.req ? 'Received' : 'Verified',
+          status: matchingVaultDoc ? 'Verified' : 'Missing',
           vaultDocId: matchingVaultDoc?.id,
-          notes: matchingVaultDoc ? `Vault item: ${matchingVaultDoc.fileName}` : 'Verified during intake',
+          notes: matchingVaultDoc ? `Vault item: ${matchingVaultDoc.fileName}` : '',
         };
       }),
 
       // Conditions
-      conditions: [
-        {
-          id: 'cond-1',
-          title: 'Government Photo ID Verification',
-          description: 'Ensure Illinois Driver License is unexpired and clear.',
-          priority: 'High',
-          responsiblePerson: 'Dana',
-          dueDate: '2026-08-26',
-          status: 'Verified',
-          notes: 'Received and verified.',
-        },
-        {
-          id: 'cond-2',
-          title: 'Voided Business Check with Matching Entity Name',
-          description: 'Confirm commercial account is under Rostova MedTech Diagnostics LLC.',
-          priority: 'Medium',
-          responsiblePerson: 'Steve',
-          dueDate: '2026-08-27',
-          status: 'Satisfied',
-          notes: 'Chase voided check confirmed.',
-        },
-      ],
+      conditions: [],
 
       // Ready for Lender
       readyForLender: {
-        isReady: true,
+        isReady: false,
         missingItems: [],
         lastCheckedAt: now,
       },
@@ -320,9 +290,9 @@ export const UnderwritingEvaluationTab: React.FC<UnderwritingEvaluationTabProps>
         {
           id: 'aud-1',
           timestamp: now,
-          staffMember: 'Dana Javier',
+          staffMember: client.assignedStaff || 'Staff Specialist',
           action: 'Underwriting Evaluation Initialized',
-          details: 'Evaluated 4-month bank statements, verified cash flow metrics and calculated 1.85 DSCR.',
+          details: 'Evaluation file initialized from client records.',
         },
       ],
     };

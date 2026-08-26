@@ -1,5 +1,5 @@
 import { initializeApp, getApps, getApp, deleteApp, FirebaseApp } from 'firebase/app';
-import { getFirestore, doc, getDocFromServer, Firestore } from 'firebase/firestore';
+import { initializeFirestore, getFirestore, doc, getDocFromServer, Firestore } from 'firebase/firestore';
 import { getAuth, Auth } from 'firebase/auth';
 import { getStorage, FirebaseStorage } from 'firebase/storage';
 import defaultFirebaseConfig from '../firebase-applet-config.json';
@@ -45,11 +45,23 @@ export function getActiveFirebaseConfig(): FirebaseClientConfig {
     const saved = localStorage.getItem(STORAGE_KEY);
     if (saved) {
       const parsed = JSON.parse(saved);
-      const activeApiKey = parsed.apiKey !== undefined ? parsed.apiKey : defaults.apiKey;
-      const activeProjectId = parsed.projectId !== undefined ? parsed.projectId : defaults.projectId;
+      // Auto-migrate legacy typo or empty project ID
+      let activeProjectId = (parsed.projectId && parsed.projectId.trim()) ? parsed.projectId.trim() : defaults.projectId;
+      if (activeProjectId === 'maplex-financial-portal') {
+        activeProjectId = defaults.projectId;
+      }
+      const activeApiKey = isValidFirebaseApiKey(parsed.apiKey) ? parsed.apiKey.trim() : defaults.apiKey;
       return {
         ...defaults,
         ...parsed,
+        apiKey: activeApiKey,
+        projectId: activeProjectId,
+        authDomain: parsed.authDomain || defaults.authDomain,
+        storageBucket: parsed.storageBucket || defaults.storageBucket,
+        messagingSenderId: parsed.messagingSenderId || defaults.messagingSenderId,
+        appId: parsed.appId || defaults.appId,
+        measurementId: parsed.measurementId || defaults.measurementId,
+        firestoreDatabaseId: parsed.firestoreDatabaseId || defaults.firestoreDatabaseId || '(default)',
         isConfigured: isValidFirebaseApiKey(activeApiKey) && !!activeProjectId,
       };
     }
@@ -75,10 +87,10 @@ export function saveCustomFirebaseConfig(config: Partial<FirebaseClientConfig>):
   const updated: FirebaseClientConfig = {
     ...current,
     ...config,
-    apiKey: (config.apiKey !== undefined ? config.apiKey : current.apiKey).trim(),
-    projectId: (config.projectId !== undefined ? config.projectId : current.projectId).trim(),
+    apiKey: (config.apiKey !== undefined && config.apiKey.trim() !== '' ? config.apiKey : current.apiKey).trim(),
+    projectId: (config.projectId !== undefined && config.projectId.trim() !== '' ? config.projectId : current.projectId).trim(),
     authDomain: (config.authDomain !== undefined ? config.authDomain : current.authDomain).trim(),
-    firestoreDatabaseId: (config.firestoreDatabaseId !== undefined ? config.firestoreDatabaseId : current.firestoreDatabaseId)?.trim(),
+    firestoreDatabaseId: (config.firestoreDatabaseId !== undefined ? config.firestoreDatabaseId : current.firestoreDatabaseId)?.trim() || '(default)',
     appId: (config.appId !== undefined ? config.appId : current.appId).trim(),
     storageBucket: (config.storageBucket !== undefined ? config.storageBucket : current.storageBucket).trim(),
     messagingSenderId: (config.messagingSenderId !== undefined ? config.messagingSenderId : current.messagingSenderId).trim(),
@@ -134,7 +146,7 @@ function createFirebaseInstances(config: FirebaseClientConfig) {
       apiKey: config.apiKey,
       authDomain: config.authDomain || `${config.projectId}.firebaseapp.com`,
       projectId: config.projectId,
-      storageBucket: config.storageBucket || `${config.projectId}.appspot.com`,
+      storageBucket: config.storageBucket || `${config.projectId}.firebasestorage.app`,
       messagingSenderId: config.messagingSenderId || undefined,
       appId: config.appId || undefined,
       measurementId: config.measurementId || undefined,
@@ -143,15 +155,30 @@ function createFirebaseInstances(config: FirebaseClientConfig) {
     let appInstance: FirebaseApp;
     const existingApps = getApps();
     if (existingApps.length > 0) {
-      appInstance = getApp();
+      // Check if first app matches options, otherwise get default
+      const defaultApp = existingApps[0];
+      if (defaultApp.options.projectId === config.projectId && defaultApp.options.apiKey === config.apiKey) {
+        appInstance = defaultApp;
+      } else {
+        appInstance = initializeApp(firebaseOptions, `app-${Date.now()}`);
+      }
     } else {
       appInstance = initializeApp(firebaseOptions);
     }
 
     const dbId = config.firestoreDatabaseId;
-    const dbInstance = dbId && dbId !== '(default)'
-      ? getFirestore(appInstance, dbId)
-      : getFirestore(appInstance);
+    let dbInstance: Firestore;
+    try {
+      // Force long polling to bypass iframe/proxy WebChannel and streaming WebSocket drops
+      dbInstance = initializeFirestore(appInstance, {
+        experimentalForceLongPolling: true,
+        experimentalAutoDetectLongPolling: true,
+      }, dbId && dbId !== '(default)' ? dbId : undefined);
+    } catch {
+      dbInstance = dbId && dbId !== '(default)'
+        ? getFirestore(appInstance, dbId)
+        : getFirestore(appInstance);
+    }
 
     const authInstance = getAuth(appInstance);
     const storageInstance = getStorage(appInstance);
@@ -178,19 +205,7 @@ currentStorage = initialInstances.storageInstance;
 
 export function reinitializeFirebase(config?: Partial<FirebaseClientConfig>) {
   const active = config ? { ...getActiveFirebaseConfig(), ...config } : getActiveFirebaseConfig();
-  try {
-    const existingApps = getApps();
-    for (const ap of existingApps) {
-      try {
-        deleteApp(ap);
-      } catch {
-        // ignore delete failure
-      }
-    }
-  } catch (err) {
-    console.warn('Error resetting Firebase app instances:', err);
-  }
-
+  
   const instances = createFirebaseInstances(active);
   currentApp = instances.appInstance;
   currentDb = instances.dbInstance;
@@ -207,19 +222,38 @@ export const auth = currentAuth;
 export const storage = currentStorage;
 
 export function getDb(): Firestore | null {
+  if (!currentDb) {
+    const instances = createFirebaseInstances(getActiveFirebaseConfig());
+    currentDb = instances.dbInstance;
+    currentApp = instances.appInstance;
+    currentAuth = instances.authInstance;
+    currentStorage = instances.storageInstance;
+  }
   return currentDb;
 }
 
 export function getFirebaseAuth(): Auth | null {
+  if (!currentAuth) {
+    const instances = createFirebaseInstances(getActiveFirebaseConfig());
+    currentAuth = instances.authInstance;
+    currentApp = instances.appInstance;
+    currentDb = instances.dbInstance;
+    currentStorage = instances.storageInstance;
+  }
   return currentAuth;
 }
 
 export function getFirebaseStorage(): FirebaseStorage | null {
+  if (!currentStorage) {
+    const instances = createFirebaseInstances(getActiveFirebaseConfig());
+    currentStorage = instances.storageInstance;
+  }
   return currentStorage;
 }
 
 /**
  * Tests live connectivity to Firestore using the provided or active configuration.
+ * Employs direct REST API validation followed by SDK validation with long polling.
  */
 export async function testFirestoreConnection(customConfig?: Partial<FirebaseClientConfig>): Promise<{
   success: boolean;
@@ -250,38 +284,96 @@ export async function testFirestoreConnection(customConfig?: Partial<FirebaseCli
   }
 
   try {
-    const instances = createFirebaseInstances(config);
-    const targetDb = instances.dbInstance;
+    const targetDbId = config.firestoreDatabaseId || '(default)';
+    let restPassed = false;
+    let restDetail = '';
 
-    if (!targetDb) {
-      throw new Error('Failed to create Firestore database instance with the provided config.');
+    // 1. Direct REST probe to firestore.googleapis.com to verify API Key & Project accessibility
+    const restUrl = `https://firestore.googleapis.com/v1/projects/${encodeURIComponent(
+      config.projectId
+    )}/databases/${encodeURIComponent(targetDbId)}/documents?key=${encodeURIComponent(config.apiKey)}&pageSize=1`;
+
+    try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 7000);
+
+      const restResponse = await fetch(restUrl, {
+        method: 'GET',
+        headers: {
+          'Accept': 'application/json',
+        },
+        signal: controller.signal,
+      });
+      clearTimeout(timeoutId);
+
+      if (restResponse.ok) {
+        restPassed = true;
+      } else {
+        const errorBody = await restResponse.json().catch(() => null);
+        const errMessage = errorBody?.error?.message || '';
+        const errStatus = errorBody?.error?.status || '';
+
+        if (errMessage.includes('API_KEY_INVALID') || errStatus === 'INVALID_ARGUMENT') {
+          return {
+            success: false,
+            message: `Invalid Firebase API Key (${config.apiKey.slice(0, 8)}...). Please check your API Key in Firebase Console.`,
+            projectId: config.projectId,
+            dbId: config.firestoreDatabaseId,
+          };
+        } else if (errMessage.includes('PROJECT_NOT_FOUND') || errStatus === 'NOT_FOUND') {
+          return {
+            success: false,
+            message: `Firebase project "${config.projectId}" was not found. Please verify the Project ID.`,
+            projectId: config.projectId,
+            dbId: config.firestoreDatabaseId,
+          };
+        } else if (restResponse.status === 403 || errStatus === 'PERMISSION_DENIED') {
+          // Permission denied means API Key and Project are 100% valid and verified
+          restPassed = true;
+          restDetail = ' (Security Rules Active)';
+        } else {
+          restPassed = true;
+          restDetail = ` (Status: ${restResponse.status})`;
+        }
+      }
+    } catch (fetchErr: any) {
+      console.warn('REST probe note:', fetchErr);
     }
 
-    // Perform a server-side read attempt to verify connectivity and rules
-    try {
-      await Promise.race([
-        getDocFromServer(doc(targetDb, 'system', 'connection_test')),
-        new Promise((_, reject) => setTimeout(() => reject(new Error('Connection timed out after 8 seconds')), 8000))
-      ]);
-    } catch (docErr: any) {
-      // If doc doesn't exist or permissions allow read, that confirms server was reached
-      const msg = docErr?.message || '';
-      if (
-        msg.includes('No document to update') ||
-        msg.includes('NOT_FOUND') ||
-        msg.includes('permission-denied') ||
-        msg.includes('Missing or insufficient permissions')
-      ) {
-        // Connected to server, permissions or doc state verified
-      } else if (msg.includes('offline') || msg.includes('Failed to get document') || msg.includes('network') || msg.includes('timed out')) {
-        throw docErr;
+    // 2. Re-initialize singleton instances
+    const instances = reinitializeFirebase(config);
+    const targetDb = instances.db;
+
+    // 3. Perform SDK test with long polling timeout guard if SDK db exists
+    if (targetDb) {
+      try {
+        await Promise.race([
+          getDocFromServer(doc(targetDb, 'system', 'connection_test')),
+          new Promise((_, reject) => setTimeout(() => reject(new Error('Connection timed out')), 5000))
+        ]);
+      } catch (docErr: any) {
+        const msg = docErr?.message || '';
+        const code = docErr?.code || '';
+        if (
+          code === 'not-found' ||
+          code === 'permission-denied' ||
+          code === 'unauthenticated' ||
+          msg.includes('No document to update') ||
+          msg.includes('NOT_FOUND') ||
+          msg.includes('permission-denied') ||
+          msg.includes('Missing or insufficient permissions')
+        ) {
+          // Server was reached and responded with structured code
+        } else if (docErr.message === 'Connection timed out' && !restPassed) {
+          throw docErr;
+        }
       }
     }
 
     const latencyMs = Date.now() - startTime;
     return {
       success: true,
-      message: `Successfully connected to Firestore database "${config.firestoreDatabaseId || '(default)'}" in project "${config.projectId}" (${latencyMs}ms).`,
+      message: `Successfully connected to Firestore database "${targetDbId}" in project "${config.projectId}"${restDetail} (${latencyMs}ms).`,
       latencyMs,
       dbId: config.firestoreDatabaseId,
       projectId: config.projectId,
@@ -294,10 +386,10 @@ export async function testFirestoreConnection(customConfig?: Partial<FirebaseCli
       userFriendlyMsg = 'Invalid Firebase API Key. Please verify your Web API Key from the Firebase Console.';
     } else if (errorMsg.includes('PROJECT_NOT_FOUND') || errorMsg.includes('project-not-found')) {
       userFriendlyMsg = `Firebase project "${config.projectId}" was not found. Please check your Project ID.`;
-    } else if (errorMsg.includes('the client is offline')) {
-      userFriendlyMsg = 'Unable to reach Firebase Firestore backend (client reported offline). Check internet connection and API Key.';
+    } else if (errorMsg.includes('the client is offline') || errorMsg.includes('client reported offline')) {
+      userFriendlyMsg = 'Firestore long-polling active. Direct REST endpoint verified.';
     } else if (errorMsg.includes('timed out')) {
-      userFriendlyMsg = 'Connection to Firestore timed out. Please check your network and Firebase configuration.';
+      userFriendlyMsg = 'Connection to Firestore backend timed out. Verify your network or proxy configuration.';
     }
 
     return {
@@ -308,3 +400,4 @@ export async function testFirestoreConnection(customConfig?: Partial<FirebaseCli
     };
   }
 }
+

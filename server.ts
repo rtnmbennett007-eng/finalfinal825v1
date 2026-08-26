@@ -372,8 +372,8 @@ function getInitialDb(): DatabaseSchema {
     leadSources: INITIAL_LEAD_SOURCES,
     referralPartners: INITIAL_REFERRAL_PARTNERS,
     ghlConfig: {
-      apiKey: 'ghl_live_key_maplex_sec_99a8b7c6d5e4',
-      locationId: 'loc_maplex_hq_001',
+      apiKey: 'pit-fb38c2c0-3a3d-42ab-a316-d26064bf01b6',
+      locationId: 'qUSput20R0ujNP4DRARJ',
       baseUrl: 'https://services.leadconnectorhq.com',
       isConnected: true,
       lastSyncAt: new Date().toISOString(),
@@ -463,6 +463,22 @@ function loadDb() {
         db.staff.forEach((s: any) => {
           if (!s.password) s.password = 'Admin2026!';
         });
+      }
+
+      if (!db.ghlConfig || !db.ghlConfig.apiKey || db.ghlConfig.apiKey.includes('ghl_live_key_maplex')) {
+        db.ghlConfig = {
+          apiKey: 'pit-fb38c2c0-3a3d-42ab-a316-d26064bf01b6',
+          locationId: 'qUSput20R0ujNP4DRARJ',
+          baseUrl: 'https://services.leadconnectorhq.com',
+          isConnected: true,
+          lastSyncAt: new Date().toISOString(),
+          syncErrors: [],
+          autoSyncEnabled: true,
+          ...(db.ghlConfig || {}),
+        };
+        db.ghlConfig.apiKey = 'pit-fb38c2c0-3a3d-42ab-a316-d26064bf01b6';
+        db.ghlConfig.locationId = 'qUSput20R0ujNP4DRARJ';
+        db.ghlConfig.isConnected = true;
       }
       saveDb();
     } else {

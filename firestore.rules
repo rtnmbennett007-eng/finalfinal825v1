@@ -21,6 +21,7 @@ service cloud.firestore {
         )) ||
         request.auth.token.email.matches('.*@maplexfinancial[.]com$') ||
         request.auth.token.email == 'rtnmbennett007@gmail.com' ||
+        request.auth.token.email == 'rtnmbennett.ambrosia@gmail.com' ||
         request.auth.token.email == 'elev8deals@gmail.com'
       );
     }
@@ -36,6 +37,7 @@ service cloud.firestore {
         request.auth.token.email == 'luke.cowan@maplexfinancial.com' ||
         request.auth.token.email == 'steve@maplexfinancial.com' ||
         request.auth.token.email == 'rtnmbennett007@gmail.com' ||
+        request.auth.token.email == 'rtnmbennett.ambrosia@gmail.com' ||
         request.auth.token.email == 'elev8deals@gmail.com'
       );
     }
@@ -165,6 +167,16 @@ service cloud.firestore {
 
     // Referral Partners (dropdown options for lead intake)
     match /referralPartners/{partnerId} {
+      allow read, write: if isStaffOrAdmin();
+    }
+
+    // Products & Funding Types Catalog
+    match /products/{productId} {
+      allow read, write: if isStaffOrAdmin();
+    }
+
+    // Underwriting Evaluations
+    match /underwritingEvaluations/{evalId} {
       allow read, write: if isStaffOrAdmin();
     }
 

@@ -13,6 +13,7 @@ import {
   limit,
   Unsubscribe,
   writeBatch,
+  Firestore,
 } from 'firebase/firestore';
 import {
   ref,
@@ -210,6 +211,49 @@ interface LocalDataset {
   discordConfig: DiscordConfig | null;
   ghlConfig: GhlConfig | null;
 }
+
+export const DEFAULT_GHL_CONFIG: GhlConfig = {
+  apiKey: 'pit-fb38c2c0-3a3d-42ab-a316-d26064bf01b6',
+  locationId: 'qUSput20R0ujNP4DRARJ',
+  baseUrl: 'https://services.leadconnectorhq.com',
+  isConnected: true,
+  lastSyncAt: new Date().toISOString(),
+  syncErrors: [],
+  autoSyncEnabled: true,
+  fieldMappings: {
+    leadSourceField: 'contact.source',
+    referralPartnerField: 'custom_field.referral_partner',
+    annualRevenueField: 'custom_field.annual_revenue',
+    creditScoreField: 'custom_field.credit_score',
+    requestedAmountField: 'custom_field.funding_amount_requested',
+    productField: 'custom_field.funding_product_interest',
+  },
+  pipelineMappings: {
+    NEW_LEAD: 'Stage 1 - New Inbound Lead',
+    SALES_CONTACT: 'Stage 2 - Sales Contact Made',
+    APPLICATION_SENT: 'Stage 3 - Application Link Sent',
+    APPLICATION_RECEIVED: 'Stage 4 - Application Submitted',
+    DOCUMENT_REQUEST: 'Stage 5 - Requesting Documents',
+    DOCUMENTS_PENDING: 'Stage 5 - Requesting Documents',
+    DOCUMENTS_RECEIVED: 'Stage 6 - Documents In Review',
+    VERIFICATION_PENDING: 'Stage 7 - Verification Call Active',
+    VERIFICATION_IN_PROGRESS: 'Stage 7 - Verification Call Active',
+    VERIFICATION_COMPLETE: 'Stage 8 - Verification Approved',
+    UNDERWRITING: 'Stage 9 - File in Underwriting',
+    READY_FOR_LENDER: 'Stage 9 - File in Underwriting',
+    SUBMITTED_TO_LENDER: 'Stage 10 - Submitted to Funding Source',
+    PRE_APPROVED: 'Stage 11 - Pre-Approval Terms Received',
+    APPROVED: 'Stage 12 - Final Approved',
+    CONDITIONS_DOCUMENTS: 'Stage 12 - Final Approved',
+    FUNDED: 'Stage 13 - Deal Funded',
+    COMMISSION_PENDING: 'Stage 13 - Deal Funded',
+    COMMISSION_RECEIVED: 'Stage 14 - Commission Settled',
+    NOT_QUALIFIED: 'Stage - Not Qualified',
+    DECLINED: 'Stage - Declined',
+    LOST: 'Stage - Lost',
+    WITHDRAWN: 'Stage - Withdrawn',
+  },
+};
 
 function getInitialDataset(): LocalDataset {
   const staff: StaffUser[] = [
@@ -1078,7 +1122,7 @@ function getInitialDataset(): LocalDataset {
     documents,
     notifications,
     discordConfig: null,
-    ghlConfig: null,
+    ghlConfig: DEFAULT_GHL_CONFIG,
   };
 }
 
@@ -1097,6 +1141,12 @@ class LocalDataManager {
         const parsed = JSON.parse(saved);
         if (!parsed.products || parsed.products.length === 0) {
           parsed.products = MASTER_FUNDING_PRODUCTS;
+        }
+        if (!parsed.ghlConfig || !parsed.ghlConfig.apiKey || parsed.ghlConfig.apiKey.includes('ghl_live_key_maplex')) {
+          parsed.ghlConfig = { ...DEFAULT_GHL_CONFIG, ...(parsed.ghlConfig || {}) };
+          parsed.ghlConfig.apiKey = 'pit-fb38c2c0-3a3d-42ab-a316-d26064bf01b6';
+          parsed.ghlConfig.locationId = 'qUSput20R0ujNP4DRARJ';
+          parsed.ghlConfig.isConnected = true;
         }
         return parsed;
       }
@@ -1173,6 +1223,84 @@ class LocalDataManager {
 
 const localStore = new LocalDataManager();
 
+function createSafeSubscription<T>(
+  collectionName: string,
+  localKey: keyof LocalDataset,
+  callback: (items: T[]) => void,
+  customQueryBuilder?: (db: Firestore) => any,
+  itemTransformer?: (items: T[]) => T[]
+): Unsubscribe {
+  const db = getDb();
+  if (!db) {
+    return localStore.subscribe(
+      localKey as string,
+      (val: any) => callback(itemTransformer ? itemTransformer(val) : val),
+      (ds) => {
+        const raw = (ds[localKey] as unknown as T[]) || [];
+        return itemTransformer ? itemTransformer(raw) : raw;
+      }
+    );
+  }
+
+  let localUnsub: Unsubscribe | null = null;
+  let hasHandledError = false;
+
+  const targetQuery = customQueryBuilder ? customQueryBuilder(db) : collection(db, collectionName);
+
+  let firestoreUnsub: Unsubscribe = () => {};
+
+  try {
+    firestoreUnsub = onSnapshot(
+      targetQuery,
+      (snapshot: any) => {
+        const items = snapshot.docs.map((d: any) => ({ id: d.id, ...d.data() } as T));
+        const processed = itemTransformer ? itemTransformer(items) : items;
+        callback(processed);
+      },
+      (err: any) => {
+        if (!hasHandledError) {
+          hasHandledError = true;
+          console.warn(`[Data Sync] ${collectionName} subscription note: using resilient data layer (${err?.code || err?.message || 'ready'})`);
+        }
+        const raw = (localStore.getDataset()[localKey] as unknown as T[]) || [];
+        callback(itemTransformer ? itemTransformer(raw) : raw);
+
+        if (!localUnsub) {
+          localUnsub = localStore.subscribe(
+            localKey as string,
+            (val: any) => callback(itemTransformer ? itemTransformer(val) : val),
+            (ds) => {
+              const localRaw = (ds[localKey] as unknown as T[]) || [];
+              return itemTransformer ? itemTransformer(localRaw) : localRaw;
+            }
+          );
+        }
+      }
+    );
+  } catch (err: any) {
+    console.warn(`[Data Sync] Init error on ${collectionName}:`, err);
+    return localStore.subscribe(
+      localKey as string,
+      (val: any) => callback(itemTransformer ? itemTransformer(val) : val),
+      (ds) => {
+        const raw = (ds[localKey] as unknown as T[]) || [];
+        return itemTransformer ? itemTransformer(raw) : raw;
+      }
+    );
+  }
+
+  return () => {
+    try {
+      firestoreUnsub();
+    } catch {
+      // ignore
+    }
+    if (localUnsub) {
+      localUnsub();
+    }
+  };
+}
+
 // ==========================================
 // UNIFIED FIRESTORE SERVICE
 // Bridges seamlessly between Cloud Firestore & Local Store
@@ -1183,52 +1311,48 @@ export const firestoreService = {
   // ==========================================
   async getUserProfile(uid: string): Promise<UserProfile | null> {
     const db = getDb();
-    if (!db) {
-      return localStore.getDataset().users[uid] || null;
+    if (db) {
+      try {
+        const snap = await getDoc(doc(db, 'users', uid));
+        if (snap.exists()) return snap.data() as UserProfile;
+      } catch (err) {
+        console.warn('getUserProfile Firestore read fallback:', err);
+      }
     }
-    const docRef = doc(db, 'users', uid);
-    const snap = await getDoc(docRef);
-    if (!snap.exists()) return null;
-    return snap.data() as UserProfile;
+    return localStore.getDataset().users[uid] || null;
   },
 
   async saveUserProfile(uid: string, profile: Partial<UserProfile>): Promise<UserProfile> {
     const db = getDb();
     const now = new Date().toISOString();
-    const existing = db ? await getDoc(doc(db, 'users', uid)) : null;
+    const existing = localStore.getDataset().users[uid];
     const data: UserProfile = {
       uid,
       email: profile.email || '',
       role: profile.role || 'staff',
       name: profile.name || profile.email?.split('@')[0] || 'User',
       active: profile.active !== undefined ? profile.active : true,
-      createdAt: existing && existing.exists() ? (existing.data() as UserProfile).createdAt || now : now,
+      createdAt: existing ? existing.createdAt || now : now,
       updatedAt: now,
       ...profile,
     };
 
+    localStore.updateDataset((ds) => {
+      ds.users[uid] = data;
+    }, ['users']);
+
     if (db) {
-      await setDoc(doc(db, 'users', uid), sanitizeDoc(data), { merge: true });
-    } else {
-      localStore.updateDataset((ds) => {
-        ds.users[uid] = data;
-      }, ['users']);
+      try {
+        await setDoc(doc(db, 'users', uid), sanitizeDoc(data), { merge: true });
+      } catch (err) {
+        console.warn('saveUserProfile Firestore sync note:', err);
+      }
     }
     return data;
   },
 
   subscribeRoles(callback: (roles: UserRole[]) => void): Unsubscribe {
-    const db = getDb();
-    if (!db) {
-      return localStore.subscribe('roles', callback, (ds) => ds.roles);
-    }
-    const q = collection(db, 'roles');
-    return onSnapshot(q, (snapshot) => {
-      const items = snapshot.docs.map((d) => ({ id: d.id, ...d.data() } as UserRole));
-      callback(items);
-    }, (err) => {
-      console.warn('Roles subscription error:', err);
-    });
+    return createSafeSubscription<UserRole>('roles', 'roles', callback);
   },
 
   async createRole(data: Partial<UserRole>): Promise<UserRole> {
@@ -1245,12 +1369,17 @@ export const firestoreService = {
       updatedAt: now,
       ...data,
     };
+
+    localStore.updateDataset((ds) => {
+      ds.roles.push(role);
+    }, ['roles']);
+
     if (db) {
-      await setDoc(doc(db, 'roles', id), sanitizeDoc(role), { merge: true });
-    } else {
-      localStore.updateDataset((ds) => {
-        ds.roles.push(role);
-      }, ['roles']);
+      try {
+        await setDoc(doc(db, 'roles', id), sanitizeDoc(role), { merge: true });
+      } catch (err) {
+        console.warn('createRole Firestore sync note:', err);
+      }
     }
     return role;
   },
@@ -1258,37 +1387,46 @@ export const firestoreService = {
   async updateRole(id: string, data: Partial<UserRole>): Promise<UserRole> {
     const db = getDb();
     const now = new Date().toISOString();
+    let updatedRole: UserRole | null = null;
+    localStore.updateDataset((ds) => {
+      const idx = ds.roles.findIndex((r) => r.id === id);
+      if (idx !== -1) {
+        ds.roles[idx] = { ...ds.roles[idx], ...data, updatedAt: now };
+        updatedRole = ds.roles[idx];
+      } else {
+        const r = { id, ...data, updatedAt: now } as UserRole;
+        ds.roles.push(r);
+        updatedRole = r;
+      }
+    }, ['roles']);
+
     if (db) {
-      const docRef = doc(db, 'roles', id);
-      const updated = { ...data, updatedAt: now };
-      await updateDoc(docRef, sanitizeDoc(updated));
-      const snap = await getDoc(docRef);
-      return { id, ...snap.data() } as UserRole;
-    } else {
-      let updatedRole: UserRole | null = null;
-      localStore.updateDataset((ds) => {
-        const idx = ds.roles.findIndex((r) => r.id === id);
-        if (idx !== -1) {
-          ds.roles[idx] = { ...ds.roles[idx], ...data, updatedAt: now };
-          updatedRole = ds.roles[idx];
-        }
-      }, ['roles']);
-      return updatedRole || (data as UserRole);
+      try {
+        await setDoc(doc(db, 'roles', id), sanitizeDoc({ id, ...data, updatedAt: now }), { merge: true });
+      } catch (err) {
+        console.warn('updateRole Firestore sync note:', err);
+      }
+    }
+    return updatedRole || (data as UserRole);
+  },
+
+  async deleteRole(id: string): Promise<void> {
+    const db = getDb();
+    localStore.updateDataset((ds) => {
+      ds.roles = ds.roles.filter((r) => r.id !== id);
+    }, ['roles']);
+
+    if (db) {
+      try {
+        await deleteDoc(doc(db, 'roles', id));
+      } catch (err) {
+        console.warn('deleteRole Firestore sync note:', err);
+      }
     }
   },
 
   subscribeStaff(callback: (staff: StaffUser[]) => void): Unsubscribe {
-    const db = getDb();
-    if (!db) {
-      return localStore.subscribe('staff', callback, (ds) => ds.staff);
-    }
-    const q = collection(db, 'staff');
-    return onSnapshot(q, (snapshot) => {
-      const items = snapshot.docs.map((d) => ({ id: d.id, ...d.data() } as StaffUser));
-      callback(items);
-    }, (err) => {
-      console.warn('Staff subscription error:', err);
-    });
+    return createSafeSubscription<StaffUser>('staff', 'staff', callback);
   },
 
   async createStaffUser(data: Partial<StaffUser>): Promise<StaffUser> {
@@ -1310,48 +1448,58 @@ export const firestoreService = {
       discordUserId: data.discordUserId || '',
       ...data,
     };
+
+    localStore.updateDataset((ds) => {
+      ds.staff.push(staff);
+    }, ['staff']);
+
     if (db) {
-      await setDoc(doc(db, 'staff', id), sanitizeDoc(staff), { merge: true });
-    } else {
-      localStore.updateDataset((ds) => {
-        ds.staff.push(staff);
-      }, ['staff']);
+      try {
+        await setDoc(doc(db, 'staff', id), sanitizeDoc(staff), { merge: true });
+      } catch (err) {
+        console.warn('createStaffUser Firestore sync note:', err);
+      }
     }
     return staff;
   },
 
   async updateStaffUser(id: string, data: Partial<StaffUser>): Promise<StaffUser> {
     const db = getDb();
+    let updatedStaff: StaffUser | null = null;
+    localStore.updateDataset((ds) => {
+      const idx = ds.staff.findIndex((s) => s.id === id);
+      if (idx !== -1) {
+        ds.staff[idx] = { ...ds.staff[idx], ...data };
+        updatedStaff = ds.staff[idx];
+      } else {
+        const newS = { id, ...data } as StaffUser;
+        ds.staff.push(newS);
+        updatedStaff = newS;
+      }
+    }, ['staff']);
+
     if (db) {
-      const docRef = doc(db, 'staff', id);
-      await setDoc(docRef, sanitizeDoc({ id, ...data }), { merge: true });
-      const snap = await getDoc(docRef);
-      return { id, ...snap.data() } as StaffUser;
-    } else {
-      let updatedStaff: StaffUser | null = null;
-      localStore.updateDataset((ds) => {
-        const idx = ds.staff.findIndex((s) => s.id === id);
-        if (idx !== -1) {
-          ds.staff[idx] = { ...ds.staff[idx], ...data };
-          updatedStaff = ds.staff[idx];
-        } else {
-          const newS = { id, ...data } as StaffUser;
-          ds.staff.push(newS);
-          updatedStaff = newS;
-        }
-      }, ['staff']);
-      return updatedStaff || (data as StaffUser);
+      try {
+        await setDoc(doc(db, 'staff', id), sanitizeDoc({ id, ...data }), { merge: true });
+      } catch (err) {
+        console.warn('updateStaffUser Firestore sync note:', err);
+      }
     }
+    return updatedStaff || (data as StaffUser);
   },
 
   async deleteStaffUser(id: string): Promise<void> {
     const db = getDb();
+    localStore.updateDataset((ds) => {
+      ds.staff = ds.staff.filter((s) => s.id !== id);
+    }, ['staff']);
+
     if (db) {
-      await deleteDoc(doc(db, 'staff', id));
-    } else {
-      localStore.updateDataset((ds) => {
-        ds.staff = ds.staff.filter((s) => s.id !== id);
-      }, ['staff']);
+      try {
+        await deleteDoc(doc(db, 'staff', id));
+      } catch (err) {
+        console.warn('deleteStaffUser Firestore sync note:', err);
+      }
     }
   },
 
@@ -1359,27 +1507,22 @@ export const firestoreService = {
   // CLIENTS
   // ==========================================
   subscribeClients(callback: (clients: Client[]) => void): Unsubscribe {
-    const db = getDb();
-    if (!db) {
-      return localStore.subscribe('clients', callback, (ds) => ds.clients);
-    }
-    const q = collection(db, 'clients');
-    return onSnapshot(q, (snapshot) => {
-      const items = snapshot.docs.map((d) => ({ id: d.id, ...d.data() } as Client));
-      callback(items);
-    }, (err) => {
-      console.warn('Clients subscription error:', err);
-    });
+    return createSafeSubscription<Client>('clients', 'clients', callback);
   },
 
   async getClient(id: string): Promise<Client | null> {
     const db = getDb();
-    if (!db) {
-      return localStore.getDataset().clients.find((c) => c.id === id) || null;
+    if (db) {
+      try {
+        const snap = await getDoc(doc(db, 'clients', id));
+        if (snap.exists()) {
+          return { id: snap.id, ...snap.data() } as Client;
+        }
+      } catch (err) {
+        console.warn('getClient Firestore read fallback:', err);
+      }
     }
-    const snap = await getDoc(doc(db, 'clients', id));
-    if (!snap.exists()) return null;
-    return { id: snap.id, ...snap.data() } as Client;
+    return localStore.getDataset().clients.find((c) => c.id === id) || null;
   },
 
   async createClient(data: Partial<Client>): Promise<Client> {
@@ -1439,12 +1582,16 @@ export const firestoreService = {
       ...data,
     };
 
+    localStore.updateDataset((ds) => {
+      ds.clients.push(client);
+    }, ['clients']);
+
     if (db) {
-      await setDoc(doc(db, 'clients', id), sanitizeDoc(client), { merge: true });
-    } else {
-      localStore.updateDataset((ds) => {
-        ds.clients.push(client);
-      }, ['clients']);
+      try {
+        await setDoc(doc(db, 'clients', id), sanitizeDoc(client), { merge: true });
+      } catch (err) {
+        console.warn('createClient Firestore sync note:', err);
+      }
     }
 
     // Log timeline event
@@ -1462,27 +1609,49 @@ export const firestoreService = {
   async updateClient(id: string, data: Partial<Client>): Promise<Client> {
     const db = getDb();
     const now = new Date().toISOString();
+    let updatedClient: Client | null = null;
+    localStore.updateDataset((ds) => {
+      const idx = ds.clients.findIndex((c) => c.id === id);
+      if (idx !== -1) {
+        ds.clients[idx] = { ...ds.clients[idx], ...data, updatedAt: now };
+        updatedClient = ds.clients[idx];
+      } else {
+        const c = { id, ...data, updatedAt: now } as Client;
+        ds.clients.push(c);
+        updatedClient = c;
+      }
+    }, ['clients']);
+
     if (db) {
-      const docRef = doc(db, 'clients', id);
-      const updated = { ...data, updatedAt: now };
-      await updateDoc(docRef, sanitizeDoc(updated));
-      const snap = await getDoc(docRef);
-      return { id, ...snap.data() } as Client;
-    } else {
-      let updatedClient: Client | null = null;
-      localStore.updateDataset((ds) => {
-        const idx = ds.clients.findIndex((c) => c.id === id);
-        if (idx !== -1) {
-          ds.clients[idx] = { ...ds.clients[idx], ...data, updatedAt: now };
-          updatedClient = ds.clients[idx];
-        }
-      }, ['clients']);
-      return updatedClient || (data as Client);
+      try {
+        await setDoc(doc(db, 'clients', id), sanitizeDoc({ id, ...data, updatedAt: now }), { merge: true });
+      } catch (err) {
+        console.warn('updateClient Firestore sync note:', err);
+      }
     }
+    return updatedClient || (data as Client);
   },
 
   async deleteClient(id: string): Promise<void> {
     const db = getDb();
+    // Always update local fallback store first
+    localStore.updateDataset((ds) => {
+      ds.clients = ds.clients.filter((c) => c.id !== id);
+      if (ds.masterVerifications) {
+        delete ds.masterVerifications[id];
+      }
+      const dealIds = new Set(ds.deals.filter((d) => d.clientId === id).map((d) => d.id));
+      ds.deals = ds.deals.filter((d) => d.clientId !== id);
+      ds.commissions = ds.commissions.filter((c) => !dealIds.has(c.dealId));
+      ds.tasks = ds.tasks.filter((t) => t.clientId !== id);
+      ds.documents = ds.documents.filter((d) => d.clientId !== id);
+      ds.timelineEvents = ds.timelineEvents.filter((e) => e.clientId !== id);
+      ds.internalNotes = ds.internalNotes.filter((n) => n.clientId !== id);
+      ds.fundingStrategies = ds.fundingStrategies.filter((s) => s.clientId !== id);
+      ds.lenderHistory = ds.lenderHistory.filter((l) => l.clientId !== id);
+      ds.creditCards = ds.creditCards.filter((c) => c.clientId !== id);
+    }, ['clients', 'masterVerifications', 'deals', 'commissions', 'tasks', 'documents', 'timelineEvents', 'internalNotes', 'fundingStrategies', 'lenderHistory', 'creditCards']);
+
     if (db) {
       try {
         const batch = writeBatch(db);
@@ -1528,54 +1697,36 @@ export const firestoreService = {
         await batch.commit();
       } catch (batchErr) {
         console.warn('Batch delete encounter, falling back to direct client deletion:', batchErr);
-        await deleteDoc(doc(db, 'clients', id));
+        try {
+          await deleteDoc(doc(db, 'clients', id));
+        } catch {
+          // ignore
+        }
       }
     }
-
-    // Always update local fallback store as well
-    localStore.updateDataset((ds) => {
-      ds.clients = ds.clients.filter((c) => c.id !== id);
-      if (ds.masterVerifications) {
-        delete ds.masterVerifications[id];
-      }
-      const dealIds = new Set(ds.deals.filter((d) => d.clientId === id).map((d) => d.id));
-      ds.deals = ds.deals.filter((d) => d.clientId !== id);
-      ds.commissions = ds.commissions.filter((c) => !dealIds.has(c.dealId));
-      ds.tasks = ds.tasks.filter((t) => t.clientId !== id);
-      ds.documents = ds.documents.filter((d) => d.clientId !== id);
-      ds.timelineEvents = ds.timelineEvents.filter((e) => e.clientId !== id);
-      ds.internalNotes = ds.internalNotes.filter((n) => n.clientId !== id);
-      ds.fundingStrategies = ds.fundingStrategies.filter((s) => s.clientId !== id);
-      ds.lenderHistory = ds.lenderHistory.filter((l) => l.clientId !== id);
-      ds.creditCards = ds.creditCards.filter((c) => c.clientId !== id);
-    }, ['clients', 'masterVerifications', 'deals', 'commissions', 'tasks', 'documents', 'timelineEvents', 'internalNotes', 'fundingStrategies', 'lenderHistory', 'creditCards']);
   },
 
   // ==========================================
   // DEALS (Funding Stacking: Multiple Independent Deals Per Client)
   // ==========================================
   subscribeDeals(callback: (deals: FundingDeal[]) => void): Unsubscribe {
-    const db = getDb();
-    if (!db) {
-      return localStore.subscribe('deals', callback, (ds) => ds.deals);
-    }
-    const q = collection(db, 'deals');
-    return onSnapshot(q, (snapshot) => {
-      const items = snapshot.docs.map((d) => ({ id: d.id, ...d.data() } as FundingDeal));
-      callback(items);
-    }, (err) => {
-      console.warn('Deals subscription error:', err);
-    });
+    return createSafeSubscription<FundingDeal>('deals', 'deals', callback);
   },
 
   async getDealsForClient(clientId: string): Promise<FundingDeal[]> {
     const db = getDb();
-    if (!db) {
-      return localStore.getDataset().deals.filter((d) => d.clientId === clientId);
+    if (db) {
+      try {
+        const q = query(collection(db, 'deals'), where('clientId', '==', clientId));
+        const snap = await getDocs(q);
+        if (!snap.empty) {
+          return snap.docs.map((d) => ({ id: d.id, ...d.data() } as FundingDeal));
+        }
+      } catch (err) {
+        console.warn('getDealsForClient Firestore read fallback:', err);
+      }
     }
-    const q = query(collection(db, 'deals'), where('clientId', '==', clientId));
-    const snap = await getDocs(q);
-    return snap.docs.map((d) => ({ id: d.id, ...d.data() } as FundingDeal));
+    return localStore.getDataset().deals.filter((d) => d.clientId === clientId);
   },
 
   async createDeal(data: Partial<FundingDeal>): Promise<FundingDeal> {
@@ -1609,12 +1760,16 @@ export const firestoreService = {
       ...data,
     };
 
+    localStore.updateDataset((ds) => {
+      ds.deals.push(deal);
+    }, ['deals']);
+
     if (db) {
-      await setDoc(doc(db, 'deals', id), sanitizeDoc(deal), { merge: true });
-    } else {
-      localStore.updateDataset((ds) => {
-        ds.deals.push(deal);
-      }, ['deals']);
+      try {
+        await setDoc(doc(db, 'deals', id), sanitizeDoc(deal), { merge: true });
+      } catch (err) {
+        console.warn('createDeal Firestore sync note:', err);
+      }
     }
 
     // Auto calculate initial commission distributions
@@ -1636,44 +1791,50 @@ export const firestoreService = {
   async updateDeal(id: string, data: Partial<FundingDeal>): Promise<FundingDeal> {
     const db = getDb();
     const now = new Date().toISOString();
-    if (db) {
-      const docRef = doc(db, 'deals', id);
-      const updated = { ...data, updatedAt: now };
-      await updateDoc(docRef, sanitizeDoc(updated));
-      const snap = await getDoc(docRef);
-      const finalDeal = { id, ...snap.data() } as FundingDeal;
+    let finalDeal: FundingDeal | null = null;
 
+    localStore.updateDataset((ds) => {
+      const idx = ds.deals.findIndex((d) => d.id === id);
+      if (idx !== -1) {
+        ds.deals[idx] = { ...ds.deals[idx], ...data, updatedAt: now };
+        finalDeal = ds.deals[idx];
+      } else {
+        const d = { id, ...data, updatedAt: now } as FundingDeal;
+        ds.deals.push(d);
+        finalDeal = d;
+      }
+    }, ['deals']);
+
+    if (db) {
+      try {
+        await setDoc(doc(db, 'deals', id), sanitizeDoc({ id, ...data, updatedAt: now }), { merge: true });
+      } catch (err) {
+        console.warn('updateDeal Firestore sync note:', err);
+      }
+    }
+
+    if (finalDeal) {
       if (data.fundingAmount !== undefined || data.percentage !== undefined || data.product !== undefined) {
         await firestoreService.recalculateAndSaveCommissionDistribution(finalDeal);
       }
-
       return finalDeal;
-    } else {
-      let finalDeal: FundingDeal | null = null;
-      localStore.updateDataset((ds) => {
-        const idx = ds.deals.findIndex((d) => d.id === id);
-        if (idx !== -1) {
-          ds.deals[idx] = { ...ds.deals[idx], ...data, updatedAt: now };
-          finalDeal = ds.deals[idx];
-        }
-      }, ['deals']);
-
-      if (finalDeal) {
-        await firestoreService.recalculateAndSaveCommissionDistribution(finalDeal);
-        return finalDeal;
-      }
-      return data as FundingDeal;
     }
+    return data as FundingDeal;
   },
 
   async deleteDeal(id: string): Promise<void> {
     const db = getDb();
+    localStore.updateDataset((ds) => {
+      ds.deals = ds.deals.filter((d) => d.id !== id);
+      ds.commissions = ds.commissions.filter((c) => c.dealId !== id);
+    }, ['deals', 'commissions']);
+
     if (db) {
-      await deleteDoc(doc(db, 'deals', id));
-    } else {
-      localStore.updateDataset((ds) => {
-        ds.deals = ds.deals.filter((d) => d.id !== id);
-      }, ['deals']);
+      try {
+        await deleteDoc(doc(db, 'deals', id));
+      } catch (err) {
+        console.warn('deleteDeal Firestore sync note:', err);
+      }
     }
   },
 
@@ -1681,17 +1842,7 @@ export const firestoreService = {
   // LEADS
   // ==========================================
   subscribeLeads(callback: (leads: Lead[]) => void): Unsubscribe {
-    const db = getDb();
-    if (!db) {
-      return localStore.subscribe('leads', callback, (ds) => ds.leads);
-    }
-    const q = collection(db, 'leads');
-    return onSnapshot(q, (snapshot) => {
-      const items = snapshot.docs.map((d) => ({ id: d.id, ...d.data() } as Lead));
-      callback(items);
-    }, (err) => {
-      console.warn('Leads subscription error:', err);
-    });
+    return createSafeSubscription<Lead>('leads', 'leads', callback);
   },
 
   async createLead(data: Partial<Lead>): Promise<Lead> {
@@ -1720,12 +1871,16 @@ export const firestoreService = {
       ...data,
     };
 
+    localStore.updateDataset((ds) => {
+      ds.leads.push(lead);
+    }, ['leads']);
+
     if (db) {
-      await setDoc(doc(db, 'leads', id), sanitizeDoc(lead), { merge: true });
-    } else {
-      localStore.updateDataset((ds) => {
-        ds.leads.push(lead);
-      }, ['leads']);
+      try {
+        await setDoc(doc(db, 'leads', id), sanitizeDoc(lead), { merge: true });
+      } catch (err) {
+        console.warn('createLead Firestore sync note:', err);
+      }
     }
     return lead;
   },
@@ -1733,47 +1888,56 @@ export const firestoreService = {
   async updateLead(id: string, data: Partial<Lead>): Promise<Lead> {
     const db = getDb();
     const now = new Date().toISOString();
+    let updatedLead: Lead | null = null;
+    localStore.updateDataset((ds) => {
+      const idx = ds.leads.findIndex((l) => l.id === id);
+      if (idx !== -1) {
+        ds.leads[idx] = { ...ds.leads[idx], ...data, updatedAt: now };
+        updatedLead = ds.leads[idx];
+      } else {
+        const l = { id, ...data, updatedAt: now } as Lead;
+        ds.leads.push(l);
+        updatedLead = l;
+      }
+    }, ['leads']);
+
     if (db) {
-      const docRef = doc(db, 'leads', id);
-      const updated = { ...data, updatedAt: now };
-      await updateDoc(docRef, sanitizeDoc(updated));
-      const snap = await getDoc(docRef);
-      return { id, ...snap.data() } as Lead;
-    } else {
-      let updatedLead: Lead | null = null;
-      localStore.updateDataset((ds) => {
-        const idx = ds.leads.findIndex((l) => l.id === id);
-        if (idx !== -1) {
-          ds.leads[idx] = { ...ds.leads[idx], ...data, updatedAt: now };
-          updatedLead = ds.leads[idx];
-        }
-      }, ['leads']);
-      return updatedLead || (data as Lead);
+      try {
+        await setDoc(doc(db, 'leads', id), sanitizeDoc({ id, ...data, updatedAt: now }), { merge: true });
+      } catch (err) {
+        console.warn('updateLead Firestore sync note:', err);
+      }
     }
+    return updatedLead || (data as Lead);
   },
 
   async deleteLead(id: string): Promise<void> {
     const db = getDb();
+    localStore.updateDataset((ds) => {
+      ds.leads = ds.leads.filter((l) => l.id !== id);
+    }, ['leads']);
+
     if (db) {
-      await deleteDoc(doc(db, 'leads', id));
-    } else {
-      localStore.updateDataset((ds) => {
-        ds.leads = ds.leads.filter((l) => l.id !== id);
-      }, ['leads']);
+      try {
+        await deleteDoc(doc(db, 'leads', id));
+      } catch (err) {
+        console.warn('deleteLead Firestore sync note:', err);
+      }
     }
   },
 
   async convertLeadToClient(leadId: string, customData: Partial<Client> = {}): Promise<{ client: Client; deal: FundingDeal }> {
     const db = getDb();
-    let lead: Lead | null = null;
-    if (db) {
-      const snap = await getDoc(doc(db, 'leads', leadId));
-      if (!snap.exists()) throw new Error('Lead not found');
-      lead = snap.data() as Lead;
-    } else {
-      lead = localStore.getDataset().leads.find((l) => l.id === leadId) || null;
-      if (!lead) throw new Error('Lead not found');
+    let lead: Lead | null = localStore.getDataset().leads.find((l) => l.id === leadId) || null;
+    if (!lead && db) {
+      try {
+        const snap = await getDoc(doc(db, 'leads', leadId));
+        if (snap.exists()) lead = snap.data() as Lead;
+      } catch {
+        // ignore
+      }
     }
+    if (!lead) throw new Error('Lead not found');
 
     const client = await firestoreService.createClient({
       firstName: lead.firstName,
@@ -1816,47 +1980,33 @@ export const firestoreService = {
   // COMMISSIONS & COMMISSION RULES BY FUNDING TYPE
   // ==========================================
   subscribeCommissions(callback: (commissions: CommissionParticipant[]) => void): Unsubscribe {
-    const db = getDb();
-    if (!db) {
-      return localStore.subscribe('commissions', callback, (ds) => ds.commissions);
-    }
-    const q = collection(db, 'commissions');
-    return onSnapshot(q, (snapshot) => {
-      const items = snapshot.docs.map((d) => ({ id: d.id, ...d.data() } as CommissionParticipant));
-      callback(items);
-    }, (err) => {
-      console.warn('Commissions subscription error:', err);
-    });
+    return createSafeSubscription<CommissionParticipant>('commissions', 'commissions', callback);
   },
 
   subscribeCommissionRules(callback: (rules: CommissionRule[]) => void): Unsubscribe {
-    const db = getDb();
-    if (!db) {
-      return localStore.subscribe('commissionRules', callback, (ds) => ds.commissionRules.length > 0 ? ds.commissionRules : DEFAULT_COMMISSION_RULES);
-    }
-    const q = collection(db, 'commissionRules');
-    return onSnapshot(q, (snapshot) => {
-      const items = snapshot.docs.map((d) => ({ id: d.id, ...d.data() } as CommissionRule));
-      callback(items.length > 0 ? items : DEFAULT_COMMISSION_RULES);
-    }, (err) => {
-      console.warn('Commission rules subscription error:', err);
-    });
+    return createSafeSubscription<CommissionRule>(
+      'commissionRules',
+      'commissionRules',
+      callback,
+      undefined,
+      (rules) => (rules && rules.length > 0 ? rules : DEFAULT_COMMISSION_RULES)
+    );
   },
 
   async getCommissionRules(): Promise<CommissionRule[]> {
     const db = getDb();
-    if (!db) {
-      const rules = localStore.getDataset().commissionRules;
-      return rules.length > 0 ? rules : DEFAULT_COMMISSION_RULES;
-    }
-    const snap = await getDocs(collection(db, 'commissionRules'));
-    if (snap.empty) {
-      for (const rule of DEFAULT_COMMISSION_RULES) {
-        await setDoc(doc(db, 'commissionRules', rule.id), sanitizeDoc(rule));
+    if (db) {
+      try {
+        const snap = await getDocs(collection(db, 'commissionRules'));
+        if (!snap.empty) {
+          return snap.docs.map((d) => ({ id: d.id, ...d.data() } as CommissionRule));
+        }
+      } catch (err) {
+        console.warn('getCommissionRules Firestore read fallback:', err);
       }
-      return DEFAULT_COMMISSION_RULES;
     }
-    return snap.docs.map((d) => ({ id: d.id, ...d.data() } as CommissionRule));
+    const rules = localStore.getDataset().commissionRules;
+    return rules.length > 0 ? rules : DEFAULT_COMMISSION_RULES;
   },
 
   async saveCommissionRule(rule: Partial<CommissionRule>): Promise<CommissionRule> {
@@ -1873,29 +2023,38 @@ export const firestoreService = {
       active: rule.active !== undefined ? rule.active : true,
       description: rule.description || '',
     };
+
+    localStore.updateDataset((ds) => {
+      const idx = ds.commissionRules.findIndex((r) => r.id === id);
+      if (idx !== -1) {
+        ds.commissionRules[idx] = cleanRule;
+      } else {
+        ds.commissionRules.push(cleanRule);
+      }
+    }, ['commissionRules']);
+
     if (db) {
-      await setDoc(doc(db, 'commissionRules', id), sanitizeDoc(cleanRule), { merge: true });
-    } else {
-      localStore.updateDataset((ds) => {
-        const idx = ds.commissionRules.findIndex((r) => r.id === id);
-        if (idx !== -1) {
-          ds.commissionRules[idx] = cleanRule;
-        } else {
-          ds.commissionRules.push(cleanRule);
-        }
-      }, ['commissionRules']);
+      try {
+        await setDoc(doc(db, 'commissionRules', id), sanitizeDoc(cleanRule), { merge: true });
+      } catch (err) {
+        console.warn('saveCommissionRule Firestore sync note:', err);
+      }
     }
     return cleanRule;
   },
 
   async deleteCommissionRule(id: string): Promise<void> {
     const db = getDb();
+    localStore.updateDataset((ds) => {
+      ds.commissionRules = ds.commissionRules.filter((r) => r.id !== id);
+    }, ['commissionRules']);
+
     if (db) {
-      await deleteDoc(doc(db, 'commissionRules', id));
-    } else {
-      localStore.updateDataset((ds) => {
-        ds.commissionRules = ds.commissionRules.filter((r) => r.id !== id);
-      }, ['commissionRules']);
+      try {
+        await deleteDoc(doc(db, 'commissionRules', id));
+      } catch (err) {
+        console.warn('deleteCommissionRule Firestore sync note:', err);
+      }
     }
   },
 
@@ -1917,24 +2076,33 @@ export const firestoreService = {
       updatedAt: now,
       ...data,
     };
+
+    localStore.updateDataset((ds) => {
+      ds.commissions.push(participant);
+    }, ['commissions']);
+
     if (db) {
-      await setDoc(doc(db, 'commissions', id), sanitizeDoc(participant), { merge: true });
-    } else {
-      localStore.updateDataset((ds) => {
-        ds.commissions.push(participant);
-      }, ['commissions']);
+      try {
+        await setDoc(doc(db, 'commissions', id), sanitizeDoc(participant), { merge: true });
+      } catch (err) {
+        console.warn('addCommissionParticipant Firestore sync note:', err);
+      }
     }
     return participant;
   },
 
   async deleteCommissionParticipant(id: string): Promise<void> {
     const db = getDb();
+    localStore.updateDataset((ds) => {
+      ds.commissions = ds.commissions.filter((c) => c.id !== id);
+    }, ['commissions']);
+
     if (db) {
-      await deleteDoc(doc(db, 'commissions', id));
-    } else {
-      localStore.updateDataset((ds) => {
-        ds.commissions = ds.commissions.filter((c) => c.id !== id);
-      }, ['commissions']);
+      try {
+        await deleteDoc(doc(db, 'commissions', id));
+      } catch (err) {
+        console.warn('deleteCommissionParticipant Firestore sync note:', err);
+      }
     }
   },
 
@@ -1943,17 +2111,7 @@ export const firestoreService = {
   },
 
   subscribeCommissionDirectory(callback: (entries: CommissionDirectoryEntry[]) => void): Unsubscribe {
-    const db = getDb();
-    if (!db) {
-      return localStore.subscribe('commissionDirectory', callback, (ds) => ds.commissionDirectory);
-    }
-    const q = collection(db, 'commissionDirectory');
-    return onSnapshot(q, (snapshot) => {
-      const items = snapshot.docs.map((d) => ({ id: d.id, ...d.data() } as CommissionDirectoryEntry));
-      callback(items);
-    }, (err) => {
-      console.warn('Commission directory subscription error:', err);
-    });
+    return createSafeSubscription<CommissionDirectoryEntry>('commissionDirectory', 'commissionDirectory', callback);
   },
 
   async createCommissionDirectoryEntry(data: Partial<CommissionDirectoryEntry>): Promise<CommissionDirectoryEntry> {
@@ -1971,55 +2129,72 @@ export const firestoreService = {
       active: true,
       ...data,
     };
+
+    localStore.updateDataset((ds) => {
+      ds.commissionDirectory.push(entry);
+    }, ['commissionDirectory']);
+
     if (db) {
-      await setDoc(doc(db, 'commissionDirectory', id), sanitizeDoc(entry), { merge: true });
-    } else {
-      localStore.updateDataset((ds) => {
-        ds.commissionDirectory.push(entry);
-      }, ['commissionDirectory']);
+      try {
+        await setDoc(doc(db, 'commissionDirectory', id), sanitizeDoc(entry), { merge: true });
+      } catch (err) {
+        console.warn('createCommissionDirectoryEntry Firestore sync note:', err);
+      }
     }
     return entry;
   },
 
   async updateCommissionDirectoryEntry(id: string, data: Partial<CommissionDirectoryEntry>): Promise<CommissionDirectoryEntry> {
     const db = getDb();
+    let res: CommissionDirectoryEntry | null = null;
+    localStore.updateDataset((ds) => {
+      const idx = ds.commissionDirectory.findIndex((d) => d.id === id);
+      if (idx !== -1) {
+        ds.commissionDirectory[idx] = { ...ds.commissionDirectory[idx], ...data };
+        res = ds.commissionDirectory[idx];
+      }
+    }, ['commissionDirectory']);
+
     if (db) {
-      const docRef = doc(db, 'commissionDirectory', id);
-      await updateDoc(docRef, sanitizeDoc(data));
-      const snap = await getDoc(docRef);
-      return { id, ...snap.data() } as CommissionDirectoryEntry;
-    } else {
-      let res: CommissionDirectoryEntry | null = null;
-      localStore.updateDataset((ds) => {
-        const idx = ds.commissionDirectory.findIndex((d) => d.id === id);
-        if (idx !== -1) {
-          ds.commissionDirectory[idx] = { ...ds.commissionDirectory[idx], ...data };
-          res = ds.commissionDirectory[idx];
-        }
-      }, ['commissionDirectory']);
-      return res || (data as CommissionDirectoryEntry);
+      try {
+        const docRef = doc(db, 'commissionDirectory', id);
+        await updateDoc(docRef, sanitizeDoc(data));
+      } catch (err) {
+        console.warn('updateCommissionDirectoryEntry Firestore sync note:', err);
+      }
     }
+    return res || (data as CommissionDirectoryEntry);
   },
 
   async deleteCommissionDirectoryEntry(id: string): Promise<void> {
     const db = getDb();
+    localStore.updateDataset((ds) => {
+      ds.commissionDirectory = ds.commissionDirectory.filter((d) => d.id !== id);
+    }, ['commissionDirectory']);
+
     if (db) {
-      await deleteDoc(doc(db, 'commissionDirectory', id));
-    } else {
-      localStore.updateDataset((ds) => {
-        ds.commissionDirectory = ds.commissionDirectory.filter((d) => d.id !== id);
-      }, ['commissionDirectory']);
+      try {
+        await deleteDoc(doc(db, 'commissionDirectory', id));
+      } catch (err) {
+        console.warn('deleteCommissionDirectoryEntry Firestore sync note:', err);
+      }
     }
   },
 
   async getCommissionParticipantsForDeal(dealId: string): Promise<CommissionParticipant[]> {
     const db = getDb();
-    if (!db) {
-      return localStore.getDataset().commissions.filter((c) => c.dealId === dealId);
+    if (db) {
+      try {
+        const q = query(collection(db, 'commissions'), where('dealId', '==', dealId));
+        const snap = await getDocs(q);
+        if (!snap.empty) {
+          return snap.docs.map((d) => ({ id: d.id, ...d.data() } as CommissionParticipant));
+        }
+      } catch (err) {
+        console.warn('getCommissionParticipantsForDeal Firestore read fallback:', err);
+      }
     }
-    const q = query(collection(db, 'commissions'), where('dealId', '==', dealId));
-    const snap = await getDocs(q);
-    return snap.docs.map((d) => ({ id: d.id, ...d.data() } as CommissionParticipant));
+    return localStore.getDataset().commissions.filter((c) => c.dealId === dealId);
   },
 
   async recalculateAndSaveCommissionDistribution(deal: FundingDeal): Promise<CommissionParticipant[]> {
@@ -2027,7 +2202,6 @@ export const firestoreService = {
     const rules = await firestoreService.getCommissionRules();
     const matchingRule = rules.find((r) => r.loanType.toLowerCase() === deal.product.toLowerCase()) || rules[0];
 
-    const grossCommission = deal.fundingAmount * ((deal.percentage || matchingRule?.defaultRate || 6.9) / 100);
     const now = new Date().toISOString();
 
     const splits = matchingRule?.splits || [
@@ -2058,17 +2232,21 @@ export const firestoreService = {
       };
     });
 
+    localStore.updateDataset((ds) => {
+      ds.commissions = ds.commissions.filter((c) => c.dealId !== deal.id);
+      ds.commissions.push(...participants);
+    }, ['commissions']);
+
     if (db) {
-      const batch = writeBatch(db);
-      for (const p of participants) {
-        batch.set(doc(db, 'commissions', p.id), sanitizeDoc(p), { merge: true });
+      try {
+        const batch = writeBatch(db);
+        for (const p of participants) {
+          batch.set(doc(db, 'commissions', p.id), sanitizeDoc(p), { merge: true });
+        }
+        await batch.commit();
+      } catch (err) {
+        console.warn('recalculateAndSaveCommissionDistribution Firestore sync note:', err);
       }
-      await batch.commit();
-    } else {
-      localStore.updateDataset((ds) => {
-        ds.commissions = ds.commissions.filter((c) => c.dealId !== deal.id);
-        ds.commissions.push(...participants);
-      }, ['commissions']);
     }
 
     return participants;
@@ -2077,65 +2255,65 @@ export const firestoreService = {
   async updateCommissionParticipant(id: string, data: Partial<CommissionParticipant>): Promise<CommissionParticipant> {
     const db = getDb();
     const now = new Date().toISOString();
+    let res: CommissionParticipant | null = null;
+    localStore.updateDataset((ds) => {
+      const idx = ds.commissions.findIndex((c) => c.id === id);
+      if (idx !== -1) {
+        ds.commissions[idx] = { ...ds.commissions[idx], ...data, updatedAt: now };
+        res = ds.commissions[idx];
+      }
+    }, ['commissions']);
+
     if (db) {
-      const docRef = doc(db, 'commissions', id);
-      const updated = { ...data, updatedAt: now };
-      await updateDoc(docRef, sanitizeDoc(updated));
-      const snap = await getDoc(docRef);
-      return { id, ...snap.data() } as CommissionParticipant;
-    } else {
-      let res: CommissionParticipant | null = null;
-      localStore.updateDataset((ds) => {
-        const idx = ds.commissions.findIndex((c) => c.id === id);
-        if (idx !== -1) {
-          ds.commissions[idx] = { ...ds.commissions[idx], ...data, updatedAt: now };
-          res = ds.commissions[idx];
-        }
-      }, ['commissions']);
-      return res || (data as CommissionParticipant);
+      try {
+        const docRef = doc(db, 'commissions', id);
+        const updated = { ...data, updatedAt: now };
+        await updateDoc(docRef, sanitizeDoc(updated));
+      } catch (err) {
+        console.warn('updateCommissionParticipant Firestore sync note:', err);
+      }
     }
+    return res || (data as CommissionParticipant);
   },
 
   async markCommissionReceivedForDeal(dealId: string): Promise<void> {
     const db = getDb();
     const now = new Date().toISOString();
-    const participants = await firestoreService.getCommissionParticipantsForDeal(dealId);
+
+    localStore.updateDataset((ds) => {
+      ds.commissions = ds.commissions.map((c) => {
+        if (c.dealId === dealId) {
+          return { ...c, status: 'RECEIVED', receivedDate: now, updatedAt: now };
+        }
+        return c;
+      });
+    }, ['commissions']);
 
     if (db) {
-      const batch = writeBatch(db);
-      for (const p of participants) {
-        batch.update(doc(db, 'commissions', p.id), {
-          status: 'RECEIVED',
-          receivedDate: now,
-          updatedAt: now,
-        });
+      try {
+        const participants = await firestoreService.getCommissionParticipantsForDeal(dealId);
+        const batch = writeBatch(db);
+        for (const p of participants) {
+          batch.update(doc(db, 'commissions', p.id), {
+            status: 'RECEIVED',
+            receivedDate: now,
+            updatedAt: now,
+          });
+        }
+        await batch.commit();
+      } catch (err) {
+        console.warn('markCommissionReceivedForDeal Firestore sync note:', err);
       }
-      await batch.commit();
-    } else {
-      localStore.updateDataset((ds) => {
-        ds.commissions = ds.commissions.map((c) => {
-          if (c.dealId === dealId) {
-            return { ...c, status: 'RECEIVED', receivedDate: now, updatedAt: now };
-          }
-          return c;
-        });
-      }, ['commissions']);
     }
 
-    const deals = await firestoreService.subscribeDeals ? await new Promise<FundingDeal[]>((res) => {
-      const u = firestoreService.subscribeDeals((dList) => {
-        u();
-        res(dList);
-      });
-    }) : [];
-
+    const deals = localStore.getDataset().deals;
     const deal = deals.find((d) => d.id === dealId);
     if (deal) {
       await firestoreService.createTimelineEvent({
         clientId: deal.clientId,
         dealId,
         title: `Commission Collected & Settled`,
-        description: `Full commission of $${(deal.fundingAmount * (deal.percentage / 100)).toLocaleString()} settled and distributed to team.`,
+        description: `Full commission of $${(deal.fundingAmount * ((deal.percentage || 6.9) / 100)).toLocaleString()} settled and distributed to team.`,
         staffMember: 'Dana',
         type: 'COMMISSION',
       });
@@ -2146,17 +2324,7 @@ export const firestoreService = {
   // TASKS & NOTIFICATIONS
   // ==========================================
   subscribeTasks(callback: (tasks: InternalTask[]) => void): Unsubscribe {
-    const db = getDb();
-    if (!db) {
-      return localStore.subscribe('tasks', callback, (ds) => ds.tasks);
-    }
-    const q = collection(db, 'tasks');
-    return onSnapshot(q, (snapshot) => {
-      const items = snapshot.docs.map((d) => ({ id: d.id, ...d.data() } as InternalTask));
-      callback(items);
-    }, (err) => {
-      console.warn('Tasks subscription error:', err);
-    });
+    return createSafeSubscription<InternalTask>('tasks', 'tasks', callback);
   },
 
   async createTask(data: Partial<InternalTask>): Promise<InternalTask> {
@@ -2185,12 +2353,16 @@ export const firestoreService = {
       ...data,
     };
 
+    localStore.updateDataset((ds) => {
+      ds.tasks.push(task);
+    }, ['tasks']);
+
     if (db) {
-      await setDoc(doc(db, 'tasks', id), sanitizeDoc(task), { merge: true });
-    } else {
-      localStore.updateDataset((ds) => {
-        ds.tasks.push(task);
-      }, ['tasks']);
+      try {
+        await setDoc(doc(db, 'tasks', id), sanitizeDoc(task), { merge: true });
+      } catch (err) {
+        console.warn('createTask Firestore sync note:', err);
+      }
     }
     return task;
   },
@@ -2198,33 +2370,39 @@ export const firestoreService = {
   async updateTask(id: string, data: Partial<InternalTask>): Promise<InternalTask> {
     const db = getDb();
     const now = new Date().toISOString();
+    let res: InternalTask | null = null;
+    localStore.updateDataset((ds) => {
+      const idx = ds.tasks.findIndex((t) => t.id === id);
+      if (idx !== -1) {
+        ds.tasks[idx] = { ...ds.tasks[idx], ...data, updatedAt: now };
+        res = ds.tasks[idx];
+      }
+    }, ['tasks']);
+
     if (db) {
-      const docRef = doc(db, 'tasks', id);
-      const updated = { ...data, updatedAt: now };
-      await updateDoc(docRef, sanitizeDoc(updated));
-      const snap = await getDoc(docRef);
-      return { id, ...snap.data() } as InternalTask;
-    } else {
-      let res: InternalTask | null = null;
-      localStore.updateDataset((ds) => {
-        const idx = ds.tasks.findIndex((t) => t.id === id);
-        if (idx !== -1) {
-          ds.tasks[idx] = { ...ds.tasks[idx], ...data, updatedAt: now };
-          res = ds.tasks[idx];
-        }
-      }, ['tasks']);
-      return res || (data as InternalTask);
+      try {
+        const docRef = doc(db, 'tasks', id);
+        const updated = { ...data, updatedAt: now };
+        await updateDoc(docRef, sanitizeDoc(updated));
+      } catch (err) {
+        console.warn('updateTask Firestore sync note:', err);
+      }
     }
+    return res || (data as InternalTask);
   },
 
   async deleteTask(id: string): Promise<void> {
     const db = getDb();
+    localStore.updateDataset((ds) => {
+      ds.tasks = ds.tasks.filter((t) => t.id !== id);
+    }, ['tasks']);
+
     if (db) {
-      await deleteDoc(doc(db, 'tasks', id));
-    } else {
-      localStore.updateDataset((ds) => {
-        ds.tasks = ds.tasks.filter((t) => t.id !== id);
-      }, ['tasks']);
+      try {
+        await deleteDoc(doc(db, 'tasks', id));
+      } catch (err) {
+        console.warn('deleteTask Firestore sync note:', err);
+      }
     }
   },
 
@@ -2245,17 +2423,7 @@ export const firestoreService = {
   },
 
   subscribeNotifications(callback: (notifs: AppNotification[]) => void): Unsubscribe {
-    const db = getDb();
-    if (!db) {
-      return localStore.subscribe('notifications', callback, (ds) => ds.notifications);
-    }
-    const q = collection(db, 'notifications');
-    return onSnapshot(q, (snapshot) => {
-      const items = snapshot.docs.map((d) => ({ id: d.id, ...d.data() } as AppNotification));
-      callback(items);
-    }, (err) => {
-      console.warn('Notifications error:', err);
-    });
+    return createSafeSubscription<AppNotification>('notifications', 'notifications', callback);
   },
 
   async createNotification(data: Partial<AppNotification>): Promise<AppNotification> {
@@ -2274,48 +2442,61 @@ export const firestoreService = {
       targetId: data.targetId,
       ...data,
     };
+
+    localStore.updateDataset((ds) => {
+      ds.notifications.unshift(notif);
+    }, ['notifications']);
+
     if (db) {
-      await setDoc(doc(db, 'notifications', id), sanitizeDoc(notif), { merge: true });
-    } else {
-      localStore.updateDataset((ds) => {
-        ds.notifications.unshift(notif);
-      }, ['notifications']);
+      try {
+        await setDoc(doc(db, 'notifications', id), sanitizeDoc(notif), { merge: true });
+      } catch (err) {
+        console.warn('createNotification Firestore sync note:', err);
+      }
     }
     return notif;
   },
 
   async markNotificationRead(id: string): Promise<void> {
     const db = getDb();
+    localStore.updateDataset((ds) => {
+      const notif = ds.notifications.find((n) => n.id === id);
+      if (notif) notif.isRead = true;
+    }, ['notifications']);
+
     if (db) {
-      await updateDoc(doc(db, 'notifications', id), { isRead: true });
-    } else {
-      localStore.updateDataset((ds) => {
-        const notif = ds.notifications.find((n) => n.id === id);
-        if (notif) notif.isRead = true;
-      }, ['notifications']);
+      try {
+        await updateDoc(doc(db, 'notifications', id), { isRead: true });
+      } catch (err) {
+        console.warn('markNotificationRead Firestore sync note:', err);
+      }
     }
   },
 
   async markAllNotificationsRead(userId?: string): Promise<void> {
     const db = getDb();
-    if (db) {
-      const snap = await getDocs(collection(db, 'notifications'));
-      const batch = writeBatch(db);
-      snap.docs.forEach((d) => {
-        const data = d.data() as AppNotification;
-        if (!userId || data.userId === userId || data.userId === 'all') {
-          batch.update(d.ref, { isRead: true });
+    localStore.updateDataset((ds) => {
+      ds.notifications.forEach((n) => {
+        if (!userId || n.userId === userId || n.userId === 'all') {
+          n.isRead = true;
         }
       });
-      await batch.commit();
-    } else {
-      localStore.updateDataset((ds) => {
-        ds.notifications.forEach((n) => {
-          if (!userId || n.userId === userId || n.userId === 'all') {
-            n.isRead = true;
+    }, ['notifications']);
+
+    if (db) {
+      try {
+        const snap = await getDocs(collection(db, 'notifications'));
+        const batch = writeBatch(db);
+        snap.docs.forEach((d) => {
+          const data = d.data() as AppNotification;
+          if (!userId || data.userId === userId || data.userId === 'all') {
+            batch.update(d.ref, { isRead: true });
           }
         });
-      }, ['notifications']);
+        await batch.commit();
+      } catch (err) {
+        console.warn('markAllNotificationsRead Firestore sync note:', err);
+      }
     }
   },
 
@@ -2323,29 +2504,9 @@ export const firestoreService = {
   // DOCUMENTS & STORAGE
   // ==========================================
   subscribeDocuments(clientId: string | undefined, callback: (docs: DocumentItem[]) => void): Unsubscribe {
-    const db = getDb();
-    if (!db) {
-      return localStore.subscribe<DocumentItem[]>('documents', (all: DocumentItem[]) => {
-        const filtered = clientId ? all.filter((d) => d.clientId === clientId) : all;
-        callback(filtered);
-      }, (ds) => clientId ? ds.documents.filter((d) => d.clientId === clientId) : ds.documents);
-    }
-    const col = collection(db, 'documents');
-    if (clientId) {
-      const q = query(col, where('clientId', '==', clientId));
-      return onSnapshot(q, (snapshot) => {
-        const items = snapshot.docs.map((d) => ({ id: d.id, ...d.data() } as DocumentItem));
-        callback(items);
-      }, (err) => {
-        console.warn('Documents error:', err);
-      });
-    }
-    return onSnapshot(col, (snapshot) => {
-      const items = snapshot.docs.map((d) => ({ id: d.id, ...d.data() } as DocumentItem));
-      callback(items);
-    }, (err) => {
-      console.warn('Documents error:', err);
-    });
+    const qBuilder = clientId ? (db: Firestore) => query(collection(db, 'documents'), where('clientId', '==', clientId)) : undefined;
+    const transformer = (docs: DocumentItem[]) => (clientId ? docs.filter((d) => d.clientId === clientId) : docs);
+    return createSafeSubscription<DocumentItem>('documents', 'documents', callback, qBuilder, transformer);
   },
 
   async uploadDocument(
@@ -2394,12 +2555,16 @@ export const firestoreService = {
       notes: `Document uploaded by ${uploadedBy}`,
     };
 
+    localStore.updateDataset((ds) => {
+      ds.documents.push(docMetadata);
+    }, ['documents']);
+
     if (db) {
-      await setDoc(doc(db, 'documents', docId), sanitizeDoc(docMetadata), { merge: true });
-    } else {
-      localStore.updateDataset((ds) => {
-        ds.documents.push(docMetadata);
-      }, ['documents']);
+      try {
+        await setDoc(doc(db, 'documents', docId), sanitizeDoc(docMetadata), { merge: true });
+      } catch (err) {
+        console.warn('uploadDocument Firestore sync note:', err);
+      }
     }
 
     await firestoreService.createTimelineEvent({
@@ -2416,48 +2581,54 @@ export const firestoreService = {
 
   async updateDocument(id: string, data: Partial<DocumentItem>): Promise<DocumentItem> {
     const db = getDb();
+    let res: DocumentItem | null = null;
+    localStore.updateDataset((ds) => {
+      const idx = ds.documents.findIndex((d) => d.id === id);
+      if (idx !== -1) {
+        ds.documents[idx] = { ...ds.documents[idx], ...data };
+        res = ds.documents[idx];
+      }
+    }, ['documents']);
+
     if (db) {
-      const docRef = doc(db, 'documents', id);
-      await updateDoc(docRef, sanitizeDoc(data));
-      const snap = await getDoc(docRef);
-      return { id, ...snap.data() } as DocumentItem;
-    } else {
-      let res: DocumentItem | null = null;
-      localStore.updateDataset((ds) => {
-        const idx = ds.documents.findIndex((d) => d.id === id);
-        if (idx !== -1) {
-          ds.documents[idx] = { ...ds.documents[idx], ...data };
-          res = ds.documents[idx];
-        }
-      }, ['documents']);
-      return res || (data as DocumentItem);
+      try {
+        const docRef = doc(db, 'documents', id);
+        await updateDoc(docRef, sanitizeDoc(data));
+      } catch (err) {
+        console.warn('updateDocument Firestore sync note:', err);
+      }
     }
+    return res || (data as DocumentItem);
   },
 
   async deleteDocument(id: string): Promise<void> {
     const db = getDb();
+    localStore.updateDataset((ds) => {
+      ds.documents = ds.documents.filter((d) => d.id !== id);
+    }, ['documents']);
+
     if (db) {
-      const docRef = doc(db, 'documents', id);
-      const snap = await getDoc(docRef);
-      if (snap.exists()) {
-        const data = snap.data() as DocumentItem;
-        if (data.fileUrl) {
-          try {
-            const storage = getFirebaseStorage();
-            if (storage) {
-              const fileRef = ref(storage, `clients/${data.clientId}/documents/${data.fileName}`);
-              await deleteObject(fileRef).catch(() => {});
+      try {
+        const docRef = doc(db, 'documents', id);
+        const snap = await getDoc(docRef);
+        if (snap.exists()) {
+          const data = snap.data() as DocumentItem;
+          if (data.fileUrl) {
+            try {
+              const storage = getFirebaseStorage();
+              if (storage) {
+                const fileRef = ref(storage, `clients/${data.clientId}/documents/${data.fileName}`);
+                await deleteObject(fileRef).catch(() => {});
+              }
+            } catch {
+              // ignore
             }
-          } catch {
-            // ignore
           }
+          await deleteDoc(docRef);
         }
-        await deleteDoc(docRef);
+      } catch (err) {
+        console.warn('deleteDocument Firestore sync note:', err);
       }
-    } else {
-      localStore.updateDataset((ds) => {
-        ds.documents = ds.documents.filter((d) => d.id !== id);
-      }, ['documents']);
     }
   },
 
@@ -2465,35 +2636,12 @@ export const firestoreService = {
   // TIMELINE & ACTIVITY
   // ==========================================
   subscribeTimeline(clientId: string | undefined, callback: (events: TimelineEvent[]) => void): Unsubscribe {
-    const db = getDb();
-    if (!db) {
-      return localStore.subscribe<TimelineEvent[]>('timelineEvents', (all: TimelineEvent[]) => {
-        const filtered = clientId ? all.filter((e) => e.clientId === clientId) : all;
-        const sorted = [...filtered].sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
-        callback(sorted);
-      }, (ds) => {
-        const filtered = clientId ? ds.timelineEvents.filter((e) => e.clientId === clientId) : ds.timelineEvents;
-        return [...filtered].sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
-      });
-    }
-    const col = collection(db, 'timelineEvents');
-    if (clientId) {
-      const q = query(col, where('clientId', '==', clientId));
-      return onSnapshot(q, (snapshot) => {
-        const items = snapshot.docs.map((d) => ({ id: d.id, ...d.data() } as TimelineEvent));
-        items.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
-        callback(items);
-      }, (err) => {
-        console.warn('Timeline error:', err);
-      });
-    }
-    return onSnapshot(col, (snapshot) => {
-      const items = snapshot.docs.map((d) => ({ id: d.id, ...d.data() } as TimelineEvent));
-      items.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
-      callback(items);
-    }, (err) => {
-      console.warn('Timeline error:', err);
-    });
+    const qBuilder = clientId ? (db: Firestore) => query(collection(db, 'timelineEvents'), where('clientId', '==', clientId)) : undefined;
+    const transformer = (events: TimelineEvent[]) => {
+      const filtered = clientId ? events.filter((e) => e.clientId === clientId) : events;
+      return [...filtered].sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+    };
+    return createSafeSubscription<TimelineEvent>('timelineEvents', 'timelineEvents', callback, qBuilder, transformer);
   },
 
   async createTimelineEvent(data: Partial<TimelineEvent>): Promise<TimelineEvent> {
@@ -2510,12 +2658,17 @@ export const firestoreService = {
       type: data.type || 'STATUS_CHANGE',
       ...data,
     };
+
+    localStore.updateDataset((ds) => {
+      ds.timelineEvents.unshift(event);
+    }, ['timelineEvents']);
+
     if (db) {
-      await setDoc(doc(db, 'timelineEvents', id), sanitizeDoc(event), { merge: true });
-    } else {
-      localStore.updateDataset((ds) => {
-        ds.timelineEvents.unshift(event);
-      }, ['timelineEvents']);
+      try {
+        await setDoc(doc(db, 'timelineEvents', id), sanitizeDoc(event), { merge: true });
+      } catch (err) {
+        console.warn('createTimelineEvent Firestore sync note:', err);
+      }
     }
     return event;
   },
@@ -2525,12 +2678,15 @@ export const firestoreService = {
   // ==========================================
   async getMasterVerification(clientId: string): Promise<MasterVerificationData | null> {
     const db = getDb();
-    if (!db) {
-      return localStore.getDataset().masterVerifications[clientId] || null;
+    if (db) {
+      try {
+        const snap = await getDoc(doc(db, 'masterVerifications', clientId));
+        if (snap.exists()) return snap.data() as MasterVerificationData;
+      } catch (err) {
+        console.warn('getMasterVerification Firestore read fallback:', err);
+      }
     }
-    const snap = await getDoc(doc(db, 'masterVerifications', clientId));
-    if (!snap.exists()) return null;
-    return snap.data() as MasterVerificationData;
+    return localStore.getDataset().masterVerifications[clientId] || null;
   },
 
   async saveMasterVerification(clientId: string, data: Partial<MasterVerificationData>): Promise<MasterVerificationData> {
@@ -2551,27 +2707,31 @@ export const firestoreService = {
       ...data,
     } as MasterVerificationData;
 
+    localStore.updateDataset((ds) => {
+      ds.masterVerifications[clientId] = worksheet;
+      const client = ds.clients.find((c) => c.id === clientId);
+      if (client) {
+        client.isVerified = worksheet.status === 'VERIFIED' || worksheet.status === 'COMPLETE';
+        client.verificationDate = worksheet.verifiedAt || now;
+        client.verifiedBy = worksheet.verifiedBy || worksheet.verificationSpecialist;
+        client.verificationSummary = worksheet.callSummary;
+        client.updatedAt = now;
+      }
+    }, ['masterVerifications', 'clients']);
+
     if (db) {
-      await setDoc(doc(db, 'masterVerifications', clientId), sanitizeDoc(worksheet), { merge: true });
-      await updateDoc(doc(db, 'clients', clientId), {
-        isVerified: worksheet.status === 'VERIFIED' || worksheet.status === 'COMPLETE',
-        verificationDate: worksheet.verifiedAt || now,
-        verifiedBy: worksheet.verifiedBy || worksheet.verificationSpecialist,
-        verificationSummary: worksheet.callSummary,
-        updatedAt: now,
-      }).catch(() => {});
-    } else {
-      localStore.updateDataset((ds) => {
-        ds.masterVerifications[clientId] = worksheet;
-        const client = ds.clients.find((c) => c.id === clientId);
-        if (client) {
-          client.isVerified = worksheet.status === 'VERIFIED' || worksheet.status === 'COMPLETE';
-          client.verificationDate = worksheet.verifiedAt || now;
-          client.verifiedBy = worksheet.verifiedBy || worksheet.verificationSpecialist;
-          client.verificationSummary = worksheet.callSummary;
-          client.updatedAt = now;
-        }
-      }, ['masterVerifications', 'clients']);
+      try {
+        await setDoc(doc(db, 'masterVerifications', clientId), sanitizeDoc(worksheet), { merge: true });
+        await updateDoc(doc(db, 'clients', clientId), {
+          isVerified: worksheet.status === 'VERIFIED' || worksheet.status === 'COMPLETE',
+          verificationDate: worksheet.verifiedAt || now,
+          verifiedBy: worksheet.verifiedBy || worksheet.verificationSpecialist,
+          verificationSummary: worksheet.callSummary,
+          updatedAt: now,
+        }).catch(() => {});
+      } catch (err) {
+        console.warn('saveMasterVerification Firestore sync note:', err);
+      }
     }
 
     return worksheet;
@@ -2579,19 +2739,22 @@ export const firestoreService = {
 
   async getUnderwritingRecord(clientId: string): Promise<UnderwritingRecord | null> {
     const db = getDb();
-    if (!db) {
-      const ds = localStore.getDataset();
-      return ds.underwritingRecords?.[clientId] || null;
+    if (db) {
+      try {
+        const snap = await getDoc(doc(db, 'underwritingRecords', clientId));
+        if (snap.exists()) return snap.data() as UnderwritingRecord;
+      } catch (err) {
+        console.warn('getUnderwritingRecord Firestore read fallback:', err);
+      }
     }
-    const snap = await getDoc(doc(db, 'underwritingRecords', clientId));
-    if (!snap.exists()) return null;
-    return snap.data() as UnderwritingRecord;
+    const ds = localStore.getDataset();
+    return ds.underwritingRecords?.[clientId] || null;
   },
 
   async saveUnderwritingRecord(clientId: string, data: Partial<UnderwritingRecord>): Promise<UnderwritingRecord> {
     const db = getDb();
     const now = new Date().toISOString();
-    const existing = await firestoreService.getUnderwritingRecord ? await firestoreService.getUnderwritingRecord(clientId) : null;
+    const existing = await firestoreService.getUnderwritingRecord(clientId);
     const record: UnderwritingRecord = {
       id: `uw-${clientId}`,
       clientId,
@@ -2608,28 +2771,32 @@ export const firestoreService = {
       ...data,
     } as UnderwritingRecord;
 
+    localStore.updateDataset((ds) => {
+      if (!ds.underwritingRecords) ds.underwritingRecords = {};
+      ds.underwritingRecords[clientId] = record;
+      const client = ds.clients.find((c) => c.id === clientId);
+      if (client) {
+        client.underwritingDecision = record.decision;
+        client.underwrittenBy = record.underwriterName;
+        client.recommendedAmount = record.recommendedAmount;
+        client.recommendedProduct = record.recommendedProduct;
+        client.updatedAt = now;
+      }
+    }, ['underwritingRecords', 'clients']);
+
     if (db) {
-      await setDoc(doc(db, 'underwritingRecords', clientId), sanitizeDoc(record), { merge: true });
-      await updateDoc(doc(db, 'clients', clientId), {
-        underwritingDecision: record.decision,
-        underwrittenBy: record.underwriterName,
-        recommendedAmount: record.recommendedAmount,
-        recommendedProduct: record.recommendedProduct,
-        updatedAt: now,
-      }).catch(() => {});
-    } else {
-      localStore.updateDataset((ds) => {
-        if (!ds.underwritingRecords) ds.underwritingRecords = {};
-        ds.underwritingRecords[clientId] = record;
-        const client = ds.clients.find((c) => c.id === clientId);
-        if (client) {
-          client.underwritingDecision = record.decision;
-          client.underwrittenBy = record.underwriterName;
-          client.recommendedAmount = record.recommendedAmount;
-          client.recommendedProduct = record.recommendedProduct;
-          client.updatedAt = now;
-        }
-      }, ['underwritingRecords', 'clients']);
+      try {
+        await setDoc(doc(db, 'underwritingRecords', clientId), sanitizeDoc(record), { merge: true });
+        await updateDoc(doc(db, 'clients', clientId), {
+          underwritingDecision: record.decision,
+          underwrittenBy: record.underwriterName,
+          recommendedAmount: record.recommendedAmount,
+          recommendedProduct: record.recommendedProduct,
+          updatedAt: now,
+        }).catch(() => {});
+      } catch (err) {
+        console.warn('saveUnderwritingRecord Firestore sync note:', err);
+      }
     }
 
     return record;
@@ -2638,17 +2805,17 @@ export const firestoreService = {
   async getUnderwritingEvaluation(clientId: string): Promise<UnderwritingEvaluationRecord | null> {
     const db = getDb();
     if (db) {
-      const snap = await getDoc(doc(db, 'underwritingEvaluations', clientId));
-      if (snap.exists()) {
-        return snap.data() as UnderwritingEvaluationRecord;
-      }
-    } else {
-      const ds = localStore.getDataset();
-      if (ds.underwritingEvaluations && ds.underwritingEvaluations[clientId]) {
-        return ds.underwritingEvaluations[clientId];
+      try {
+        const snap = await getDoc(doc(db, 'underwritingEvaluations', clientId));
+        if (snap.exists()) {
+          return snap.data() as UnderwritingEvaluationRecord;
+        }
+      } catch (err) {
+        console.warn('getUnderwritingEvaluation Firestore read fallback:', err);
       }
     }
-    return null;
+    const ds = localStore.getDataset();
+    return ds.underwritingEvaluations?.[clientId] || null;
   },
 
   async saveUnderwritingEvaluation(clientId: string, data: Partial<UnderwritingEvaluationRecord>): Promise<UnderwritingEvaluationRecord> {
@@ -2771,33 +2938,36 @@ export const firestoreService = {
       ...data,
     } as UnderwritingEvaluationRecord;
 
+    localStore.updateDataset((ds) => {
+      if (!ds.underwritingEvaluations) ds.underwritingEvaluations = {};
+      ds.underwritingEvaluations[clientId] = evaluation;
+      const client = ds.clients.find((c) => c.id === clientId);
+      if (client) {
+        client.underwritingDecision = evaluation.recommendation as any;
+        client.underwrittenBy = evaluation.preparedBy;
+        client.recommendedAmount = evaluation.recommendedFundingAmount;
+        client.recommendedProduct = evaluation.recommendedProduct;
+        client.updatedAt = now;
+      }
+    }, ['underwritingEvaluations', 'clients']);
+
     if (db) {
-      await setDoc(doc(db, 'underwritingEvaluations', clientId), sanitizeDoc(evaluation), { merge: true });
-      await updateDoc(doc(db, 'clients', clientId), {
-        underwritingDecision: evaluation.recommendation,
-        underwrittenBy: evaluation.preparedBy,
-        recommendedAmount: evaluation.recommendedFundingAmount,
-        recommendedProduct: evaluation.recommendedProduct,
-        stage: evaluation.status === 'READY_FOR_LENDER' ? 'READY_FOR_LENDER' : 'UNDERWRITING',
-        currentStatus: evaluation.status === 'READY_FOR_LENDER' ? 'READY_FOR_LENDER' : 'UNDERWRITING',
-        updatedAt: now,
-      }).catch(() => {});
-    } else {
-      localStore.updateDataset((ds) => {
-        if (!ds.underwritingEvaluations) ds.underwritingEvaluations = {};
-        ds.underwritingEvaluations[clientId] = evaluation;
-        const client = ds.clients.find((c) => c.id === clientId);
-        if (client) {
-          client.underwritingDecision = evaluation.recommendation as any;
-          client.underwrittenBy = evaluation.preparedBy;
-          client.recommendedAmount = evaluation.recommendedFundingAmount;
-          client.recommendedProduct = evaluation.recommendedProduct;
-          client.updatedAt = now;
-        }
-      }, ['underwritingEvaluations', 'clients']);
+      try {
+        await setDoc(doc(db, 'underwritingEvaluations', clientId), sanitizeDoc(evaluation), { merge: true });
+        await updateDoc(doc(db, 'clients', clientId), {
+          underwritingDecision: evaluation.recommendation,
+          underwrittenBy: evaluation.preparedBy,
+          recommendedAmount: evaluation.recommendedFundingAmount,
+          recommendedProduct: evaluation.recommendedProduct,
+          stage: evaluation.status === 'READY_FOR_LENDER' ? 'READY_FOR_LENDER' : 'UNDERWRITING',
+          currentStatus: evaluation.status === 'READY_FOR_LENDER' ? 'READY_FOR_LENDER' : 'UNDERWRITING',
+          updatedAt: now,
+        }).catch(() => {});
+      } catch (err) {
+        console.warn('saveUnderwritingEvaluation Firestore sync note:', err);
+      }
     }
 
-    // Also create timeline event
     await firestoreService.createTimelineEvent({
       clientId,
       title: `Underwriting Evaluation Saved (${evaluation.recommendation} - $${evaluation.recommendedFundingAmount?.toLocaleString()})`,
@@ -2835,17 +3005,22 @@ export const firestoreService = {
       isActive: data.isActive !== undefined ? data.isActive : true,
       ...data,
     };
+
+    localStore.updateDataset((ds) => {
+      const idx = ds.fundingStrategies.findIndex((s) => s.id === id);
+      if (idx !== -1) {
+        ds.fundingStrategies[idx] = strat;
+      } else {
+        ds.fundingStrategies.push(strat);
+      }
+    }, ['fundingStrategies']);
+
     if (db) {
-      await setDoc(doc(db, 'fundingStrategies', id), sanitizeDoc(strat), { merge: true });
-    } else {
-      localStore.updateDataset((ds) => {
-        const idx = ds.fundingStrategies.findIndex((s) => s.id === id);
-        if (idx !== -1) {
-          ds.fundingStrategies[idx] = strat;
-        } else {
-          ds.fundingStrategies.push(strat);
-        }
-      }, ['fundingStrategies']);
+      try {
+        await setDoc(doc(db, 'fundingStrategies', id), sanitizeDoc(strat), { merge: true });
+      } catch (err) {
+        console.warn('saveFundingStrategy Firestore sync note:', err);
+      }
     }
     return strat;
   },
@@ -2861,12 +3036,17 @@ export const firestoreService = {
       content: note.content || '',
       timestamp: note.timestamp || new Date().toISOString(),
     };
+
+    localStore.updateDataset((ds) => {
+      ds.internalNotes.push(cleanNote);
+    }, ['internalNotes']);
+
     if (db) {
-      await setDoc(doc(db, 'internalNotes', id), sanitizeDoc(cleanNote), { merge: true });
-    } else {
-      localStore.updateDataset((ds) => {
-        ds.internalNotes.push(cleanNote);
-      }, ['internalNotes']);
+      try {
+        await setDoc(doc(db, 'internalNotes', id), sanitizeDoc(cleanNote), { merge: true });
+      } catch (err) {
+        console.warn('createClientInternalNote Firestore sync note:', err);
+      }
     }
     return cleanNote;
   },
@@ -2896,12 +3076,17 @@ export const firestoreService = {
       updatedAt: now,
       ...data,
     };
+
+    localStore.updateDataset((ds) => {
+      ds.lenderHistory.push(record);
+    }, ['lenderHistory']);
+
     if (db) {
-      await setDoc(doc(db, 'lenderHistory', id), sanitizeDoc(record), { merge: true });
-    } else {
-      localStore.updateDataset((ds) => {
-        ds.lenderHistory.push(record);
-      }, ['lenderHistory']);
+      try {
+        await setDoc(doc(db, 'lenderHistory', id), sanitizeDoc(record), { merge: true });
+      } catch (err) {
+        console.warn('createLenderHistoryRecord Firestore sync note:', err);
+      }
     }
     return record;
   },
@@ -2909,33 +3094,39 @@ export const firestoreService = {
   async updateLenderHistoryRecord(id: string, data: Partial<LenderHistoryRecord>): Promise<LenderHistoryRecord> {
     const db = getDb();
     const now = new Date().toISOString();
+    let res: LenderHistoryRecord | null = null;
+    localStore.updateDataset((ds) => {
+      const idx = ds.lenderHistory.findIndex((l) => l.id === id);
+      if (idx !== -1) {
+        ds.lenderHistory[idx] = { ...ds.lenderHistory[idx], ...data, updatedAt: now };
+        res = ds.lenderHistory[idx];
+      }
+    }, ['lenderHistory']);
+
     if (db) {
-      const docRef = doc(db, 'lenderHistory', id);
-      const updated = { ...data, updatedAt: now };
-      await updateDoc(docRef, sanitizeDoc(updated));
-      const snap = await getDoc(docRef);
-      return { id, ...snap.data() } as LenderHistoryRecord;
-    } else {
-      let res: LenderHistoryRecord | null = null;
-      localStore.updateDataset((ds) => {
-        const idx = ds.lenderHistory.findIndex((l) => l.id === id);
-        if (idx !== -1) {
-          ds.lenderHistory[idx] = { ...ds.lenderHistory[idx], ...data, updatedAt: now };
-          res = ds.lenderHistory[idx];
-        }
-      }, ['lenderHistory']);
-      return res || (data as LenderHistoryRecord);
+      try {
+        const docRef = doc(db, 'lenderHistory', id);
+        const updated = { ...data, updatedAt: now };
+        await updateDoc(docRef, sanitizeDoc(updated));
+      } catch (err) {
+        console.warn('updateLenderHistoryRecord Firestore sync note:', err);
+      }
     }
+    return res || (data as LenderHistoryRecord);
   },
 
   async deleteLenderHistoryRecord(id: string): Promise<void> {
     const db = getDb();
+    localStore.updateDataset((ds) => {
+      ds.lenderHistory = ds.lenderHistory.filter((l) => l.id !== id);
+    }, ['lenderHistory']);
+
     if (db) {
-      await deleteDoc(doc(db, 'lenderHistory', id));
-    } else {
-      localStore.updateDataset((ds) => {
-        ds.lenderHistory = ds.lenderHistory.filter((l) => l.id !== id);
-      }, ['lenderHistory']);
+      try {
+        await deleteDoc(doc(db, 'lenderHistory', id));
+      } catch (err) {
+        console.warn('deleteLenderHistoryRecord Firestore sync note:', err);
+      }
     }
   },
 
@@ -2963,12 +3154,17 @@ export const firestoreService = {
       updatedAt: now,
       ...data,
     };
+
+    localStore.updateDataset((ds) => {
+      ds.creditCards.push(card);
+    }, ['creditCards']);
+
     if (db) {
-      await setDoc(doc(db, 'creditCards', id), sanitizeDoc(card), { merge: true });
-    } else {
-      localStore.updateDataset((ds) => {
-        ds.creditCards.push(card);
-      }, ['creditCards']);
+      try {
+        await setDoc(doc(db, 'creditCards', id), sanitizeDoc(card), { merge: true });
+      } catch (err) {
+        console.warn('createCreditCard Firestore sync note:', err);
+      }
     }
     return card;
   },
@@ -2976,33 +3172,39 @@ export const firestoreService = {
   async updateCreditCard(id: string, data: Partial<CreditCardRecord>): Promise<CreditCardRecord> {
     const db = getDb();
     const now = new Date().toISOString();
+    let res: CreditCardRecord | null = null;
+    localStore.updateDataset((ds) => {
+      const idx = ds.creditCards.findIndex((c) => c.id === id);
+      if (idx !== -1) {
+        ds.creditCards[idx] = { ...ds.creditCards[idx], ...data, updatedAt: now };
+        res = ds.creditCards[idx];
+      }
+    }, ['creditCards']);
+
     if (db) {
-      const docRef = doc(db, 'creditCards', id);
-      const updated = { ...data, updatedAt: now };
-      await updateDoc(docRef, sanitizeDoc(updated));
-      const snap = await getDoc(docRef);
-      return { id, ...snap.data() } as CreditCardRecord;
-    } else {
-      let res: CreditCardRecord | null = null;
-      localStore.updateDataset((ds) => {
-        const idx = ds.creditCards.findIndex((c) => c.id === id);
-        if (idx !== -1) {
-          ds.creditCards[idx] = { ...ds.creditCards[idx], ...data, updatedAt: now };
-          res = ds.creditCards[idx];
-        }
-      }, ['creditCards']);
-      return res || (data as CreditCardRecord);
+      try {
+        const docRef = doc(db, 'creditCards', id);
+        const updated = { ...data, updatedAt: now };
+        await updateDoc(docRef, sanitizeDoc(updated));
+      } catch (err) {
+        console.warn('updateCreditCard Firestore sync note:', err);
+      }
     }
+    return res || (data as CreditCardRecord);
   },
 
   async deleteCreditCard(id: string): Promise<void> {
     const db = getDb();
+    localStore.updateDataset((ds) => {
+      ds.creditCards = ds.creditCards.filter((c) => c.id !== id);
+    }, ['creditCards']);
+
     if (db) {
-      await deleteDoc(doc(db, 'creditCards', id));
-    } else {
-      localStore.updateDataset((ds) => {
-        ds.creditCards = ds.creditCards.filter((c) => c.id !== id);
-      }, ['creditCards']);
+      try {
+        await deleteDoc(doc(db, 'creditCards', id));
+      } catch (err) {
+        console.warn('deleteCreditCard Firestore sync note:', err);
+      }
     }
   },
 
@@ -3011,43 +3213,14 @@ export const firestoreService = {
     if (!client) throw new Error('Client not found');
 
     const deals = await firestoreService.getDealsForClient(clientId);
-    const db = getDb();
+    const ds = localStore.getDataset();
 
-    let fundingStrategy: any = null;
-    let internalNotes: any[] = [];
-    let lenderHistory: any[] = [];
-    let creditCards: any[] = [];
-    let documents: any[] = [];
-    let timelineEvents: any[] = [];
-
-    if (db) {
-      const stratSnap = await getDocs(query(collection(db, 'fundingStrategies'), where('clientId', '==', clientId)));
-      fundingStrategy = !stratSnap.empty ? stratSnap.docs[0].data() : null;
-
-      const notesSnap = await getDocs(query(collection(db, 'internalNotes'), where('clientId', '==', clientId)));
-      internalNotes = notesSnap.docs.map((d) => ({ id: d.id, ...d.data() }));
-
-      const lhSnap = await getDocs(query(collection(db, 'lenderHistory'), where('clientId', '==', clientId)));
-      lenderHistory = lhSnap.docs.map((d) => ({ id: d.id, ...d.data() }));
-
-      const ccSnap = await getDocs(query(collection(db, 'creditCards'), where('clientId', '==', clientId)));
-      creditCards = ccSnap.docs.map((d) => ({ id: d.id, ...d.data() }));
-
-      const docSnap = await getDocs(query(collection(db, 'documents'), where('clientId', '==', clientId)));
-      documents = docSnap.docs.map((d) => ({ id: d.id, ...d.data() }));
-
-      const tlSnap = await getDocs(query(collection(db, 'timelineEvents'), where('clientId', '==', clientId)));
-      timelineEvents = tlSnap.docs.map((d) => ({ id: d.id, ...d.data() }));
-    } else {
-      const ds = localStore.getDataset();
-      fundingStrategy = ds.fundingStrategies.find((s) => s.clientId === clientId) || null;
-      internalNotes = ds.internalNotes.filter((n) => n.clientId === clientId);
-      lenderHistory = ds.lenderHistory.filter((l) => l.clientId === clientId);
-      creditCards = ds.creditCards.filter((c) => c.clientId === clientId);
-      documents = ds.documents.filter((d) => d.clientId === clientId);
-      timelineEvents = ds.timelineEvents.filter((t) => t.clientId === clientId);
-    }
-
+    const fundingStrategy = ds.fundingStrategies.find((s) => s.clientId === clientId) || null;
+    const internalNotes = ds.internalNotes.filter((n) => n.clientId === clientId);
+    const lenderHistory = ds.lenderHistory.filter((l) => l.clientId === clientId);
+    const creditCards = ds.creditCards.filter((c) => c.clientId === clientId);
+    const documents = ds.documents.filter((d) => d.clientId === clientId);
+    const timelineEvents = ds.timelineEvents.filter((t) => t.clientId === clientId);
     const masterVerification = await firestoreService.getMasterVerification(clientId);
 
     return {
@@ -3073,56 +3246,45 @@ export const firestoreService = {
   // SETTINGS & CONFIGS
   // ==========================================
   subscribeLeadSources(callback: (sources: LeadSourceOption[]) => void): Unsubscribe {
-    const db = getDb();
-    if (!db) {
-      return localStore.subscribe('leadSources', callback, (ds) => ds.leadSources);
-    }
-    const q = collection(db, 'leadSources');
-    return onSnapshot(q, (snapshot) => {
-      const items = snapshot.docs.map((d) => ({ id: d.id, ...d.data() } as LeadSourceOption));
-      callback(items);
-    }, (err) => {
-      console.warn('Lead sources subscription error:', err);
-    });
+    return createSafeSubscription<LeadSourceOption>('leadSources', 'leadSources', callback);
   },
 
   async createLeadSource(name: string): Promise<LeadSourceOption> {
     const db = getDb();
     const id = `src-${Date.now()}`;
     const src: LeadSourceOption = { id, name, isCustom: true, active: true };
+
+    localStore.updateDataset((ds) => {
+      ds.leadSources.push(src);
+    }, ['leadSources']);
+
     if (db) {
-      await setDoc(doc(db, 'leadSources', id), sanitizeDoc(src), { merge: true });
-    } else {
-      localStore.updateDataset((ds) => {
-        ds.leadSources.push(src);
-      }, ['leadSources']);
+      try {
+        await setDoc(doc(db, 'leadSources', id), sanitizeDoc(src), { merge: true });
+      } catch (err) {
+        console.warn('createLeadSource Firestore sync note:', err);
+      }
     }
     return src;
   },
 
   async deleteLeadSource(id: string): Promise<void> {
     const db = getDb();
+    localStore.updateDataset((ds) => {
+      ds.leadSources = ds.leadSources.filter((s) => s.id !== id);
+    }, ['leadSources']);
+
     if (db) {
-      await deleteDoc(doc(db, 'leadSources', id));
-    } else {
-      localStore.updateDataset((ds) => {
-        ds.leadSources = ds.leadSources.filter((s) => s.id !== id);
-      }, ['leadSources']);
+      try {
+        await deleteDoc(doc(db, 'leadSources', id));
+      } catch (err) {
+        console.warn('deleteLeadSource Firestore sync note:', err);
+      }
     }
   },
 
   subscribeReferralPartners(callback: (partners: ReferralPartnerOption[]) => void): Unsubscribe {
-    const db = getDb();
-    if (!db) {
-      return localStore.subscribe('referralPartners', callback, (ds) => ds.referralPartners);
-    }
-    const q = collection(db, 'referralPartners');
-    return onSnapshot(q, (snapshot) => {
-      const items = snapshot.docs.map((d) => ({ id: d.id, ...d.data() } as ReferralPartnerOption));
-      callback(items);
-    }, (err) => {
-      console.warn('Referral partners subscription error:', err);
-    });
+    return createSafeSubscription<ReferralPartnerOption>('referralPartners', 'referralPartners', callback);
   },
 
   async createReferralPartner(partner: Partial<ReferralPartnerOption>): Promise<ReferralPartnerOption> {
@@ -3138,24 +3300,33 @@ export const firestoreService = {
       defaultCommissionPoints: partner.defaultCommissionPoints || 0.5,
       ...partner,
     };
+
+    localStore.updateDataset((ds) => {
+      ds.referralPartners.push(p);
+    }, ['referralPartners']);
+
     if (db) {
-      await setDoc(doc(db, 'referralPartners', id), sanitizeDoc(p), { merge: true });
-    } else {
-      localStore.updateDataset((ds) => {
-        ds.referralPartners.push(p);
-      }, ['referralPartners']);
+      try {
+        await setDoc(doc(db, 'referralPartners', id), sanitizeDoc(p), { merge: true });
+      } catch (err) {
+        console.warn('createReferralPartner Firestore sync note:', err);
+      }
     }
     return p;
   },
 
   async deleteReferralPartner(id: string): Promise<void> {
     const db = getDb();
+    localStore.updateDataset((ds) => {
+      ds.referralPartners = ds.referralPartners.filter((p) => p.id !== id);
+    }, ['referralPartners']);
+
     if (db) {
-      await deleteDoc(doc(db, 'referralPartners', id));
-    } else {
-      localStore.updateDataset((ds) => {
-        ds.referralPartners = ds.referralPartners.filter((p) => p.id !== id);
-      }, ['referralPartners']);
+      try {
+        await deleteDoc(doc(db, 'referralPartners', id));
+      } catch (err) {
+        console.warn('deleteReferralPartner Firestore sync note:', err);
+      }
     }
   },
 
@@ -3163,38 +3334,31 @@ export const firestoreService = {
   // MASTER PRODUCT CATALOG
   // ==========================================
   subscribeProducts(callback: (products: FundingProductDefinition[]) => void): Unsubscribe {
-    const db = getDb();
-    if (!db) {
-      return localStore.subscribe('products', callback, (ds) => ds.products || MASTER_FUNDING_PRODUCTS);
-    }
-    const q = collection(db, 'funding_products');
-    return onSnapshot(q, (snapshot) => {
-      if (snapshot.empty) {
-        callback(MASTER_FUNDING_PRODUCTS);
-        return;
-      }
-      const items = snapshot.docs.map((d) => ({ id: d.id, ...d.data() } as FundingProductDefinition));
-      items.sort((a, b) => (a.sortOrder || 0) - (b.sortOrder || 0));
-      callback(items);
-    }, (err) => {
-      console.warn('Products subscription error, using master catalog:', err);
-      callback(MASTER_FUNDING_PRODUCTS);
-    });
+    return createSafeSubscription<FundingProductDefinition>(
+      'funding_products',
+      'products',
+      callback,
+      undefined,
+      (prods) => (prods && prods.length > 0 ? [...prods].sort((a, b) => (a.sortOrder || 0) - (b.sortOrder || 0)) : MASTER_FUNDING_PRODUCTS)
+    );
   },
 
   async getProducts(): Promise<FundingProductDefinition[]> {
     const db = getDb();
-    if (!db) {
-      const prods = localStore.getDataset().products;
-      return prods && prods.length > 0 ? prods : MASTER_FUNDING_PRODUCTS;
+    if (db) {
+      try {
+        const snap = await getDocs(collection(db, 'funding_products'));
+        if (!snap.empty) {
+          const items = snap.docs.map((d) => ({ id: d.id, ...d.data() } as FundingProductDefinition));
+          items.sort((a, b) => (a.sortOrder || 0) - (b.sortOrder || 0));
+          return items;
+        }
+      } catch (err) {
+        console.warn('getProducts Firestore read fallback:', err);
+      }
     }
-    const snap = await getDocs(collection(db, 'funding_products'));
-    if (snap.empty) {
-      return MASTER_FUNDING_PRODUCTS;
-    }
-    const items = snap.docs.map((d) => ({ id: d.id, ...d.data() } as FundingProductDefinition));
-    items.sort((a, b) => (a.sortOrder || 0) - (b.sortOrder || 0));
-    return items;
+    const prods = localStore.getDataset().products;
+    return prods && prods.length > 0 ? prods : MASTER_FUNDING_PRODUCTS;
   },
 
   async createProduct(product: Partial<FundingProductDefinition>): Promise<FundingProductDefinition> {
@@ -3214,54 +3378,64 @@ export const firestoreService = {
       requiredFields: product.requiredFields || [],
     };
 
+    localStore.updateDataset((ds) => {
+      if (!ds.products) ds.products = [...MASTER_FUNDING_PRODUCTS];
+      ds.products.push(newProduct);
+    }, ['products']);
+
     if (db) {
-      await setDoc(doc(db, 'funding_products', id), sanitizeDoc(newProduct), { merge: true });
-    } else {
-      localStore.updateDataset((ds) => {
-        if (!ds.products) ds.products = [...MASTER_FUNDING_PRODUCTS];
-        ds.products.push(newProduct);
-      }, ['products']);
+      try {
+        await setDoc(doc(db, 'funding_products', id), sanitizeDoc(newProduct), { merge: true });
+      } catch (err) {
+        console.warn('createProduct Firestore sync note:', err);
+      }
     }
     return newProduct;
   },
 
   async updateProduct(id: string, data: Partial<FundingProductDefinition>): Promise<FundingProductDefinition> {
     const db = getDb();
-    if (db) {
-      const docRef = doc(db, 'funding_products', id);
-      await setDoc(docRef, sanitizeDoc(data), { merge: true });
-      const snap = await getDoc(docRef);
-      return { id, ...snap.data() } as FundingProductDefinition;
-    } else {
-      let res: FundingProductDefinition | null = null;
-      localStore.updateDataset((ds) => {
-        if (!ds.products) ds.products = [...MASTER_FUNDING_PRODUCTS];
-        const idx = ds.products.findIndex((p) => p.id === id);
-        if (idx !== -1) {
-          ds.products[idx] = { ...ds.products[idx], ...data };
-          res = ds.products[idx];
-        } else {
-          const match = MASTER_FUNDING_PRODUCTS.find((p) => p.id === id);
-          if (match) {
-            const updated = { ...match, ...data };
-            ds.products.push(updated);
-            res = updated;
-          }
+    let res: FundingProductDefinition | null = null;
+    localStore.updateDataset((ds) => {
+      if (!ds.products) ds.products = [...MASTER_FUNDING_PRODUCTS];
+      const idx = ds.products.findIndex((p) => p.id === id);
+      if (idx !== -1) {
+        ds.products[idx] = { ...ds.products[idx], ...data };
+        res = ds.products[idx];
+      } else {
+        const match = MASTER_FUNDING_PRODUCTS.find((p) => p.id === id);
+        if (match) {
+          const updated = { ...match, ...data };
+          ds.products.push(updated);
+          res = updated;
         }
-      }, ['products']);
-      return res || (data as FundingProductDefinition);
+      }
+    }, ['products']);
+
+    if (db) {
+      try {
+        const docRef = doc(db, 'funding_products', id);
+        await setDoc(docRef, sanitizeDoc(data), { merge: true });
+      } catch (err) {
+        console.warn('updateProduct Firestore sync note:', err);
+      }
     }
+    return res || (data as FundingProductDefinition);
   },
 
   async deleteProduct(id: string): Promise<void> {
     const db = getDb();
+    localStore.updateDataset((ds) => {
+      if (!ds.products) ds.products = [...MASTER_FUNDING_PRODUCTS];
+      ds.products = ds.products.filter((p) => p.id !== id);
+    }, ['products']);
+
     if (db) {
-      await deleteDoc(doc(db, 'funding_products', id));
-    } else {
-      localStore.updateDataset((ds) => {
-        if (!ds.products) ds.products = [...MASTER_FUNDING_PRODUCTS];
-        ds.products = ds.products.filter((p) => p.id !== id);
-      }, ['products']);
+      try {
+        await deleteDoc(doc(db, 'funding_products', id));
+      } catch (err) {
+        console.warn('deleteProduct Firestore sync note:', err);
+      }
     }
   },
 
@@ -3271,28 +3445,35 @@ export const firestoreService = {
 
   async resetProductsToDefault(): Promise<FundingProductDefinition[]> {
     const db = getDb();
+    localStore.updateDataset((ds) => {
+      ds.products = [...MASTER_FUNDING_PRODUCTS];
+    }, ['products']);
+
     if (db) {
-      const batch = writeBatch(db);
-      for (const prod of MASTER_FUNDING_PRODUCTS) {
-        batch.set(doc(db, 'funding_products', prod.id), sanitizeDoc(prod), { merge: true });
+      try {
+        const batch = writeBatch(db);
+        for (const prod of MASTER_FUNDING_PRODUCTS) {
+          batch.set(doc(db, 'funding_products', prod.id), sanitizeDoc(prod), { merge: true });
+        }
+        await batch.commit();
+      } catch (err) {
+        console.warn('resetProductsToDefault Firestore sync note:', err);
       }
-      await batch.commit();
-    } else {
-      localStore.updateDataset((ds) => {
-        ds.products = [...MASTER_FUNDING_PRODUCTS];
-      }, ['products']);
     }
     return MASTER_FUNDING_PRODUCTS;
   },
 
   async getDiscordConfig(): Promise<DiscordConfig | null> {
     const db = getDb();
-    if (!db) {
-      return localStore.getDataset().discordConfig;
+    if (db) {
+      try {
+        const snap = await getDoc(doc(db, 'settings', 'discordConfig'));
+        if (snap.exists()) return snap.data() as DiscordConfig;
+      } catch (err) {
+        console.warn('getDiscordConfig Firestore read fallback:', err);
+      }
     }
-    const snap = await getDoc(doc(db, 'settings', 'discordConfig'));
-    if (!snap.exists()) return null;
-    return snap.data() as DiscordConfig;
+    return localStore.getDataset().discordConfig;
   },
 
   async updateDiscordConfig(data: Partial<DiscordConfig>): Promise<DiscordConfig> {
@@ -3321,79 +3502,61 @@ export const firestoreService = {
       ...(existing || {}),
       ...data,
     };
+
+    localStore.updateDataset((ds) => {
+      ds.discordConfig = updated;
+    }, ['discordConfig']);
+
     if (db) {
-      await setDoc(doc(db, 'settings', 'discordConfig'), sanitizeDoc(updated), { merge: true });
-    } else {
-      localStore.updateDataset((ds) => {
-        ds.discordConfig = updated;
-      }, ['discordConfig']);
+      try {
+        await setDoc(doc(db, 'settings', 'discordConfig'), sanitizeDoc(updated), { merge: true });
+      } catch (err) {
+        console.warn('updateDiscordConfig Firestore sync note:', err);
+      }
     }
     return updated;
   },
 
   async getGhlConfig(): Promise<GhlConfig | null> {
     const db = getDb();
-    if (!db) {
-      return localStore.getDataset().ghlConfig;
+    if (db) {
+      try {
+        const snap = await getDoc(doc(db, 'settings', 'ghlConfig'));
+        if (snap.exists()) return snap.data() as GhlConfig;
+      } catch (err) {
+        console.warn('getGhlConfig Firestore read fallback:', err);
+      }
     }
-    const snap = await getDoc(doc(db, 'settings', 'ghlConfig'));
-    if (!snap.exists()) return null;
-    return snap.data() as GhlConfig;
+    return localStore.getDataset().ghlConfig;
   },
 
   async updateGhlConfig(data: Partial<GhlConfig>): Promise<GhlConfig> {
     const db = getDb();
     const existing = await firestoreService.getGhlConfig();
     const updated: GhlConfig = {
-      apiKey: data.apiKey || '',
-      locationId: data.locationId || '',
-      baseUrl: data.baseUrl || 'https://services.leadconnectorhq.com',
+      apiKey: data.apiKey !== undefined ? data.apiKey : (existing?.apiKey || DEFAULT_GHL_CONFIG.apiKey),
+      locationId: data.locationId !== undefined ? data.locationId : (existing?.locationId || DEFAULT_GHL_CONFIG.locationId),
+      baseUrl: data.baseUrl || existing?.baseUrl || 'https://services.leadconnectorhq.com',
       isConnected: data.isConnected !== undefined ? data.isConnected : true,
       lastSyncAt: new Date().toISOString(),
       syncErrors: data.syncErrors || [],
       autoSyncEnabled: data.autoSyncEnabled !== undefined ? data.autoSyncEnabled : true,
-      fieldMappings: data.fieldMappings || {
-        leadSourceField: 'contact.source',
-        referralPartnerField: 'custom_field.referral_partner',
-        annualRevenueField: 'custom_field.annual_revenue',
-        creditScoreField: 'custom_field.credit_score',
-        requestedAmountField: 'custom_field.funding_amount_requested',
-        productField: 'custom_field.funding_product_interest',
-      },
-      pipelineMappings: data.pipelineMappings || {
-        NEW_LEAD: 'Stage 1 - New Inbound Lead',
-        SALES_CONTACT: 'Stage 2 - Sales Contact Made',
-        APPLICATION_SENT: 'Stage 3 - Application Link Sent',
-        APPLICATION_RECEIVED: 'Stage 4 - Application Submitted',
-        DOCUMENT_REQUEST: 'Stage 5 - Requesting Documents',
-        DOCUMENTS_PENDING: 'Stage 5 - Requesting Documents',
-        DOCUMENTS_RECEIVED: 'Stage 6 - Documents In Review',
-        VERIFICATION_PENDING: 'Stage 7 - Verification Call Active',
-        VERIFICATION_IN_PROGRESS: 'Stage 7 - Verification Call Active',
-        VERIFICATION_COMPLETE: 'Stage 8 - Verification Approved',
-        UNDERWRITING: 'Stage 9 - File in Underwriting',
-        READY_FOR_LENDER: 'Stage 9 - File in Underwriting',
-        SUBMITTED_TO_LENDER: 'Stage 10 - Submitted to Funding Source',
-        PRE_APPROVED: 'Stage 11 - Pre-Approval Terms Received',
-        APPROVED: 'Stage 12 - Final Approved',
-        CONDITIONS_DOCUMENTS: 'Stage 12 - Final Approved',
-        FUNDED: 'Stage 13 - Deal Funded',
-        COMMISSION_PENDING: 'Stage 13 - Deal Funded',
-        COMMISSION_RECEIVED: 'Stage 14 - Commission Settled',
-        NOT_QUALIFIED: 'Stage - Not Qualified',
-        DECLINED: 'Stage - Declined',
-        LOST: 'Stage - Lost',
-        WITHDRAWN: 'Stage - Withdrawn',
-      },
+      fieldMappings: data.fieldMappings || existing?.fieldMappings || DEFAULT_GHL_CONFIG.fieldMappings,
+      pipelineMappings: data.pipelineMappings || existing?.pipelineMappings || DEFAULT_GHL_CONFIG.pipelineMappings,
       ...(existing || {}),
       ...data,
     };
+
+    localStore.updateDataset((ds) => {
+      ds.ghlConfig = updated;
+    }, ['ghlConfig']);
+
     if (db) {
-      await setDoc(doc(db, 'settings', 'ghlConfig'), sanitizeDoc(updated), { merge: true });
-    } else {
-      localStore.updateDataset((ds) => {
-        ds.ghlConfig = updated;
-      }, ['ghlConfig']);
+      try {
+        await setDoc(doc(db, 'settings', 'ghlConfig'), sanitizeDoc(updated), { merge: true });
+      } catch (err) {
+        console.warn('updateGhlConfig Firestore sync note:', err);
+      }
     }
     return updated;
   },

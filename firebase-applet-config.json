@@ -1,10 +1,10 @@
 {
-  "apiKey": "",
-  "authDomain": "",
-  "projectId": "maplex-financial-portal",
+  "apiKey": "AIzaSyBk0hmp1QBF5r6iA5PnxQZWltNXdqlJxnU",
+  "authDomain": "maple-x-financial-portal.firebaseapp.com",
+  "projectId": "maple-x-financial-portal",
   "firestoreDatabaseId": "(default)",
-  "storageBucket": "",
-  "messagingSenderId": "",
-  "appId": "",
-  "measurementId": ""
+  "storageBucket": "maple-x-financial-portal.firebasestorage.app",
+  "messagingSenderId": "847930790172",
+  "appId": "1:847930790172:web:dafe6efdd3966df4ed6ad9",
+  "measurementId": "G-PGX1FTXJ6D"
 }

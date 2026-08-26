@@ -1028,6 +1028,74 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
+  // Products & Funding Types Catalog
+  const createProduct = async (product: Partial<FundingProductDefinition>): Promise<FundingProductDefinition> => {
+    setIsSaving(true);
+    try {
+      const created = await firestoreService.createProduct(product);
+      addToast('success', 'Product Created', `Product "${created.name}" created successfully.`);
+      return created;
+    } catch (err: any) {
+      addToast('error', 'Save Failed', err.message || 'Could not create product');
+      throw err;
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const updateProduct = async (id: string, data: Partial<FundingProductDefinition>): Promise<FundingProductDefinition> => {
+    setIsSaving(true);
+    try {
+      const updated = await firestoreService.updateProduct(id, data);
+      addToast('success', 'Product Updated', `Product "${updated.name}" updated.`);
+      return updated;
+    } catch (err: any) {
+      addToast('error', 'Save Failed', err.message || 'Could not update product');
+      throw err;
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const deleteProduct = async (id: string): Promise<void> => {
+    setIsSaving(true);
+    try {
+      await firestoreService.deleteProduct(id);
+      addToast('success', 'Product Deleted', 'Product removed from catalog.');
+    } catch (err: any) {
+      addToast('error', 'Delete Failed', err.message || 'Could not delete product');
+      throw err;
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const toggleProductActive = async (id: string, active: boolean): Promise<void> => {
+    setIsSaving(true);
+    try {
+      await firestoreService.toggleProductActive(id, active);
+      addToast('info', 'Status Updated', `Product status set to ${active ? 'Active' : 'Inactive'}.`);
+    } catch (err: any) {
+      addToast('error', 'Update Failed', err.message || 'Could not update product status');
+      throw err;
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const resetProductsToDefault = async (): Promise<void> => {
+    setIsSaving(true);
+    try {
+      await firestoreService.resetProductsToDefault();
+      addToast('success', 'Catalog Reset', 'Product catalog reset to standard default offerings.');
+    } catch (err: any) {
+      addToast('error', 'Reset Failed', err.message || 'Could not reset products');
+      throw err;
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
   // Migration Runner
   const runDbMigration = async (force: boolean = true): Promise<{ success: boolean; recordsImported: number; details: string }> => {
     setIsSaving(true);
@@ -1054,6 +1122,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
         commissionDirectory,
         leadSources,
         referralPartners,
+        products,
         ghlConfig,
         tasks,
         notifications,
@@ -1141,6 +1210,12 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
         deleteLeadSource,
         createReferralPartner,
         deleteReferralPartner,
+
+        createProduct,
+        updateProduct,
+        deleteProduct,
+        toggleProductActive,
+        resetProductsToDefault,
 
         runDbMigration,
       }}

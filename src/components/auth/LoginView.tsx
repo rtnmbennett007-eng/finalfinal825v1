@@ -18,7 +18,7 @@ interface LoginViewProps {
 }
 
 export const LoginView: React.FC<LoginViewProps> = ({ onLoginSuccess }) => {
-  const { login, isLoading, staffList } = useAuth();
+  const { login, isLoading } = useAuth();
 
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -177,86 +177,6 @@ export const LoginView: React.FC<LoginViewProps> = ({ onLoginSuccess }) => {
               )}
             </button>
           </form>
-
-          {/* Quick Select Staff / Demo Logins */}
-          <div className="mt-6 pt-5 border-t border-blue-900/60 space-y-2.5">
-            <div className="flex items-center justify-between">
-              <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">
-                Quick Select Leadership Personnel
-              </span>
-              <span className="text-[10px] text-amber-400/80 font-mono">
-                Password: Admin2026!
-              </span>
-            </div>
-
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-              {(staffList && staffList.length > 0
-                ? staffList
-                : [
-                    {
-                      id: 'staff-luke',
-                      name: 'Luke',
-                      title: 'The King',
-                      jobTitle: 'CEO / Owner',
-                      email: 'luke.cowan@maplexfinancial.com',
-                      department: 'Executive Leadership',
-                    },
-                    {
-                      id: 'staff-dana',
-                      name: 'Dana',
-                      title: 'Supreme Funding Commander',
-                      jobTitle: 'Operations Director',
-                      email: 'dana.javier@maplexfinancial.com',
-                      department: 'Operations & Underwriting',
-                    },
-                    {
-                      id: 'staff-robert',
-                      name: 'Robert',
-                      title: 'Hand of the King',
-                      jobTitle: 'Operations / Automation / Technology / Growth',
-                      email: 'robert@maplexfinancial.com',
-                      department: 'Operations & Technology',
-                    },
-                    {
-                      id: 'staff-steve',
-                      name: 'Steve',
-                      title: 'Grand Sales Wizard',
-                      jobTitle: 'Sales Director',
-                      email: 'steve@maplexfinancial.com',
-                      department: 'Sales & Origination',
-                    },
-                  ]
-              ).map((member) => (
-                <button
-                  key={member.id || member.email}
-                  type="button"
-                  onClick={() => {
-                    setEmail(member.email);
-                    setPassword('Admin2026!');
-                  }}
-                  className="p-3 rounded-xl bg-[#070f20] hover:bg-[#0f1d3c] border border-blue-900/80 hover:border-amber-400/50 text-left transition-all group relative overflow-hidden"
-                >
-                  <div className="flex items-center justify-between gap-1 mb-1">
-                    <div className="text-xs font-extrabold text-slate-100 group-hover:text-amber-400 flex items-center gap-1.5">
-                      <span>{member.name}</span>
-                      <span className="text-[10px] font-normal text-amber-400/90 italic">
-                        "{member.title || (member as any).portalTitle || 'Leadership'}"
-                      </span>
-                    </div>
-                    <span className="text-[8px] px-1.5 py-0.5 rounded bg-emerald-500/10 text-emerald-300 border border-emerald-500/20 font-mono shrink-0">
-                      FULL ACCESS
-                    </span>
-                  </div>
-                  <div className="text-[10px] text-blue-200/80 font-medium truncate">
-                    {member.jobTitle || (member as any).role || member.department}
-                  </div>
-                  <div className="text-[9px] text-slate-500 font-mono truncate mt-0.5">
-                    {member.email}
-                  </div>
-                </button>
-              ))}
-            </div>
-          </div>
         </div>
 
         {/* Security & Support Footer */}

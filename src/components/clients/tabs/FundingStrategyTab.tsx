@@ -862,7 +862,7 @@ export const FundingStrategyTab: React.FC<FundingStrategyTabProps> = ({
                             </span>
                             <span>•</span>
                             <span className="flex items-center gap-1">
-                              <Calendar className="w-3 h-3 text-slate-400" />
+                              <Calendar className="w-3 h-3 text-white" />
                               Due: {formatDate(step.dueDate)}
                             </span>
                             <span>•</span>

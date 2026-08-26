@@ -270,20 +270,45 @@ interface DatabaseSchema {
     mentionRole?: string;
     enabled: boolean;
     events: {
-      highPriorityTaskCreated: boolean;
-      highPriorityTaskDue: boolean;
-      taskOverdue: boolean;
-      newLead: boolean;
-      verificationComplete: boolean;
-      underwritingReady: boolean;
-      preApprovalReceived: boolean;
-      approvalReceived: boolean;
-      clientFunded: boolean;
-      commissionReceived: boolean;
+      taskAssigned?: boolean;
+      taskReminder?: boolean;
+      highPriorityTaskCreated?: boolean;
+      highPriorityTaskDue?: boolean;
+      taskOverdue?: boolean;
+      newLead?: boolean;
+      leadCreated?: boolean;
+      newClient?: boolean;
+      applicationSubmitted?: boolean;
+      verificationComplete?: boolean;
+      verificationFailed?: boolean;
+      clientVerified?: boolean;
+      documentUploaded?: boolean;
+      underwritingReady?: boolean;
+      preApprovalReceived?: boolean;
+      approvalReceived?: boolean;
+      clientFunded?: boolean;
+      dealFunded?: boolean;
+      commissionReceived?: boolean;
+      commissionCollected?: boolean;
     };
     lastTestedAt?: string;
     lastTestStatus?: string;
+    lastTestMessage?: string;
   };
+  discordLogs: {
+    id: string;
+    eventKey: string;
+    eventTitle: string;
+    clientName?: string;
+    businessName?: string;
+    dealId?: string;
+    taskId?: string;
+    timestamp: string;
+    status: 'DELIVERED' | 'FAILED' | 'SKIPPED' | 'RATE_LIMITED';
+    httpStatus?: number;
+    errorReason?: string;
+    summary?: string;
+  }[];
   firebaseConfig: {
     apiKey: string;
     authDomain: string;
@@ -325,26 +350,38 @@ function getInitialDb(): DatabaseSchema {
     creditCards: [],
     masterVerifications: {},
     discordConfig: {
-      webhookUrl: '',
+      webhookUrl: process.env.DISCORD_WEBHOOK_URL || '',
       channelName: '#maple-x-operations',
       botUsername: 'Maple X Operations Bot',
       mentionRole: '',
       enabled: true,
       events: {
+        taskAssigned: true,
+        taskReminder: true,
         highPriorityTaskCreated: true,
         highPriorityTaskDue: true,
         taskOverdue: true,
         newLead: true,
+        leadCreated: true,
+        newClient: true,
+        applicationSubmitted: true,
         verificationComplete: true,
+        verificationFailed: true,
+        clientVerified: true,
+        documentUploaded: true,
         underwritingReady: true,
         preApprovalReceived: true,
         approvalReceived: true,
         clientFunded: true,
+        dealFunded: true,
         commissionReceived: true,
+        commissionCollected: true,
       },
       lastTestedAt: '',
       lastTestStatus: '',
+      lastTestMessage: '',
     },
+    discordLogs: [],
     firebaseConfig: {
       apiKey: '',
       authDomain: '',
@@ -549,38 +586,311 @@ function createNotification(
   return notification;
 }
 
-// Secure Server-Side Discord Dispatcher
+// ----------------------------------------------------
+// SECURE ROBUST DISCORD NOTIFICATION ENGINE
+// ----------------------------------------------------
+
+const DISCORD_DEDUPE_TTL_MS = 60 * 1000; // 60s suppression for exact duplicate events
+const recentNotificationCache = new Map<string, number>();
+
+function cleanupDedupeCache() {
+  const now = Date.now();
+  for (const [key, timestamp] of recentNotificationCache.entries()) {
+    if (now - timestamp > DISCORD_DEDUPE_TTL_MS * 2) {
+      recentNotificationCache.delete(key);
+    }
+  }
+}
+
+export function resolveDiscordWebhookUrl(overrideUrl?: string): string {
+  if (overrideUrl && typeof overrideUrl === 'string' && overrideUrl.trim().length > 0) {
+    return overrideUrl.trim();
+  }
+  if (db?.discordConfig?.webhookUrl && typeof db.discordConfig.webhookUrl === 'string' && db.discordConfig.webhookUrl.trim().length > 0) {
+    return db.discordConfig.webhookUrl.trim();
+  }
+  if (process.env.DISCORD_WEBHOOK_URL && typeof process.env.DISCORD_WEBHOOK_URL === 'string' && process.env.DISCORD_WEBHOOK_URL.trim().length > 0) {
+    return process.env.DISCORD_WEBHOOK_URL.trim();
+  }
+  return '';
+}
+
+export function isValidDiscordWebhookUrl(url?: string): boolean {
+  if (!url || typeof url !== 'string') return false;
+  const trimmed = url.trim();
+  // Valid formats: discord.com/api/webhooks/ID/TOKEN or discordapp.com/api/webhooks/ID/TOKEN (canary, ptb included)
+  const pattern = /^https:\/\/(?:[a-zA-Z0-9-]+\.)?discord(?:app)?\.com\/api\/webhooks\/\d+\/[A-Za-z0-9_-]+(?:\?.*)?$/;
+  return pattern.test(trimmed);
+}
+
+export function maskDiscordWebhookUrl(url?: string): string {
+  if (!url || typeof url !== 'string') return 'Not Configured';
+  const trimmed = url.trim();
+  const match = trimmed.match(/^(https:\/\/(?:[a-zA-Z0-9-]+\.)?discord(?:app)?\.com\/api\/webhooks\/\d+\/)([A-Za-z0-9_-]+)/);
+  if (match) {
+    const token = match[2];
+    const maskedToken = token.length > 8 ? `${token.substring(0, 4)}••••••••${token.substring(token.length - 4)}` : '••••••••••••';
+    return `${match[1]}${maskedToken}`;
+  }
+  return 'Configured (Masked)';
+}
+
+function formatDiscordDateString(input?: string | number | Date): string {
+  const d = input ? new Date(input) : new Date();
+  if (isNaN(d.getTime())) return 'AUG/26/2026';
+  const months = ['JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN', 'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC'];
+  const month = months[d.getUTCMonth()];
+  const day = String(d.getUTCDate()).padStart(2, '0');
+  const year = d.getUTCFullYear();
+  let hours = d.getUTCHours();
+  const minutes = String(d.getUTCMinutes()).padStart(2, '0');
+  const ampm = hours >= 12 ? 'PM' : 'AM';
+  hours = hours % 12 || 12;
+  return `${month}/${day}/${year} • ${hours}:${minutes} ${ampm} UTC`;
+}
+
+function formatDiscordCurrency(amount?: number | string): string {
+  if (amount === undefined || amount === null || amount === '') return '';
+  const num = typeof amount === 'number' ? amount : Number(String(amount).replace(/[^0-9.-]+/g, ''));
+  if (isNaN(num)) return String(amount);
+  return `$${num.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 2 })}`;
+}
+
+function recordDiscordLog(entry: {
+  eventKey: string;
+  eventTitle: string;
+  clientName?: string;
+  businessName?: string;
+  dealId?: string;
+  taskId?: string;
+  status: 'DELIVERED' | 'FAILED' | 'SKIPPED' | 'RATE_LIMITED';
+  httpStatus?: number;
+  errorReason?: string;
+  summary?: string;
+}) {
+  if (!db.discordLogs) db.discordLogs = [];
+  const logItem = {
+    id: `dlog-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`,
+    timestamp: new Date().toISOString(),
+    ...entry,
+  };
+  db.discordLogs.unshift(logItem);
+  if (db.discordLogs.length > 150) {
+    db.discordLogs = db.discordLogs.slice(0, 150);
+  }
+  saveDb();
+  return logItem;
+}
+
+// Low-level HTTP dispatch to Discord Webhook with strict status validation and error extraction
+async function executeDiscordWebhook(
+  targetUrl: string,
+  payload: any,
+  meta?: { eventKey?: string; eventTitle?: string; clientName?: string; businessName?: string; dealId?: string; taskId?: string }
+): Promise<{ success: boolean; httpStatus: number; message: string; data?: any }> {
+  if (!isValidDiscordWebhookUrl(targetUrl)) {
+    const errorMsg = 'Invalid Discord Webhook URL format. Expected: https://discord.com/api/webhooks/{id}/{token}';
+    recordDiscordLog({
+      eventKey: meta?.eventKey || 'manualTest',
+      eventTitle: meta?.eventTitle || 'Discord Webhook Dispatch',
+      clientName: meta?.clientName,
+      businessName: meta?.businessName,
+      dealId: meta?.dealId,
+      taskId: meta?.taskId,
+      status: 'FAILED',
+      httpStatus: 400,
+      errorReason: errorMsg,
+      summary: 'Validation failed: Invalid webhook URL structure.',
+    });
+    return { success: false, httpStatus: 400, message: errorMsg };
+  }
+
+  // Append wait=true to guarantee Discord returns created message response
+  const dispatchUrl = targetUrl.includes('?')
+    ? (targetUrl.includes('wait=') ? targetUrl : `${targetUrl}&wait=true`)
+    : `${targetUrl}?wait=true`;
+
+  try {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 10000);
+
+    const response = await fetch(dispatchUrl, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'User-Agent': 'MapleX-Financial-Portal/1.0',
+      },
+      body: JSON.stringify(payload),
+      signal: controller.signal,
+    });
+    clearTimeout(timeoutId);
+
+    const httpStatus = response.status;
+
+    if (response.ok || httpStatus === 204 || httpStatus === 200) {
+      let resJson: any = null;
+      try {
+        if (httpStatus === 200) resJson = await response.json();
+      } catch (_) {}
+
+      recordDiscordLog({
+        eventKey: meta?.eventKey || 'manualTest',
+        eventTitle: meta?.eventTitle || 'Discord Webhook Dispatch',
+        clientName: meta?.clientName,
+        businessName: meta?.businessName,
+        dealId: meta?.dealId,
+        taskId: meta?.taskId,
+        status: 'DELIVERED',
+        httpStatus,
+        summary: `Successfully delivered embed to Discord channel (${httpStatus}).`,
+      });
+
+      console.log(`[DISCORD] Successfully dispatched ${meta?.eventTitle || 'Notification'} (HTTP ${httpStatus})`);
+      return {
+        success: true,
+        httpStatus,
+        message: 'Notification delivered to Discord successfully.',
+        data: resJson,
+      };
+    } else {
+      let errDetail = '';
+      try {
+        const errJson = await response.json();
+        errDetail = errJson.message || JSON.stringify(errJson);
+      } catch (_) {
+        errDetail = await response.text();
+      }
+
+      let userFriendlyReason = `Discord rejected webhook with HTTP ${httpStatus}.`;
+      if (httpStatus === 401) {
+        userFriendlyReason = 'HTTP 401 Unauthorized: Invalid Webhook Token. Please verify or regenerate your Discord webhook.';
+      } else if (httpStatus === 403) {
+        userFriendlyReason = 'HTTP 403 Forbidden: Discord rejected webhook. Missing channel permissions.';
+      } else if (httpStatus === 404) {
+        userFriendlyReason = 'HTTP 404 Not Found: Target Discord Webhook or Channel has been deleted.';
+      } else if (httpStatus === 429) {
+        userFriendlyReason = `HTTP 429 Rate Limited: Discord rate limit exceeded. ${errDetail}`;
+      } else if (httpStatus >= 500) {
+        userFriendlyReason = `HTTP ${httpStatus} Server Error: Discord API service outage.`;
+      } else if (errDetail) {
+        userFriendlyReason = `HTTP ${httpStatus}: ${errDetail}`;
+      }
+
+      recordDiscordLog({
+        eventKey: meta?.eventKey || 'manualTest',
+        eventTitle: meta?.eventTitle || 'Discord Webhook Dispatch',
+        clientName: meta?.clientName,
+        businessName: meta?.businessName,
+        dealId: meta?.dealId,
+        taskId: meta?.taskId,
+        status: httpStatus === 429 ? 'RATE_LIMITED' : 'FAILED',
+        httpStatus,
+        errorReason: userFriendlyReason,
+        summary: `Discord delivery failed: ${userFriendlyReason}`,
+      });
+
+      console.error(`[DISCORD ERROR] HTTP ${httpStatus}: ${userFriendlyReason}`);
+      return {
+        success: false,
+        httpStatus,
+        message: userFriendlyReason,
+      };
+    }
+  } catch (err: any) {
+    const isTimeout = err.name === 'AbortError' || err.message?.includes('timeout') || err.message?.includes('aborted');
+    const errorMsg = isTimeout
+      ? 'Network Timeout: Could not reach Discord API within 10 seconds.'
+      : `Network/Connection Error: ${err.message || 'Failed to dispatch to Discord.'}`;
+
+    recordDiscordLog({
+      eventKey: meta?.eventKey || 'manualTest',
+      eventTitle: meta?.eventTitle || 'Discord Webhook Dispatch',
+      clientName: meta?.clientName,
+      businessName: meta?.businessName,
+      dealId: meta?.dealId,
+      taskId: meta?.taskId,
+      status: 'FAILED',
+      httpStatus: isTimeout ? 504 : 500,
+      errorReason: errorMsg,
+      summary: errorMsg,
+    });
+
+    console.error(`[DISCORD NETWORK ERROR]`, err);
+    return {
+      success: false,
+      httpStatus: isTimeout ? 504 : 500,
+      message: errorMsg,
+    };
+  }
+}
+
+// High-level Discord Notification Dispatcher across Portal Lifecycle & Stacking
 async function sendDiscordNotification(
-  eventKey: keyof DatabaseSchema['discordConfig']['events'],
+  eventKey: keyof DatabaseSchema['discordConfig']['events'] | string,
   eventTitle: string,
   details: {
     clientName?: string;
     businessName?: string;
     taskTitle?: string;
+    taskId?: string;
     assignedUser?: string;
     priority?: string;
     dueDate?: string;
     amount?: number | string;
     product?: string;
     lender?: string;
+    dealId?: string;
+    clientId?: string;
     notes?: string;
     portalLink?: string;
-  }
+    stage?: string;
+    trancheNumber?: number | string;
+    commissionAmount?: number | string;
+    commissionRate?: number | string;
+    commissionPoints?: number | string;
+    leadSource?: string;
+    contactEmail?: string;
+    contactPhone?: string;
+    creditScore?: number | string;
+    monthlyRevenue?: number | string;
+    fileName?: string;
+    documentName?: string;
+    category?: string;
+    documentCategory?: string;
+    uploadedBy?: string;
+    verifiedBy?: string;
+    verificationStatus?: string;
+  },
+  options: { force?: boolean } = {}
 ) {
   try {
     const config = db.discordConfig;
-    if (!config || !config.enabled || !config.webhookUrl) return;
-    if (config.events && !config.events[eventKey]) return;
+    const webhookUrl = resolveDiscordWebhookUrl();
 
-    // Discord Embed Colors: Gold (#eab308 / 15381256), Blue (#1e40af / 1982639), Green (#10b981 / 1096065)
-    let color = 15381256; // Gold default
-    if (details.priority === 'High' || eventTitle.includes('OVERDUE') || eventTitle.includes('HIGH PRIORITY')) {
-      color = 15548997; // Crimson / Red
-    } else if (eventTitle.includes('FUNDED') || eventTitle.includes('COMMISSION')) {
-      color = 1096065; // Green
-    } else if (eventTitle.includes('LEAD') || eventTitle.includes('VERIFICATION')) {
-      color = 1982639; // Deep Blue
+    if (!webhookUrl) {
+      console.warn(`[DISCORD] Notification skipped for "${eventTitle}": No Discord Webhook URL configured.`);
+      return { success: false, httpStatus: 400, message: 'No Discord Webhook URL configured.' };
     }
+
+    if (!options.force) {
+      if (config && config.enabled === false) {
+        console.log(`[DISCORD] Notification skipped for "${eventTitle}": Discord integration is globally disabled.`);
+        return { success: false, httpStatus: 200, message: 'Discord integration is disabled.' };
+      }
+      if (config && config.events && (config.events as any)[eventKey] === false) {
+        console.log(`[DISCORD] Notification skipped for "${eventTitle}": Event trigger "${String(eventKey)}" is disabled.`);
+        return { success: false, httpStatus: 200, message: `Event trigger "${String(eventKey)}" is disabled.` };
+      }
+    }
+
+    // Deduplication check
+    cleanupDedupeCache();
+    const dedupeKey = `${eventKey}:${details.dealId || details.clientId || details.clientName || details.taskId || 'general'}:${details.stage || details.amount || ''}`;
+    if (!options.force && recentNotificationCache.has(dedupeKey)) {
+      console.log(`[DISCORD DEDUPE] Suppressing duplicate event within window: ${dedupeKey}`);
+      return { success: true, httpStatus: 200, message: 'Duplicate notification suppressed by idempotency filter.' };
+    }
+    recentNotificationCache.set(dedupeKey, Date.now());
 
     // Resolve user Discord tag for direct notification ping
     let userMention = '';
@@ -600,37 +910,155 @@ async function sendDiscordNotification(
       }
     }
 
-    const fields: any[] = [];
-    if (details.clientName) fields.push({ name: 'Client Name', value: details.clientName, inline: true });
-    if (details.businessName) fields.push({ name: 'Business Name', value: details.businessName, inline: true });
+    // Embed Color logic:
+    // Emerald Green (0x10B981): Funded, Commission Collected, Verified Complete
+    // Maple Gold (0xEAB308): Pre-Approved, Approved, General Positive
+    // Royal Blue (0x3B82F6): Leads, Applications, Verification Active
+    // Purple (0x8B5CF6): Underwriting
+    // Crimson / Red (0xEF4444): High Priority, Overdue, Failed Verification, Declined
+    let embedColor = 0xEAB308; // Default Gold
+    const titleUpper = eventTitle.toUpperCase();
+
+    if (
+      eventKey === 'clientFunded' ||
+      eventKey === 'dealFunded' ||
+      eventKey === 'commissionReceived' ||
+      eventKey === 'commissionCollected' ||
+      titleUpper.includes('FUNDED') ||
+      titleUpper.includes('COMMISSION')
+    ) {
+      embedColor = 0x10B981; // Emerald Green
+    } else if (
+      eventKey === 'approvalReceived' ||
+      eventKey === 'preApprovalReceived' ||
+      titleUpper.includes('APPROVED') ||
+      titleUpper.includes('PRE-APPROVAL')
+    ) {
+      embedColor = 0xEAB308; // Maple Gold
+    } else if (
+      eventKey === 'underwritingReady' ||
+      titleUpper.includes('UNDERWRITING')
+    ) {
+      embedColor = 0x8B5CF6; // Purple
+    } else if (
+      eventKey === 'verificationComplete' ||
+      eventKey === 'clientVerified' ||
+      titleUpper.includes('VERIFICATION COMPLETED')
+    ) {
+      embedColor = 0x10B981; // Green
+    } else if (
+      eventKey === 'verificationFailed' ||
+      details.priority === 'High' ||
+      titleUpper.includes('OVERDUE') ||
+      titleUpper.includes('HIGH PRIORITY') ||
+      titleUpper.includes('FAILED') ||
+      titleUpper.includes('DECLINED')
+    ) {
+      embedColor = 0xEF4444; // Crimson Red
+    } else if (
+      eventKey === 'newLead' ||
+      eventKey === 'leadCreated' ||
+      eventKey === 'newClient' ||
+      eventKey === 'applicationSubmitted' ||
+      titleUpper.includes('LEAD') ||
+      titleUpper.includes('APPLICATION')
+    ) {
+      embedColor = 0x3B82F6; // Royal Blue
+    }
+
+    // Build Formatted Embed Fields
+    const fields: { name: string; value: string; inline?: boolean }[] = [];
+
+    if (details.clientName) {
+      fields.push({ name: '👤 Client Name', value: `**${details.clientName}**`, inline: true });
+    }
+    if (details.businessName) {
+      fields.push({ name: '🏢 Business / Company', value: details.businessName, inline: true });
+    }
+    if (details.lender) {
+      const trancheLabel = details.trancheNumber ? ` (Tranche #${details.trancheNumber})` : '';
+      fields.push({ name: '🏦 Funding Lender', value: `**${details.lender}**${trancheLabel}`, inline: true });
+    }
+    if (details.product) {
+      fields.push({ name: '💼 Funding Product', value: details.product, inline: true });
+    }
+    if (details.amount !== undefined && details.amount !== null && details.amount !== '') {
+      const amountLabel = titleUpper.includes('APPROVED')
+        ? '💵 Approved Volume'
+        : titleUpper.includes('PRE-APPROVAL')
+        ? '💵 Pre-Qualified Volume'
+        : titleUpper.includes('FUNDED')
+        ? '💰 Funded Volume'
+        : '💵 Requested Volume';
+      fields.push({ name: amountLabel, value: `**${formatDiscordCurrency(details.amount)}**`, inline: true });
+    }
+    if (details.stage) {
+      fields.push({ name: '📊 Operational Stage', value: `\`${details.stage}\``, inline: true });
+    }
+    if (details.commissionAmount !== undefined && details.commissionAmount !== null && details.commissionAmount !== '') {
+      fields.push({ name: '💰 Commission Amount', value: `**${formatDiscordCurrency(details.commissionAmount)}**`, inline: true });
+    }
+    if (details.commissionRate !== undefined && details.commissionRate !== null && details.commissionRate !== '') {
+      fields.push({ name: '📈 Commission Rate', value: `${details.commissionRate}%`, inline: true });
+    }
+    if (details.creditScore) {
+      fields.push({ name: '📊 Credit Score', value: String(details.creditScore), inline: true });
+    }
+    if (details.monthlyRevenue) {
+      fields.push({ name: '📈 Monthly Revenue', value: formatDiscordCurrency(details.monthlyRevenue), inline: true });
+    }
+    if (details.leadSource) {
+      fields.push({ name: '📍 Lead Source', value: details.leadSource, inline: true });
+    }
+    if (details.documentName) {
+      fields.push({ name: '📄 Document Vault Item', value: `${details.documentName} (${details.documentCategory || 'File'})`, inline: false });
+    }
+    if (details.verifiedBy || details.verificationStatus) {
+      fields.push({
+        name: '🛡️ Verification Details',
+        value: `Status: **${details.verificationStatus || 'Complete'}** • Verified by: ${details.verifiedBy || 'Operations Desk'}`,
+        inline: false,
+      });
+    }
     if (details.assignedUser) {
       fields.push({
-        name: 'Assigned Operator',
+        name: '🎯 Assigned Operator',
         value: userMention ? `${details.assignedUser} (${userMention})` : details.assignedUser,
         inline: true,
       });
     }
-    if (details.priority) fields.push({ name: 'Priority', value: `**${details.priority.toUpperCase()}**`, inline: true });
-    if (details.dueDate) fields.push({ name: 'Due Date/Time', value: details.dueDate, inline: true });
-    if (details.amount) fields.push({ name: 'Funding Amount', value: String(details.amount), inline: true });
-    if (details.product) fields.push({ name: 'Funding Product', value: details.product, inline: true });
-    if (details.lender) fields.push({ name: 'Lender Source', value: details.lender, inline: true });
-    if (details.taskTitle) fields.push({ name: 'Task', value: details.taskTitle, inline: false });
-    if (details.notes) fields.push({ name: 'Notes', value: details.notes, inline: false });
+    if (details.priority) {
+      fields.push({ name: '⚠️ Priority Level', value: `**${details.priority.toUpperCase()}**`, inline: true });
+    }
+    if (details.dueDate) {
+      fields.push({ name: '⏰ Due Date', value: details.dueDate, inline: true });
+    }
+    if (details.taskTitle) {
+      fields.push({ name: '📋 Task Item', value: details.taskTitle, inline: false });
+    }
+    if (details.notes) {
+      fields.push({ name: '📝 Operational Notes', value: details.notes, inline: false });
+    }
+
+    // Portal link / Reference
+    const portalUrl = details.portalLink || (details.clientId ? `#/clients?id=${details.clientId}` : '');
+    if (portalUrl) {
+      fields.push({ name: '🔗 Portal Reference', value: `\`${portalUrl}\``, inline: false });
+    }
 
     const payload: any = {
-      username: config.botUsername || 'Maple X Operations Bot',
+      username: config?.botUsername || 'Maple X Operations Bot',
       avatar_url: 'https://images.unsplash.com/photo-1554224155-8d04cb21cd6c?w=150&auto=format&fit=crop&q=80',
       embeds: [
         {
-          title: `🔔 MAPLE X FINANCIAL — ${eventTitle.toUpperCase()}`,
+          title: `🔔 MAPLE X FINANCIAL • ${eventTitle.toUpperCase()}`,
           description: userMention
-            ? `Assigned to ${userMention} • Operational action required.`
-            : `Internal operational update dispatched from Maple X portal.`,
-          color,
+            ? `🚨 Notification for ${userMention} • Action requested in Maple X Portal.`
+            : `Operational notification generated from Maple X Financial Platform.`,
+          color: embedColor,
           fields,
           footer: {
-            text: `Maple X Financial • Internal Operations System`,
+            text: `Maple X Financial • Operations & Funding Command Hub`,
           },
           timestamp: new Date().toISOString(),
         },
@@ -638,18 +1066,25 @@ async function sendDiscordNotification(
     };
 
     if (userMention) {
-      payload.content = `🚨 **Notification for ${userMention}**: **${eventTitle}**`;
-    } else if (config.mentionRole) {
-      payload.content = `<@&${config.mentionRole}> **${eventTitle}**`;
+      payload.content = `🚨 **Attention ${userMention}**: **${eventTitle}**`;
+    } else if (config?.mentionRole && config.mentionRole.trim()) {
+      const cleanRole = config.mentionRole.trim();
+      payload.content = cleanRole.startsWith('<@') || cleanRole.startsWith('@') ? `${cleanRole} **${eventTitle}**` : `@${cleanRole} **${eventTitle}**`;
     }
 
-    await fetch(config.webhookUrl, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload),
+    const result = await executeDiscordWebhook(webhookUrl, payload, {
+      eventKey: String(eventKey),
+      eventTitle,
+      clientName: details.clientName,
+      businessName: details.businessName,
+      dealId: details.dealId,
+      taskId: details.taskTitle,
     });
-  } catch (err) {
-    console.error('Discord dispatch failed:', err);
+
+    return result;
+  } catch (err: any) {
+    console.error('sendDiscordNotification encountered critical error:', err);
+    return { success: false, httpStatus: 500, message: err.message || 'Fatal error dispatching notification' };
   }
 }
 
@@ -1592,62 +2027,161 @@ app.post('/api/verification/master/:clientId', (req, res) => {
 // DISCORD INTEGRATION APIS
 // ----------------------------------------------------
 app.get('/api/discord/config', (req, res) => {
-  res.json(db.discordConfig);
+  const activeUrl = resolveDiscordWebhookUrl();
+  const isConfigured = Boolean(activeUrl && isValidDiscordWebhookUrl(activeUrl));
+
+  res.json({
+    ...db.discordConfig,
+    isConfigured,
+    maskedWebhookUrl: maskDiscordWebhookUrl(activeUrl),
+    hasEnvWebhook: Boolean(process.env.DISCORD_WEBHOOK_URL),
+  });
 });
 
 app.put('/api/discord/config', (req, res) => {
-  db.discordConfig = {
-    ...db.discordConfig,
-    ...req.body,
-  };
+  const updates = req.body || {};
+  
+  if (updates.webhookUrl !== undefined) {
+    const trimmed = String(updates.webhookUrl).trim();
+    if (trimmed && !isValidDiscordWebhookUrl(trimmed)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid Discord Webhook URL format. Expected: https://discord.com/api/webhooks/{id}/{token}',
+      });
+    }
+    db.discordConfig.webhookUrl = trimmed;
+  }
+
+  if (updates.channelName !== undefined) db.discordConfig.channelName = updates.channelName;
+  if (updates.botUsername !== undefined) db.discordConfig.botUsername = updates.botUsername;
+  if (updates.mentionRole !== undefined) db.discordConfig.mentionRole = updates.mentionRole;
+  if (updates.enabled !== undefined) db.discordConfig.enabled = Boolean(updates.enabled);
+  if (updates.events && typeof updates.events === 'object') {
+    db.discordConfig.events = {
+      ...db.discordConfig.events,
+      ...updates.events,
+    };
+  }
+
   saveDb();
-  res.json(db.discordConfig);
+
+  const activeUrl = resolveDiscordWebhookUrl();
+  res.json({
+    ...db.discordConfig,
+    isConfigured: Boolean(activeUrl && isValidDiscordWebhookUrl(activeUrl)),
+    maskedWebhookUrl: maskDiscordWebhookUrl(activeUrl),
+    hasEnvWebhook: Boolean(process.env.DISCORD_WEBHOOK_URL),
+  });
 });
 
 app.post('/api/discord/test', async (req, res) => {
-  const { webhookUrl } = req.body;
-  const targetUrl = webhookUrl || db.discordConfig?.webhookUrl;
+  const { webhookUrl, channelName, botUsername, mentionRole } = req.body || {};
+  const targetUrl = resolveDiscordWebhookUrl(webhookUrl);
 
   if (!targetUrl) {
-    return res.status(400).json({ success: false, message: 'Please enter a valid Discord Webhook URL.' });
+    const errMsg = 'No Discord Webhook URL provided. Please paste your Discord Webhook URL.';
+    db.discordConfig.lastTestStatus = 'FAILED';
+    db.discordConfig.lastTestMessage = errMsg;
+    db.discordConfig.lastTestedAt = new Date().toISOString();
+    saveDb();
+    return res.status(400).json({ success: false, httpStatus: 400, message: errMsg });
   }
 
-  try {
-    const testPayload = {
-      username: 'Maple X Operations Bot',
-      embeds: [
-        {
-          title: '✅ MAPLE X FINANCIAL — DISCORD INTEGRATION TEST',
-          description: 'Secure server-side Discord notification connection verified successfully.',
-          color: 15381256, // Gold
-          fields: [
-            { name: 'System', value: 'Maple X Financial Operations Portal', inline: true },
-            { name: 'Status', value: '🟢 Active & Connected', inline: true },
-            { name: 'Timestamp', value: new Date().toUTCString(), inline: false },
-          ],
-          footer: { text: 'Maple X Financial • Secure Internal Webhook' },
+  if (!isValidDiscordWebhookUrl(targetUrl)) {
+    const errMsg = 'Invalid Discord Webhook URL format. URL must start with https://discord.com/api/webhooks/...';
+    db.discordConfig.lastTestStatus = 'FAILED';
+    db.discordConfig.lastTestMessage = errMsg;
+    db.discordConfig.lastTestedAt = new Date().toISOString();
+    saveDb();
+    return res.status(400).json({ success: false, httpStatus: 400, message: errMsg });
+  }
+
+  const effectiveBotName = botUsername || db.discordConfig.botUsername || 'Maple X Operations Bot';
+  const effectiveChannel = channelName || db.discordConfig.channelName || '#maple-x-operations';
+  const effectiveMention = mentionRole || db.discordConfig.mentionRole;
+
+  const testPayload: any = {
+    username: effectiveBotName,
+    avatar_url: 'https://images.unsplash.com/photo-1554224155-8d04cb21cd6c?w=150&auto=format&fit=crop&q=80',
+    embeds: [
+      {
+        title: '🔔 MAPLE X FINANCIAL • DISCORD INTEGRATION TEST',
+        description: 'Real-time Discord notification connection verified successfully from Maple X Financial Portal.',
+        color: 0xEAB308, // Gold
+        fields: [
+          { name: '🟢 Connection Status', value: 'Active & Verified', inline: true },
+          { name: '🏢 Operations Environment', value: 'Maple X Command Hub', inline: true },
+          { name: '📡 Target Channel', value: effectiveChannel, inline: true },
+          { name: '🕒 Test Timestamp', value: formatDiscordDateString(new Date()), inline: false },
+          { name: '🛡️ Security Protocol', value: 'Server-Side Webhook Dispatch (Secure)', inline: true },
+          { name: '⚡ Pipeline Ready', value: '13 Operational Event Triggers Active', inline: true },
+        ],
+        footer: {
+          text: 'Maple X Financial • Commercial Lending Operations',
         },
-      ],
-    };
+        timestamp: new Date().toISOString(),
+      },
+    ],
+  };
 
-    const response = await fetch(targetUrl, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(testPayload),
-    });
-
-    if (response.ok) {
-      db.discordConfig.lastTestedAt = new Date().toISOString();
-      db.discordConfig.lastTestStatus = 'SUCCESS';
-      saveDb();
-      return res.json({ success: true, message: 'Test message sent to Discord successfully!' });
-    } else {
-      const errText = await response.text();
-      return res.status(400).json({ success: false, message: `Discord rejected webhook: ${errText}` });
-    }
-  } catch (err: any) {
-    return res.status(500).json({ success: false, message: `Failed to dispatch to Discord: ${err.message}` });
+  if (effectiveMention && effectiveMention.trim()) {
+    const cleanMention = effectiveMention.trim();
+    testPayload.content = cleanMention.startsWith('<@') || cleanMention.startsWith('@')
+      ? `${cleanMention} 🔔 **Discord Integration Test Signal**`
+      : `@${cleanMention} 🔔 **Discord Integration Test Signal**`;
   }
+
+  const result = await executeDiscordWebhook(targetUrl, testPayload, {
+    eventKey: 'manualTest',
+    eventTitle: 'DISCORD INTEGRATION TEST PING',
+  });
+
+  db.discordConfig.lastTestedAt = new Date().toISOString();
+  db.discordConfig.lastTestStatus = result.success ? 'SUCCESS' : 'FAILED';
+  db.discordConfig.lastTestMessage = result.message;
+  saveDb();
+
+  if (result.success) {
+    return res.json({
+      success: true,
+      httpStatus: result.httpStatus,
+      message: 'Test notification delivered to Discord successfully!',
+      timestamp: db.discordConfig.lastTestedAt,
+    });
+  } else {
+    return res.status(result.httpStatus >= 400 && result.httpStatus < 600 ? result.httpStatus : 500).json({
+      success: false,
+      httpStatus: result.httpStatus,
+      message: result.message,
+      timestamp: db.discordConfig.lastTestedAt,
+    });
+  }
+});
+
+// Manual / Automated Event Trigger API
+app.post('/api/discord/notify', async (req, res) => {
+  const { eventKey, eventTitle, details, force } = req.body || {};
+  if (!eventKey || !eventTitle) {
+    return res.status(400).json({ success: false, message: 'eventKey and eventTitle are required.' });
+  }
+
+  const result = await sendDiscordNotification(eventKey, eventTitle, details || {}, { force: Boolean(force) });
+  if (result.success) {
+    return res.json(result);
+  } else {
+    return res.status(result.httpStatus >= 400 && result.httpStatus < 600 ? result.httpStatus : 400).json(result);
+  }
+});
+
+// Discord Notification History Log APIs
+app.get('/api/discord/logs', (req, res) => {
+  res.json(db.discordLogs || []);
+});
+
+app.delete('/api/discord/logs', (req, res) => {
+  db.discordLogs = [];
+  saveDb();
+  res.json({ success: true, message: 'Discord logs cleared.' });
 });
 
 // ----------------------------------------------------

@@ -1064,8 +1064,12 @@ export interface DiscordEventConfig {
   taskOverdue?: boolean;
   newLead?: boolean;
   leadCreated?: boolean;
+  newClient?: boolean;
+  applicationSubmitted?: boolean;
   verificationComplete?: boolean;
+  verificationFailed?: boolean;
   clientVerified?: boolean;
+  documentUploaded?: boolean;
   underwritingReady?: boolean;
   preApprovalReceived?: boolean;
   approvalReceived?: boolean;
@@ -1075,8 +1079,25 @@ export interface DiscordEventConfig {
   commissionCollected?: boolean;
 }
 
+export interface DiscordLogEntry {
+  id: string;
+  eventKey: string;
+  eventTitle: string;
+  clientName?: string;
+  businessName?: string;
+  dealId?: string;
+  taskId?: string;
+  timestamp: string;
+  status: 'DELIVERED' | 'FAILED' | 'SKIPPED' | 'RATE_LIMITED';
+  httpStatus?: number;
+  errorReason?: string;
+  summary?: string;
+}
+
 export interface DiscordConfig {
   webhookUrl: string;
+  maskedWebhookUrl?: string;
+  hasEnvWebhook?: boolean;
   channelName?: string;
   botUsername?: string;
   mentionRole?: string;
@@ -1084,6 +1105,7 @@ export interface DiscordConfig {
   events: DiscordEventConfig;
   lastTestedAt?: string;
   lastTestStatus?: 'SUCCESS' | 'FAILED';
+  lastTestMessage?: string;
 }
 
 export interface FirebaseClientConfig {

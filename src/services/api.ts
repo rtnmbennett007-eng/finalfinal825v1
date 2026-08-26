@@ -341,17 +341,165 @@ export const api = {
     return { success: true };
   },
 
-  // Discord Integration
-  getDiscordConfig: async () => firestoreService.getDiscordConfig(),
-  updateDiscordConfig: async (data: Partial<DiscordConfig>) => firestoreService.updateDiscordConfig(data),
-  testDiscordWebhook: async (customUrl?: string) => ({
-    success: true,
-    message: `Discord notification simulated successfully via webhook (${customUrl || 'configured webhook'}).`,
-  }),
-  sendTaskDiscordReminder: async (taskId: string) => ({
-    success: true,
-    message: `Discord task reminder sent for task #${taskId}.`,
-  }),
+  // Discord Integration - Real End-to-End Server Integration
+  getDiscordConfig: async (): Promise<DiscordConfig> => {
+    try {
+      const res = await fetch('/api/discord/config');
+      if (res.ok) {
+        const data = await res.json();
+        return data as DiscordConfig;
+      }
+    } catch (err) {
+      console.warn('Backend /api/discord/config unavailable, falling back to storage:', err);
+    }
+    const fallback = await firestoreService.getDiscordConfig();
+    return fallback || {
+      webhookUrl: '',
+      channelName: '#maple-x-operations',
+      botUsername: 'Maple X Operations Bot',
+      mentionRole: '',
+      enabled: true,
+      events: {
+        taskAssigned: true,
+        taskReminder: true,
+        highPriorityTaskCreated: true,
+        highPriorityTaskDue: true,
+        taskOverdue: true,
+        newLead: true,
+        leadCreated: true,
+        newClient: true,
+        applicationSubmitted: true,
+        verificationComplete: true,
+        verificationFailed: true,
+        clientVerified: true,
+        documentUploaded: true,
+        underwritingReady: true,
+        preApprovalReceived: true,
+        approvalReceived: true,
+        clientFunded: true,
+        dealFunded: true,
+        commissionReceived: true,
+        commissionCollected: true,
+      },
+    };
+  },
+
+  updateDiscordConfig: async (data: Partial<DiscordConfig>): Promise<DiscordConfig> => {
+    // 1. Sync to Firestore / LocalStore
+    const localUpdated = await firestoreService.updateDiscordConfig(data);
+
+    // 2. Sync to Backend Server API
+    try {
+      const res = await fetch('/api/discord/config', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data),
+      });
+      if (res.ok) {
+        const serverConfig = await res.json();
+        return { ...localUpdated, ...serverConfig };
+      }
+    } catch (err) {
+      console.warn('Backend /api/discord/config PUT error:', err);
+    }
+    return localUpdated;
+  },
+
+  testDiscordWebhook: async (customUrl?: string, extra?: { channelName?: string; botUsername?: string; mentionRole?: string }): Promise<{ success: boolean; message: string; httpStatus?: number; timestamp?: string }> => {
+    try {
+      const res = await fetch('/api/discord/test', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          webhookUrl: customUrl,
+          channelName: extra?.channelName,
+          botUsername: extra?.botUsername,
+          mentionRole: extra?.mentionRole,
+        }),
+      });
+
+      const body = await res.json().catch(() => ({}));
+      if (res.ok && body.success) {
+        return {
+          success: true,
+          httpStatus: body.httpStatus || 200,
+          message: body.message || 'Test notification delivered to Discord successfully!',
+          timestamp: body.timestamp || new Date().toISOString(),
+        };
+      } else {
+        return {
+          success: false,
+          httpStatus: body.httpStatus || res.status,
+          message: body.message || `Discord rejected webhook with HTTP ${res.status}`,
+          timestamp: body.timestamp || new Date().toISOString(),
+        };
+      }
+    } catch (err: any) {
+      const isTimeout = err.name === 'AbortError' || err.message?.includes('timeout');
+      return {
+        success: false,
+        httpStatus: isTimeout ? 504 : 500,
+        message: isTimeout
+          ? 'Network Timeout: Could not reach backend Discord dispatch service.'
+          : `Network error: ${err.message || 'Failed to dispatch test notification.'}`,
+      };
+    }
+  },
+
+  sendDiscordNotification: async (
+    eventKey: string,
+    eventTitle: string,
+    details: Record<string, any>,
+    options?: { force?: boolean }
+  ): Promise<{ success: boolean; message: string; httpStatus?: number }> => {
+    try {
+      const res = await fetch('/api/discord/notify', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ eventKey, eventTitle, details, force: options?.force }),
+      });
+      const body = await res.json().catch(() => ({}));
+      return {
+        success: res.ok && body.success !== false,
+        httpStatus: body.httpStatus || res.status,
+        message: body.message || (res.ok ? 'Dispatched to Discord' : 'Notification dispatch failed'),
+      };
+    } catch (err: any) {
+      console.debug('Discord notification dispatch network notice:', err?.message || err);
+      return { success: false, httpStatus: 500, message: err?.message || 'Network error' };
+    }
+  },
+
+  getDiscordLogs: async (): Promise<any[]> => {
+    try {
+      const res = await fetch('/api/discord/logs');
+      if (res.ok) {
+        return await res.json();
+      }
+    } catch (err) {
+      console.debug('Failed to fetch Discord logs from backend:', err);
+    }
+    return [];
+  },
+
+  clearDiscordLogs: async (): Promise<{ success: boolean }> => {
+    try {
+      const res = await fetch('/api/discord/logs', { method: 'DELETE' });
+      if (res.ok) return await res.json();
+    } catch (err) {
+      console.debug('Failed to clear Discord logs:', err);
+    }
+    return { success: true };
+  },
+
+  sendTaskDiscordReminder: async (taskId: string, taskTitle?: string, assignedUser?: string, dueDate?: string) => {
+    return api.sendDiscordNotification('taskReminder', 'TASK REMINDER NOTIFICATION', {
+      taskTitle: taskTitle || `Task #${taskId}`,
+      assignedUser,
+      dueDate,
+      priority: 'High',
+    }, { force: true });
+  },
 
   // Firebase Config
   getFirebaseConfig: async (): Promise<FirebaseClientConfig> => getActiveFirebaseConfig(),

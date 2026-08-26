@@ -132,11 +132,11 @@ export const MonthlyPerformanceTab: React.FC<MonthlyPerformanceTabProps> = ({
       {/* Month Selector Bar */}
       <div className="bg-[#0e1c38] border border-blue-900/60 rounded-2xl p-4 sm:p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4 shadow-xl">
         <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-xl bg-blue-500/15 border border-cyan-500/30 flex items-center justify-center text-cyan-400">
-            <Calendar className="w-5 h-5" />
+          <div className="w-10 h-10 rounded-xl bg-blue-600/30 border border-blue-400/50 flex items-center justify-center text-white">
+            <Calendar className="w-5 h-5 text-white" />
           </div>
           <div>
-            <h2 className="text-base font-bold text-slate-100">{monthName} Operations Performance</h2>
+            <h2 className="text-base font-bold text-white">{monthName} Operations Performance</h2>
             <p className="text-xs text-slate-400">
               Month-over-month comparisons against {priorMonthName}
             </p>

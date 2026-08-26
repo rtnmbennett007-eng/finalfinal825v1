@@ -671,18 +671,23 @@ export const OperationsReports: React.FC<OperationsReportsProps> = ({
         ].map((tab) => {
           const Icon = tab.icon;
           const isActive = activeTab === tab.id;
+          const isCalendarTab = tab.icon === Calendar || tab.id === 'monthly';
           return (
             <button
               key={tab.id}
               onClick={() => setActiveTab(tab.id)}
               className={`flex items-center gap-2 px-4 py-3 text-xs font-bold border-b-2 transition-all cursor-pointer whitespace-nowrap ${
                 isActive
-                  ? 'border-amber-400 text-amber-400 bg-blue-950/40 rounded-t-xl'
+                  ? isCalendarTab
+                    ? 'border-white text-white bg-blue-900/50 rounded-t-xl shadow-xs'
+                    : 'border-amber-400 text-amber-400 bg-blue-950/40 rounded-t-xl'
+                  : isCalendarTab
+                  ? 'border-transparent text-white hover:text-white hover:border-white/50 bg-blue-950/30'
                   : 'border-transparent text-slate-400 hover:text-slate-200 hover:border-blue-700'
               }`}
             >
-              <Icon className="w-4 h-4" />
-              <span>{tab.label}</span>
+              <Icon className={`w-4 h-4 ${isCalendarTab ? 'text-white' : ''}`} />
+              <span className={isCalendarTab ? 'text-white' : ''}>{tab.label}</span>
             </button>
           );
         })}

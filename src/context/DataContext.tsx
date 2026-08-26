@@ -139,7 +139,10 @@ interface DataContextType {
 
   // Discord & Firebase
   updateDiscordConfig: (data: Partial<DiscordConfig>) => Promise<void>;
-  testDiscordWebhook: (url?: string) => Promise<{ success: boolean; message: string }>;
+  testDiscordWebhook: (url?: string, extra?: { channelName?: string; botUsername?: string; mentionRole?: string }) => Promise<{ success: boolean; message: string; httpStatus?: number; timestamp?: string }>;
+  notifyDiscord: (eventKey: string, eventTitle: string, details: Record<string, any>, options?: { force?: boolean }) => Promise<any>;
+  fetchDiscordLogs: () => Promise<any[]>;
+  clearDiscordLogs: () => Promise<void>;
   updateFirebaseConfig: (data: Partial<FirebaseClientConfig>) => Promise<void>;
 
   // GHL
@@ -302,6 +305,19 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
     try {
       const created = await firestoreService.createLead(data);
       addToast('success', 'Lead Created', `Lead for ${created.firstName} ${created.lastName} saved to Firestore.`);
+      
+      // Dispatch real Discord notification
+      notifyDiscord('newLead', 'NEW INBOUND LEAD INGESTED', {
+        clientName: `${created.firstName} ${created.lastName}`.trim(),
+        businessName: created.businessName,
+        amount: created.estimatedAmount,
+        product: 'Business Funding',
+        leadSource: created.leadSource,
+        contactEmail: created.email,
+        contactPhone: created.phone,
+        assignedUser: created.assignedSalesRep,
+      });
+
       return created;
     } catch (err: any) {
       addToast('error', 'Save Failed', err.message || 'Could not save lead');
@@ -344,6 +360,20 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
       const result = await firestoreService.convertLeadToClient(id, customData);
       addToast('success', 'Lead Converted', `${result.client.firstName} ${result.client.lastName} converted to Client File & Deal Stack initialized.`);
       setSelectedClientId(result.client.id);
+
+      // Dispatch Discord notification for new client converted
+      notifyDiscord('newClient', 'NEW CLIENT ONBOARDED FROM LEAD', {
+        clientName: `${result.client.firstName} ${result.client.lastName}`.trim(),
+        businessName: result.client.businessName,
+        amount: result.deal.fundingAmount,
+        product: result.deal.product,
+        lender: result.deal.lenderName,
+        stage: 'Client Converted',
+        assignedUser: result.deal.assignedStaff,
+        clientId: result.client.id,
+        dealId: result.deal.id,
+      });
+
       return result;
     } catch (err: any) {
       addToast('error', 'Conversion Failed', err.message || 'Failed to convert lead');
@@ -359,6 +389,15 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
     try {
       const created = await firestoreService.createClient(data);
       addToast('success', 'Client File Created', `Client profile for ${created.firstName} ${created.lastName} saved to Firestore.`);
+
+      // Dispatch Discord notification
+      notifyDiscord('newClient', 'NEW CLIENT FILE CREATED', {
+        clientName: `${created.firstName} ${created.lastName}`.trim(),
+        businessName: created.businessName,
+        stage: 'New Client File',
+        clientId: created.id,
+      });
+
       return created;
     } catch (err: any) {
       addToast('error', 'Save Failed', err.message || 'Could not create client');
@@ -418,6 +457,44 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
       if (data.clientId && selectedClientId === data.clientId) {
         refreshClientDetail(data.clientId);
       }
+
+      // Check for Pre-Approved or Approved on create
+      if (created.status === 'PRE_APPROVED') {
+        notifyDiscord('preApprovalReceived', 'PRE-APPROVAL RECEIVED FROM LENDER', {
+          clientName: created.clientName,
+          businessName: created.businessName,
+          lender: created.lenderName,
+          amount: created.fundingAmount,
+          product: created.product,
+          stage: created.status,
+          dealId: created.id,
+          clientId: created.clientId,
+        });
+      } else if (created.status === 'APPROVED') {
+        notifyDiscord('approvalReceived', 'LENDER APPROVAL RECEIVED', {
+          clientName: created.clientName,
+          businessName: created.businessName,
+          lender: created.lenderName,
+          amount: created.fundingAmount,
+          product: created.product,
+          stage: created.status,
+          dealId: created.id,
+          clientId: created.clientId,
+        });
+      } else if (created.status === 'FUNDED') {
+        notifyDiscord('dealFunded', 'CLIENT DEAL FUNDED SUCCESSFULLY!', {
+          clientName: created.clientName,
+          businessName: created.businessName,
+          lender: created.lenderName,
+          amount: created.fundingAmount,
+          product: created.product,
+          commissionAmount: (created.fundingAmount * created.percentage) / 100,
+          stage: created.status,
+          dealId: created.id,
+          clientId: created.clientId,
+        });
+      }
+
       return created;
     } catch (err: any) {
       addToast('error', 'Save Failed', err.message || 'Could not create deal');
@@ -435,6 +512,44 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
       if (updated.clientId && selectedClientId === updated.clientId) {
         refreshClientDetail(updated.clientId);
       }
+
+      // Deal status transition notifications
+      if (data.status === 'PRE_APPROVED') {
+        notifyDiscord('preApprovalReceived', 'PRE-APPROVAL RECEIVED FROM LENDER', {
+          clientName: updated.clientName,
+          businessName: updated.businessName,
+          lender: updated.lenderName,
+          amount: updated.fundingAmount,
+          product: updated.product,
+          stage: updated.status,
+          dealId: updated.id,
+          clientId: updated.clientId,
+        });
+      } else if (data.status === 'APPROVED') {
+        notifyDiscord('approvalReceived', 'LENDER APPROVAL RECEIVED', {
+          clientName: updated.clientName,
+          businessName: updated.businessName,
+          lender: updated.lenderName,
+          amount: updated.fundingAmount,
+          product: updated.product,
+          stage: updated.status,
+          dealId: updated.id,
+          clientId: updated.clientId,
+        });
+      } else if (data.status === 'FUNDED') {
+        notifyDiscord('dealFunded', 'CLIENT DEAL FUNDED SUCCESSFULLY!', {
+          clientName: updated.clientName,
+          businessName: updated.businessName,
+          lender: updated.lenderName,
+          amount: updated.fundingAmount,
+          product: updated.product,
+          commissionAmount: (updated.fundingAmount * updated.percentage) / 100,
+          stage: updated.status,
+          dealId: updated.id,
+          clientId: updated.clientId,
+        });
+      }
+
       return updated;
     } catch (err: any) {
       addToast('error', 'Update Failed', err.message || 'Could not update deal');
@@ -578,6 +693,19 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
     try {
       const created = await firestoreService.createTask(data);
       addToast('success', 'Task Created', `Task "${created.title}" saved to Firestore.`);
+
+      // Dispatch Discord notification
+      const isHighPriority = created.priority === 'High';
+      notifyDiscord(isHighPriority ? 'highPriorityTaskCreated' : 'taskAssigned', `TASK CREATED: ${created.title}`, {
+        taskTitle: created.title,
+        priority: created.priority,
+        assignedUser: created.assignedTo,
+        dueDate: created.dueDate,
+        category: created.category,
+        clientName: created.clientName,
+        clientId: created.clientId,
+      });
+
       return created;
     } catch (err: any) {
       addToast('error', 'Save Failed', err.message || 'Could not create task');
@@ -775,6 +903,26 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
       const saved = await firestoreService.saveMasterVerification(clientId, data);
       addToast('success', 'Verification Saved', `Master verification worksheet saved (${saved.status}).`);
       if (selectedClientId === clientId) refreshClientDetail(clientId);
+
+      // Dispatch Discord notification on verification completion or action required
+      if (saved.status === 'VERIFIED') {
+        notifyDiscord('verificationComplete', 'CLIENT VERIFICATION COMPLETED (KYC APPROVED)', {
+          clientName: selectedClientData?.client ? `${selectedClientData.client.firstName} ${selectedClientData.client.lastName}` : 'Client',
+          businessName: selectedClientData?.client?.businessName,
+          stage: 'KYC Verified & Ready for Underwriting',
+          assignedUser: saved.verifiedBy,
+          clientId,
+        });
+      } else if (saved.status === 'ACTION_REQUIRED' || saved.status === 'FAILED' || saved.status === 'UNVERIFIED' || saved.status === 'NEEDS_CORRECTION') {
+        notifyDiscord('verificationFailed', 'VERIFICATION ATTENTION REQUIRED', {
+          clientName: selectedClientData?.client ? `${selectedClientData.client.firstName} ${selectedClientData.client.lastName}` : 'Client',
+          businessName: selectedClientData?.client?.businessName,
+          stage: `Verification Status: ${saved.status}`,
+          notes: saved.internalNotesRedFlags || saved.callSummary,
+          clientId,
+        });
+      }
+
       return saved;
     } catch (err: any) {
       addToast('error', 'Save Failed', err.message || 'Could not save verification');
@@ -797,6 +945,18 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
       const docItem = await firestoreService.uploadDocument(file, clientId, category, dealId, uploadedBy);
       addToast('success', 'File Uploaded', `Document "${file.name}" uploaded to Firebase Storage and indexed.`);
       if (selectedClientId === clientId) refreshClientDetail(clientId);
+
+      // Dispatch Discord notification
+      notifyDiscord('documentUploaded', 'VAULT DOCUMENT UPLOADED', {
+        clientName: selectedClientData?.client ? `${selectedClientData.client.firstName} ${selectedClientData.client.lastName}` : 'Client',
+        businessName: selectedClientData?.client?.businessName,
+        fileName: file.name,
+        category,
+        uploadedBy,
+        clientId,
+        dealId,
+      });
+
       return docItem;
     } catch (err: any) {
       addToast('error', 'Upload Failed', err.message || 'Could not upload file to Cloud Storage');
@@ -910,13 +1070,36 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
-  // Discord & Firebase
+  // Discord Notification Dispatcher & Management
+  const notifyDiscord = async (
+    eventKey: string,
+    eventTitle: string,
+    details: Record<string, any>,
+    options?: { force?: boolean }
+  ): Promise<any> => {
+    try {
+      return await api.sendDiscordNotification(eventKey, eventTitle, details, options);
+    } catch (err) {
+      console.debug('Discord notification dispatch notice:', err);
+      return { success: false, message: 'Notice: dispatch failed' };
+    }
+  };
+
+  const fetchDiscordLogs = async (): Promise<any[]> => {
+    return api.getDiscordLogs();
+  };
+
+  const clearDiscordLogs = async (): Promise<void> => {
+    await api.clearDiscordLogs();
+    addToast('info', 'Discord Logs Cleared', 'Notification history log cleared.');
+  };
+
   const updateDiscordConfig = async (data: Partial<DiscordConfig>): Promise<void> => {
     setIsSaving(true);
     try {
-      const updated = await firestoreService.updateDiscordConfig(data);
+      const updated = await api.updateDiscordConfig(data);
       setDiscordConfig(updated);
-      addToast('success', 'Discord Settings Saved', 'Webhook settings saved to Firestore.');
+      addToast('success', 'Discord Settings Saved', 'Webhook configuration synchronized successfully.');
     } catch (err: any) {
       addToast('error', 'Save Failed', err.message || 'Could not save Discord settings');
       throw err;
@@ -925,8 +1108,14 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
-  const testDiscordWebhook = async (url?: string): Promise<{ success: boolean; message: string }> => {
-    return api.testDiscordWebhook(url);
+  const testDiscordWebhook = async (
+    url?: string,
+    extra?: { channelName?: string; botUsername?: string; mentionRole?: string }
+  ): Promise<{ success: boolean; message: string; httpStatus?: number; timestamp?: string }> => {
+    const res = await api.testDiscordWebhook(url, extra);
+    // Refresh discord config to capture last tested timestamp/status
+    api.getDiscordConfig().then(setDiscordConfig).catch(() => {});
+    return res;
   };
 
   const updateFirebaseConfig = async (data: Partial<FirebaseClientConfig>): Promise<void> => {
@@ -1200,6 +1389,9 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
         updateDiscordConfig,
         testDiscordWebhook,
+        notifyDiscord,
+        fetchDiscordLogs,
+        clearDiscordLogs,
         updateFirebaseConfig,
 
         syncGhlNow,

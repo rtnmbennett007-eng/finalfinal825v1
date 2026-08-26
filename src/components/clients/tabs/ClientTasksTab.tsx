@@ -254,7 +254,7 @@ export const ClientTasksTab: React.FC<ClientTasksTabProps> = ({
                       </span>
                       <span>•</span>
                       <span className="flex items-center gap-1">
-                        <Calendar className="w-3.5 h-3.5 text-slate-400" />
+                        <Calendar className="w-3.5 h-3.5 text-white" />
                         Due: {formatDate(task.dueDate)} {task.dueTime ? `@ ${task.dueTime}` : ''}
                       </span>
                     </div>

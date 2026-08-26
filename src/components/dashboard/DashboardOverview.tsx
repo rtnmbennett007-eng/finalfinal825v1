@@ -584,15 +584,15 @@ export const DashboardOverview: React.FC<DashboardOverviewProps> = ({
 
               <button
                 onClick={() => setTaskSection('UPCOMING')}
-                className={`px-3 py-1.5 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition-all ${
+                className={`px-3 py-1.5 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition-all text-white ${
                   taskSection === 'UPCOMING'
                     ? 'bg-blue-600 text-white font-bold shadow-xs'
-                    : 'bg-[#070d18] text-slate-400 hover:text-slate-200 border border-blue-900/60'
+                    : 'bg-[#0d1b36] text-white hover:bg-blue-900/80 hover:text-white border border-blue-700/60'
                 }`}
               >
-                <Calendar className="w-3.5 h-3.5" />
-                <span>UPCOMING</span>
-                <span className="text-[10px] px-1.5 py-0.2 rounded-full bg-blue-950 text-slate-300 font-mono">
+                <Calendar className="w-3.5 h-3.5 text-white" />
+                <span className="text-white">UPCOMING</span>
+                <span className="text-[10px] px-1.5 py-0.2 rounded-full bg-blue-950 text-white font-mono border border-blue-800/60">
                   {upcomingTasks.length}
                 </span>
               </button>
@@ -730,7 +730,7 @@ export const DashboardOverview: React.FC<DashboardOverviewProps> = ({
                                   isOverdue ? 'text-rose-400 font-bold' : 'text-slate-300'
                                 }`}
                               >
-                                <Calendar className="w-3 h-3" />
+                                <Calendar className="w-3 h-3 text-white" />
                                 {formatDate(task.dueDate)} {task.dueTime ? `@ ${task.dueTime}` : ''}
                                 {isOverdue && ' (OVERDUE)'}
                               </span>

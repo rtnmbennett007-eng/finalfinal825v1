@@ -64,17 +64,23 @@ export const SettingsView: React.FC = () => {
   const [discordConfig, setDiscordConfig] = useState<DiscordConfig>({
     enabled: true,
     webhookUrl: '',
-    channelName: 'maple-x-notifications',
+    channelName: '#maple-x-operations',
     botUsername: 'Maple X Operations Bot',
     mentionRole: '',
     events: {
+      taskAssigned: true,
+      taskReminder: true,
       highPriorityTaskCreated: true,
       highPriorityTaskDue: true,
       taskOverdue: true,
       newLead: true,
       leadCreated: true,
+      newClient: true,
+      applicationSubmitted: true,
       verificationComplete: true,
+      verificationFailed: true,
       clientVerified: true,
+      documentUploaded: true,
       underwritingReady: true,
       preApprovalReceived: true,
       approvalReceived: true,
@@ -82,13 +88,30 @@ export const SettingsView: React.FC = () => {
       dealFunded: true,
       commissionReceived: true,
       commissionCollected: true,
-      taskAssigned: true,
-      taskReminder: true,
     },
   });
   const [isSavingDiscord, setIsSavingDiscord] = useState(false);
   const [isTestingDiscord, setIsTestingDiscord] = useState(false);
-  const [discordTestResult, setDiscordTestResult] = useState<string | null>(null);
+  const [discordTestResult, setDiscordTestResult] = useState<{
+    status: 'SUCCESS' | 'FAILED';
+    httpStatus?: number;
+    message: string;
+    timestamp?: string;
+  } | null>(null);
+  const [discordLogs, setDiscordLogs] = useState<any[]>([]);
+  const [isLoadingLogs, setIsLoadingLogs] = useState(false);
+
+  const loadDiscordLogs = async () => {
+    setIsLoadingLogs(true);
+    try {
+      const logs = await api.getDiscordLogs();
+      setDiscordLogs(logs || []);
+    } catch (err) {
+      console.debug('Logs load notice:', err);
+    } finally {
+      setIsLoadingLogs(false);
+    }
+  };
 
   useEffect(() => {
     // Load Discord Config
@@ -97,6 +120,8 @@ export const SettingsView: React.FC = () => {
         if (cfg) setDiscordConfig(cfg);
       })
       .catch(() => {});
+
+    loadDiscordLogs();
   }, []);
 
   const getInitials = (name?: string) => {
@@ -112,7 +137,7 @@ export const SettingsView: React.FC = () => {
     try {
       const updated = await api.updateDiscordConfig(discordConfig);
       setDiscordConfig(updated);
-      addToast('success', 'Discord Settings Saved', 'Discord webhook and notification triggers updated.');
+      addToast('success', 'Discord Settings Saved', 'Discord webhook configuration synchronized.');
     } catch (err: any) {
       addToast('error', 'Discord Save Failed', err.message || 'Could not save Discord settings.');
     } finally {
@@ -124,15 +149,46 @@ export const SettingsView: React.FC = () => {
     setIsTestingDiscord(true);
     setDiscordTestResult(null);
     try {
-      const res = await api.testDiscordWebhook(discordConfig.webhookUrl);
-      setDiscordTestResult(res.message);
-      addToast('success', 'Discord Test Ping Sent', res.message);
+      const res = await api.testDiscordWebhook(discordConfig.webhookUrl, {
+        channelName: discordConfig.channelName,
+        botUsername: discordConfig.botUsername,
+        mentionRole: discordConfig.mentionRole,
+      });
+      if (res.success) {
+        setDiscordTestResult({
+          status: 'SUCCESS',
+          httpStatus: res.httpStatus || 204,
+          message: res.message,
+          timestamp: res.timestamp || new Date().toISOString(),
+        });
+        addToast('success', 'Discord Ping Sent', res.message);
+      } else {
+        setDiscordTestResult({
+          status: 'FAILED',
+          httpStatus: res.httpStatus || 400,
+          message: res.message,
+          timestamp: res.timestamp || new Date().toISOString(),
+        });
+        addToast('error', 'Discord Ping Failed', res.message);
+      }
     } catch (err: any) {
-      setDiscordTestResult(`Error: ${err.message}`);
+      setDiscordTestResult({
+        status: 'FAILED',
+        httpStatus: 500,
+        message: err.message || 'Failed to dispatch test notification.',
+        timestamp: new Date().toISOString(),
+      });
       addToast('error', 'Discord Ping Failed', err.message);
     } finally {
       setIsTestingDiscord(false);
+      loadDiscordLogs();
     }
+  };
+
+  const handleClearLogs = async () => {
+    await api.clearDiscordLogs();
+    setDiscordLogs([]);
+    addToast('info', 'Logs Cleared', 'Discord delivery audit logs cleared.');
   };
 
   const handleAddSource = async (e: React.FormEvent) => {
@@ -285,36 +341,44 @@ export const SettingsView: React.FC = () => {
 
       {/* 2. DISCORD NOTIFICATIONS SECTION */}
       {(activeTab === 'discord' || activeTab === 'all') && (
-        <div className="grid grid-cols-1 gap-6" id="settings-section-discord">
-          <div className="bg-[#0b162c] border border-indigo-900/70 rounded-2xl p-5 space-y-4 shadow-xl">
-            <div className="flex items-center justify-between pb-3 border-b border-indigo-900/60">
+        <div className="space-y-6" id="settings-section-discord">
+          {/* Main Discord Configuration Card */}
+          <div className="bg-[#0b162c] border border-indigo-900/70 rounded-2xl p-5 space-y-5 shadow-xl">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between pb-3 border-b border-indigo-900/60 gap-2">
               <div className="flex items-center space-x-2.5">
                 <div className="p-2 rounded-xl bg-indigo-500/20 text-indigo-300 border border-indigo-500/30">
-                  <MessageSquare className="w-4 h-4" />
+                  <MessageSquare className="w-5 h-5" />
                 </div>
                 <div>
                   <h3 className="text-sm font-bold text-slate-100 flex items-center gap-1.5">
                     Discord Notification Engine
                   </h3>
                   <p className="text-[11px] text-slate-400">
-                    Broadcasts task assignments, due reminders, and pipeline events.
+                    Real-time operational alerts, lender milestones, funded deal signals, and user task mentions.
                   </p>
                 </div>
               </div>
-              <span className={`text-[10px] px-2.5 py-0.5 rounded font-mono font-bold ${
-                discordConfig.enabled
-                  ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
-                  : 'bg-slate-800 text-slate-400'
-              }`}>
-                {discordConfig.enabled ? 'ACTIVE' : 'DISABLED'}
-              </span>
+              <div className="flex items-center gap-2">
+                {discordConfig.maskedWebhookUrl && (
+                  <span className="text-[10px] px-2 py-0.5 rounded font-mono bg-indigo-950 text-indigo-300 border border-indigo-800">
+                    Webhook: {discordConfig.maskedWebhookUrl}
+                  </span>
+                )}
+                <span className={`text-[10px] px-2.5 py-0.5 rounded font-mono font-bold ${
+                  discordConfig.enabled
+                    ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
+                    : 'bg-slate-800 text-slate-400'
+                }`}>
+                  {discordConfig.enabled ? 'ACTIVE' : 'DISABLED'}
+                </span>
+              </div>
             </div>
 
-            <form onSubmit={handleSaveDiscord} className="space-y-3.5">
-              <div className="flex items-center justify-between p-2.5 rounded-xl bg-[#060c18] border border-indigo-950">
+            <form onSubmit={handleSaveDiscord} className="space-y-4">
+              <div className="flex items-center justify-between p-3 rounded-xl bg-[#060c18] border border-indigo-950">
                 <div className="text-xs">
                   <span className="font-bold text-slate-200 block">Enable Discord Notifier</span>
-                  <span className="text-[11px] text-slate-400">Send embeds directly to your team Discord channel</span>
+                  <span className="text-[11px] text-slate-400">Dispatch live embedded operational updates directly to your Discord server channel</span>
                 </div>
                 <input
                   type="checkbox"
@@ -325,31 +389,51 @@ export const SettingsView: React.FC = () => {
               </div>
 
               <div>
-                <label className="block text-[10px] font-semibold text-slate-300 uppercase mb-1">
-                  Discord Webhook URL
-                </label>
+                <div className="flex items-center justify-between mb-1">
+                  <label className="block text-[10px] font-semibold text-slate-300 uppercase">
+                    Discord Webhook URL
+                  </label>
+                  {discordConfig.hasEnvWebhook && (
+                    <span className="text-[10px] text-amber-400 font-mono">
+                      (Configured via DISCORD_WEBHOOK_URL environment variable)
+                    </span>
+                  )}
+                </div>
                 <input
                   type="text"
                   value={discordConfig.webhookUrl || ''}
                   onChange={(e) => setDiscordConfig({ ...discordConfig, webhookUrl: e.target.value })}
-                  placeholder="https://discord.com/api/webhooks/..."
+                  placeholder={discordConfig.maskedWebhookUrl ? `Current: ${discordConfig.maskedWebhookUrl} (Paste to change)` : "https://discord.com/api/webhooks/{id}/{token}"}
                   className="w-full bg-[#060c18] border border-indigo-900/80 rounded-xl p-2.5 text-xs text-slate-100 font-mono focus:outline-none focus:border-indigo-400 placeholder-slate-600"
                 />
                 <span className="text-[10px] text-slate-400 mt-1 block">
-                  Server Settings &rarr; Integrations &rarr; Webhooks &rarr; Copy Webhook URL
+                  Discord Server &rarr; Channel Settings &rarr; Integrations &rarr; Webhooks &rarr; Copy Webhook URL. Stored securely on the backend server.
                 </span>
               </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                 <div>
                   <label className="block text-[10px] font-semibold text-slate-300 uppercase mb-1">
-                    Channel Name
+                    Channel Display Tag
                   </label>
                   <input
                     type="text"
                     value={discordConfig.channelName || ''}
                     onChange={(e) => setDiscordConfig({ ...discordConfig, channelName: e.target.value })}
-                    placeholder="#deals-and-tasks"
+                    placeholder="#maple-x-operations"
+                    className="w-full bg-[#060c18] border border-indigo-900/80 rounded-xl p-2 text-xs text-slate-100 font-mono focus:outline-none focus:border-indigo-400"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-[10px] font-semibold text-slate-300 uppercase mb-1">
+                    Bot Display Username
+                  </label>
+                  <input
+                    type="text"
+                    value={discordConfig.botUsername || ''}
+                    onChange={(e) => setDiscordConfig({ ...discordConfig, botUsername: e.target.value })}
+                    placeholder="Maple X Operations Bot"
                     className="w-full bg-[#060c18] border border-indigo-900/80 rounded-xl p-2 text-xs text-slate-100 font-mono focus:outline-none focus:border-indigo-400"
                   />
                 </div>
@@ -368,96 +452,360 @@ export const SettingsView: React.FC = () => {
                 </div>
               </div>
 
-              {/* Notification Triggers Checklist */}
-              <div className="space-y-1.5 pt-1">
-                <label className="text-[11px] font-bold text-slate-300 block">
-                  Automated Notification Triggers:
-                </label>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
-                  <label className="flex items-center space-x-2 p-2 rounded-lg bg-[#060c18] border border-indigo-950 cursor-pointer">
-                    <input
-                      type="checkbox"
-                      checked={discordConfig.events?.taskAssigned ?? true}
-                      onChange={(e) =>
-                        setDiscordConfig({
-                          ...discordConfig,
-                          events: { ...discordConfig.events, taskAssigned: e.target.checked },
-                        })
-                      }
-                      className="rounded text-indigo-600 focus:ring-0"
-                    />
-                    <span className="text-slate-300">Task Assigned (Tags User)</span>
+              {/* Categorized Notification Triggers */}
+              <div className="space-y-3 pt-2">
+                <div className="flex items-center justify-between">
+                  <label className="text-xs font-bold text-slate-200">
+                    Automated Event Triggers & Routing Matrix:
                   </label>
-                  <label className="flex items-center space-x-2 p-2 rounded-lg bg-[#060c18] border border-indigo-950 cursor-pointer">
-                    <input
-                      type="checkbox"
-                      checked={discordConfig.events?.taskReminder ?? true}
-                      onChange={(e) =>
-                        setDiscordConfig({
-                          ...discordConfig,
-                          events: { ...discordConfig.events, taskReminder: e.target.checked },
-                        })
-                      }
-                      className="rounded text-indigo-600 focus:ring-0"
-                    />
-                    <span className="text-slate-300">Task Due Reminders</span>
-                  </label>
-                  <label className="flex items-center space-x-2 p-2 rounded-lg bg-[#060c18] border border-indigo-950 cursor-pointer">
-                    <input
-                      type="checkbox"
-                      checked={discordConfig.events?.newLead ?? true}
-                      onChange={(e) =>
-                        setDiscordConfig({
-                          ...discordConfig,
-                          events: { ...discordConfig.events, newLead: e.target.checked },
-                        })
-                      }
-                      className="rounded text-indigo-600 focus:ring-0"
-                    />
-                    <span className="text-slate-300">New Inbound Leads</span>
-                  </label>
-                  <label className="flex items-center space-x-2 p-2 rounded-lg bg-[#060c18] border border-indigo-950 cursor-pointer">
-                    <input
-                      type="checkbox"
-                      checked={discordConfig.events?.dealFunded ?? true}
-                      onChange={(e) =>
-                        setDiscordConfig({
-                          ...discordConfig,
-                          events: { ...discordConfig.events, dealFunded: e.target.checked },
-                        })
-                      }
-                      className="rounded text-indigo-600 focus:ring-0"
-                    />
-                    <span className="text-slate-300">Deal Stage Changes / Funded</span>
-                  </label>
+                  <span className="text-[10px] text-slate-400">
+                    Toggle events to activate or silence specific notification types
+                  </span>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+                  {/* Category 1: Tasks & Reminders */}
+                  <div className="p-3 rounded-xl bg-[#060c18] border border-indigo-950/80 space-y-2">
+                    <span className="text-[11px] font-bold text-amber-400 uppercase tracking-wide flex items-center gap-1.5">
+                      <Bot className="w-3.5 h-3.5" />
+                      Tasks & Assignments
+                    </span>
+                    <div className="space-y-1.5 text-xs">
+                      <label className="flex items-center space-x-2 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={discordConfig.events?.taskAssigned ?? true}
+                          onChange={(e) =>
+                            setDiscordConfig({
+                              ...discordConfig,
+                              events: { ...discordConfig.events, taskAssigned: e.target.checked },
+                            })
+                          }
+                          className="rounded text-indigo-600 focus:ring-0"
+                        />
+                        <span className="text-slate-300">Task Assigned (Tags User)</span>
+                      </label>
+                      <label className="flex items-center space-x-2 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={discordConfig.events?.taskReminder ?? true}
+                          onChange={(e) =>
+                            setDiscordConfig({
+                              ...discordConfig,
+                              events: { ...discordConfig.events, taskReminder: e.target.checked },
+                            })
+                          }
+                          className="rounded text-indigo-600 focus:ring-0"
+                        />
+                        <span className="text-slate-300">Task Due Reminders</span>
+                      </label>
+                      <label className="flex items-center space-x-2 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={discordConfig.events?.highPriorityTaskCreated ?? true}
+                          onChange={(e) =>
+                            setDiscordConfig({
+                              ...discordConfig,
+                              events: { ...discordConfig.events, highPriorityTaskCreated: e.target.checked },
+                            })
+                          }
+                          className="rounded text-indigo-600 focus:ring-0"
+                        />
+                        <span className="text-slate-300">High Priority Tasks</span>
+                      </label>
+                      <label className="flex items-center space-x-2 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={discordConfig.events?.taskOverdue ?? true}
+                          onChange={(e) =>
+                            setDiscordConfig({
+                              ...discordConfig,
+                              events: { ...discordConfig.events, taskOverdue: e.target.checked },
+                            })
+                          }
+                          className="rounded text-indigo-600 focus:ring-0"
+                        />
+                        <span className="text-slate-300">Overdue Task Alert</span>
+                      </label>
+                    </div>
+                  </div>
+
+                  {/* Category 2: Pipeline & Onboarding */}
+                  <div className="p-3 rounded-xl bg-[#060c18] border border-indigo-950/80 space-y-2">
+                    <span className="text-[11px] font-bold text-sky-400 uppercase tracking-wide flex items-center gap-1.5">
+                      <Users className="w-3.5 h-3.5" />
+                      Pipeline & Onboarding
+                    </span>
+                    <div className="space-y-1.5 text-xs">
+                      <label className="flex items-center space-x-2 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={discordConfig.events?.newLead ?? true}
+                          onChange={(e) =>
+                            setDiscordConfig({
+                              ...discordConfig,
+                              events: { ...discordConfig.events, newLead: e.target.checked, leadCreated: e.target.checked },
+                            })
+                          }
+                          className="rounded text-indigo-600 focus:ring-0"
+                        />
+                        <span className="text-slate-300">New Inbound Leads</span>
+                      </label>
+                      <label className="flex items-center space-x-2 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={discordConfig.events?.newClient ?? true}
+                          onChange={(e) =>
+                            setDiscordConfig({
+                              ...discordConfig,
+                              events: { ...discordConfig.events, newClient: e.target.checked },
+                            })
+                          }
+                          className="rounded text-indigo-600 focus:ring-0"
+                        />
+                        <span className="text-slate-300">Client File Onboarded</span>
+                      </label>
+                      <label className="flex items-center space-x-2 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={discordConfig.events?.verificationComplete ?? true}
+                          onChange={(e) =>
+                            setDiscordConfig({
+                              ...discordConfig,
+                              events: { ...discordConfig.events, verificationComplete: e.target.checked, clientVerified: e.target.checked },
+                            })
+                          }
+                          className="rounded text-indigo-600 focus:ring-0"
+                        />
+                        <span className="text-slate-300">KYC Verification Completed</span>
+                      </label>
+                      <label className="flex items-center space-x-2 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={discordConfig.events?.documentUploaded ?? true}
+                          onChange={(e) =>
+                            setDiscordConfig({
+                              ...discordConfig,
+                              events: { ...discordConfig.events, documentUploaded: e.target.checked },
+                            })
+                          }
+                          className="rounded text-indigo-600 focus:ring-0"
+                        />
+                        <span className="text-slate-300">Vault Document Uploaded</span>
+                      </label>
+                    </div>
+                  </div>
+
+                  {/* Category 3: Funding Milestones & Settlements */}
+                  <div className="p-3 rounded-xl bg-[#060c18] border border-indigo-950/80 space-y-2">
+                    <span className="text-[11px] font-bold text-emerald-400 uppercase tracking-wide flex items-center gap-1.5">
+                      <Sparkles className="w-3.5 h-3.5" />
+                      Approvals & Funding
+                    </span>
+                    <div className="space-y-1.5 text-xs">
+                      <label className="flex items-center space-x-2 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={discordConfig.events?.preApprovalReceived ?? true}
+                          onChange={(e) =>
+                            setDiscordConfig({
+                              ...discordConfig,
+                              events: { ...discordConfig.events, preApprovalReceived: e.target.checked },
+                            })
+                          }
+                          className="rounded text-indigo-600 focus:ring-0"
+                        />
+                        <span className="text-slate-300">Pre-Approval Received</span>
+                      </label>
+                      <label className="flex items-center space-x-2 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={discordConfig.events?.approvalReceived ?? true}
+                          onChange={(e) =>
+                            setDiscordConfig({
+                              ...discordConfig,
+                              events: { ...discordConfig.events, approvalReceived: e.target.checked },
+                            })
+                          }
+                          className="rounded text-indigo-600 focus:ring-0"
+                        />
+                        <span className="text-slate-300">Formal Lender Approval</span>
+                      </label>
+                      <label className="flex items-center space-x-2 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={discordConfig.events?.dealFunded ?? true}
+                          onChange={(e) =>
+                            setDiscordConfig({
+                              ...discordConfig,
+                              events: { ...discordConfig.events, dealFunded: e.target.checked, clientFunded: e.target.checked },
+                            })
+                          }
+                          className="rounded text-indigo-600 focus:ring-0"
+                        />
+                        <span className="text-slate-300">Deal Funded 🎉</span>
+                      </label>
+                      <label className="flex items-center space-x-2 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={discordConfig.events?.commissionCollected ?? true}
+                          onChange={(e) =>
+                            setDiscordConfig({
+                              ...discordConfig,
+                              events: { ...discordConfig.events, commissionCollected: e.target.checked, commissionReceived: e.target.checked },
+                            })
+                          }
+                          className="rounded text-indigo-600 focus:ring-0"
+                        />
+                        <span className="text-slate-300">Commission Settled</span>
+                      </label>
+                    </div>
+                  </div>
                 </div>
               </div>
 
-              <div className="pt-2 flex items-center justify-between">
+              <div className="pt-3 flex flex-wrap items-center justify-between gap-2 border-t border-indigo-950">
                 <button
                   type="button"
                   onClick={handleTestDiscord}
                   disabled={isTestingDiscord}
-                  className="px-3 py-1.5 bg-indigo-900/60 hover:bg-indigo-800 text-indigo-200 border border-indigo-700/60 rounded-xl text-xs font-semibold transition-all flex items-center gap-1.5 disabled:opacity-50"
+                  className="px-4 py-2 bg-indigo-900/80 hover:bg-indigo-800 text-indigo-200 border border-indigo-700/60 rounded-xl text-xs font-semibold transition-all flex items-center gap-1.5 disabled:opacity-50 shadow-md"
                 >
-                  <Send className="w-3.5 h-3.5" />
-                  <span>{isTestingDiscord ? 'Sending Ping...' : 'Test Discord Ping'}</span>
+                  {isTestingDiscord ? (
+                    <RefreshCw className="w-3.5 h-3.5 animate-spin text-amber-400" />
+                  ) : (
+                    <Send className="w-3.5 h-3.5 text-amber-400" />
+                  )}
+                  <span>{isTestingDiscord ? 'Executing Live Ping to Discord...' : 'Test Discord Ping (Live Webhook)'}</span>
                 </button>
 
                 <button
                   type="submit"
                   disabled={isSavingDiscord}
-                  className="px-4 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-xs font-bold transition-all shadow-md shadow-indigo-600/30 flex items-center gap-1.5 disabled:opacity-50"
+                  className="px-5 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-xs font-bold transition-all shadow-md shadow-indigo-600/30 flex items-center gap-1.5 disabled:opacity-50"
                 >
                   <Save className="w-3.5 h-3.5" />
-                  <span>{isSavingDiscord ? 'Saving...' : 'Save Discord Settings'}</span>
+                  <span>{isSavingDiscord ? 'Synchronizing...' : 'Save Discord Settings'}</span>
                 </button>
               </div>
             </form>
 
+            {/* Test Ping Diagnostic Response Panel */}
             {discordTestResult && (
-              <div className="p-2.5 rounded-xl bg-[#060c18] border border-indigo-900/60 text-xs font-mono text-indigo-300">
-                {discordTestResult}
+              <div className={`p-4 rounded-xl border text-xs font-mono transition-all ${
+                discordTestResult.status === 'SUCCESS'
+                  ? 'bg-emerald-950/40 border-emerald-800/80 text-emerald-300'
+                  : 'bg-rose-950/40 border-rose-800/80 text-rose-300'
+              }`}>
+                <div className="flex items-center justify-between pb-2 border-b border-white/10 mb-2">
+                  <span className="font-bold flex items-center gap-1.5">
+                    {discordTestResult.status === 'SUCCESS' ? '🟢 TEST NOTIFICATION DELIVERED' : '🔴 TEST NOTIFICATION FAILED'}
+                  </span>
+                  <span className="text-[10px] opacity-75">
+                    HTTP {discordTestResult.httpStatus || 200} • {discordTestResult.timestamp}
+                  </span>
+                </div>
+                <p className="font-sans text-xs">{discordTestResult.message}</p>
+                {discordTestResult.status === 'FAILED' && (
+                  <div className="mt-2 pt-2 border-t border-rose-900/40 text-[11px] text-rose-200">
+                    💡 <strong>Troubleshooting Tip:</strong> Ensure your Discord Webhook URL is valid and begins with <code>https://discord.com/api/webhooks/</code>. Check that the channel exists and the webhook has not been deleted in Discord.
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+
+          {/* Discord Notification Delivery Logs Card */}
+          <div className="bg-[#0b162c] border border-indigo-900/70 rounded-2xl p-5 space-y-4 shadow-xl">
+            <div className="flex items-center justify-between pb-3 border-b border-indigo-900/60">
+              <div className="flex items-center space-x-2.5">
+                <div className="p-2 rounded-xl bg-amber-500/10 text-amber-400 border border-amber-500/20">
+                  <Layers className="w-4 h-4" />
+                </div>
+                <div>
+                  <h3 className="text-sm font-bold text-slate-100 flex items-center gap-1.5">
+                    Live Discord Delivery Audit History
+                  </h3>
+                  <p className="text-[11px] text-slate-400">
+                    Real-time verification log of all webhook dispatches, HTTP status responses, and delivery health.
+                  </p>
+                </div>
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={loadDiscordLogs}
+                  disabled={isLoadingLogs}
+                  className="px-2.5 py-1 bg-slate-900 hover:bg-slate-800 text-slate-300 border border-slate-700 rounded-lg text-xs font-semibold flex items-center gap-1"
+                >
+                  <RefreshCw className={`w-3 h-3 ${isLoadingLogs ? 'animate-spin' : ''}`} />
+                  <span>Refresh</span>
+                </button>
+                {discordLogs.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={handleClearLogs}
+                    className="px-2.5 py-1 bg-rose-950/60 hover:bg-rose-900 text-rose-300 border border-rose-800/60 rounded-lg text-xs font-semibold flex items-center gap-1"
+                  >
+                    <Trash2 className="w-3 h-3" />
+                    <span>Clear Logs</span>
+                  </button>
+                )}
+              </div>
+            </div>
+
+            {discordLogs.length === 0 ? (
+              <div className="py-8 text-center bg-[#060c18] rounded-xl border border-indigo-950/60">
+                <MessageSquare className="w-8 h-8 text-indigo-400/40 mx-auto mb-2" />
+                <p className="text-xs text-slate-300 font-semibold">No recent Discord notifications logged yet.</p>
+                <p className="text-[11px] text-slate-500 mt-0.5">Click "Test Discord Ping" above to verify the pipeline and create an audit entry.</p>
+              </div>
+            ) : (
+              <div className="overflow-x-auto rounded-xl border border-indigo-950">
+                <table className="w-full text-left text-xs">
+                  <thead className="bg-[#060c18] text-slate-400 font-semibold border-b border-indigo-950">
+                    <tr>
+                      <th className="p-2.5">Timestamp</th>
+                      <th className="p-2.5">Event</th>
+                      <th className="p-2.5">Title</th>
+                      <th className="p-2.5">Status</th>
+                      <th className="p-2.5">HTTP Code</th>
+                      <th className="p-2.5">Diagnostics</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-indigo-950/60 bg-[#081226]/60">
+                    {discordLogs.map((log: any, idx: number) => (
+                      <tr key={idx} className="hover:bg-indigo-950/20">
+                        <td className="p-2.5 font-mono text-[11px] text-slate-400 whitespace-nowrap">
+                          {log.timestamp ? new Date(log.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }) : '—'}
+                        </td>
+                        <td className="p-2.5 font-mono text-[11px] text-indigo-300 whitespace-nowrap">
+                          {log.eventKey}
+                        </td>
+                        <td className="p-2.5 text-slate-200 font-medium">
+                          {log.eventTitle}
+                        </td>
+                        <td className="p-2.5 whitespace-nowrap">
+                          <span className={`px-2 py-0.5 rounded text-[10px] font-bold font-mono ${
+                            log.status === 'SUCCESS'
+                              ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
+                              : log.status === 'FAILED'
+                              ? 'bg-rose-500/20 text-rose-300 border border-rose-500/30'
+                              : 'bg-amber-500/20 text-amber-300 border border-amber-500/30'
+                          }`}>
+                            {log.status}
+                          </span>
+                        </td>
+                        <td className="p-2.5 font-mono text-[11px] text-slate-300">
+                          {log.httpStatus || 200}
+                        </td>
+                        <td className="p-2.5 text-[11px] text-slate-400 truncate max-w-xs">
+                          {log.errorMessage || log.payloadPreview || 'Delivered successfully'}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
               </div>
             )}
           </div>

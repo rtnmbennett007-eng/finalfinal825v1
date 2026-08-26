@@ -341,6 +341,134 @@ export const api = {
     return { success: true };
   },
 
+  // AI Document Reading & Automatic Verification Pre-filling
+  analyzeDocument: async (params: {
+    docId?: string;
+    clientId: string;
+    fileName?: string;
+    fileBase64?: string;
+    fileMimeType?: string;
+    rawText?: string;
+    categoryHint?: string;
+  }) => {
+    try {
+      const res = await fetch('/api/documents/analyze', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(params),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (params.docId && data.extraction) {
+          await firestoreService.updateDocument(params.docId, {
+            aiExtraction: data.extraction,
+            category: data.extraction.detectedCategory || undefined,
+          });
+        }
+        return data.extraction;
+      }
+    } catch (err) {
+      console.warn('Backend /api/documents/analyze error, running client-side fallback:', err);
+    }
+    return null;
+  },
+
+  uploadAndAnalyzeDocument: async (data: {
+    clientId: string;
+    dealId?: string;
+    title?: string;
+    fileName: string;
+    fileSize?: string;
+    fileBase64?: string;
+    fileMimeType?: string;
+    rawText?: string;
+    category?: DocumentItem['category'];
+    uploadedBy?: string;
+  }) => {
+    try {
+      const res = await fetch('/api/documents/upload-and-analyze', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data),
+      });
+      if (res.ok) {
+        const result = await res.json();
+        if (result.document) {
+          // Sync with localStore
+          firestoreService.updateLocalDocument(result.document);
+        }
+        return result;
+      }
+    } catch (err) {
+      console.warn('Backend /api/documents/upload-and-analyze error:', err);
+    }
+    return null;
+  },
+
+  applyExtractionToVerification: async (
+    docId: string,
+    payload: {
+      clientId: string;
+      fieldsToApply: any[];
+      appliedBy: string;
+      overwriteVerified?: boolean;
+    }
+  ) => {
+    try {
+      const res = await fetch(`/api/documents/${docId}/apply-to-verification`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (data.masterVerification) {
+          await firestoreService.saveMasterVerification(payload.clientId, data.masterVerification);
+        }
+        if (data.client) {
+          await firestoreService.updateClient(payload.clientId, data.client);
+        }
+        return data;
+      }
+    } catch (err) {
+      console.warn('Backend apply to verification error:', err);
+    }
+    return null;
+  },
+
+  verifyExtractedField: async (
+    docId: string,
+    payload: {
+      clientId: string;
+      section: string;
+      key: string;
+      verifiedValue?: any;
+      verifiedBy: string;
+      notes?: string;
+    }
+  ) => {
+    try {
+      const res = await fetch(`/api/documents/${docId}/verify-field`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (data.masterVerification) {
+          await firestoreService.saveMasterVerification(payload.clientId, data.masterVerification);
+        }
+        if (data.client) {
+          await firestoreService.updateClient(payload.clientId, data.client);
+        }
+        return data;
+      }
+    } catch (err) {
+      console.warn('Backend verify field error:', err);
+    }
+    return null;
+  },
+
   // Discord Integration - Real End-to-End Server Integration
   getDiscordConfig: async (): Promise<DiscordConfig> => {
     try {

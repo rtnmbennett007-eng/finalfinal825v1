@@ -32,22 +32,22 @@ export const NewClientModal: React.FC<NewClientModalProps> = ({
     state: '',
     zip: '',
     federalTaxId: '',
-    annualRevenue: 0,
-    monthlyRevenue: 0,
-    personalAnnualIncome: 0,
-    personalMonthlyIncome: 0,
+    annualRevenue: undefined,
+    monthlyRevenue: undefined,
+    personalAnnualIncome: undefined,
+    personalMonthlyIncome: undefined,
     businessStartDate: '',
-    ownershipPercentage: 100,
+    ownershipPercentage: undefined,
     stateOfIncorporation: '',
     industry: '',
     leadSource: 'Direct',
     referralPartner: '',
     assignedSalesRep: currentUser?.name || 'Steve',
     assignedStaff: 'Dana',
-    requestedAmount: 0,
+    requestedAmount: undefined,
     requestedProduct: 'Revenue Funding',
     useOfFunds: '',
-    creditScore: 0,
+    creditScore: undefined,
     isVerified: false,
     isUnderwritten: false,
     currentStatus: 'APPLICATION_RECEIVED',
@@ -60,7 +60,21 @@ export const NewClientModal: React.FC<NewClientModalProps> = ({
       return;
     }
 
-    const created = await createClient(formData);
+    const payload: Partial<Client> = {
+      ...formData,
+    };
+    if (payload.annualRevenue !== undefined && payload.monthlyRevenue === undefined) {
+      payload.monthlyRevenue = Math.round(payload.annualRevenue / 12);
+    } else if (payload.monthlyRevenue !== undefined && payload.annualRevenue === undefined) {
+      payload.annualRevenue = Math.round(payload.monthlyRevenue * 12);
+    }
+    if (payload.personalAnnualIncome !== undefined && payload.personalMonthlyIncome === undefined) {
+      payload.personalMonthlyIncome = Math.round(payload.personalAnnualIncome / 12);
+    } else if (payload.personalMonthlyIncome !== undefined && payload.personalAnnualIncome === undefined) {
+      payload.personalAnnualIncome = Math.round(payload.personalMonthlyIncome * 12);
+    }
+
+    const created = await createClient(payload);
     onClose();
     if (onClientCreated && created) {
       onClientCreated(created);
@@ -226,11 +240,16 @@ export const NewClientModal: React.FC<NewClientModalProps> = ({
               <label className="block text-[10px] font-semibold text-slate-400 uppercase mb-1">Annual Gross Revenue ($)</label>
               <input
                 type="number"
-                value={formData.annualRevenue}
+                value={formData.annualRevenue !== undefined ? formData.annualRevenue : ''}
                 onChange={(e) => {
-                  const ann = Number(e.target.value);
-                  setFormData({ ...formData, annualRevenue: ann, monthlyRevenue: Math.round(ann / 12) });
+                  const val = e.target.value === '' ? undefined : Number(e.target.value);
+                  setFormData({
+                    ...formData,
+                    annualRevenue: val,
+                    monthlyRevenue: val !== undefined ? Math.round(val / 12) : undefined,
+                  });
                 }}
+                placeholder="Optional"
                 className="w-full bg-slate-950 border border-slate-800 rounded-xl p-2 text-xs text-slate-100 font-mono focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500/50"
               />
             </div>
@@ -238,8 +257,16 @@ export const NewClientModal: React.FC<NewClientModalProps> = ({
               <label className="block text-[10px] font-semibold text-slate-400 uppercase mb-1">Monthly Gross Revenue ($)</label>
               <input
                 type="number"
-                value={formData.monthlyRevenue}
-                onChange={(e) => setFormData({ ...formData, monthlyRevenue: Number(e.target.value) })}
+                value={formData.monthlyRevenue !== undefined ? formData.monthlyRevenue : ''}
+                onChange={(e) => {
+                  const val = e.target.value === '' ? undefined : Number(e.target.value);
+                  setFormData({
+                    ...formData,
+                    monthlyRevenue: val,
+                    annualRevenue: val !== undefined ? Math.round(val * 12) : undefined,
+                  });
+                }}
+                placeholder="Optional"
                 className="w-full bg-slate-950 border border-slate-800 rounded-xl p-2 text-xs text-slate-100 font-mono focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500/50"
               />
             </div>
@@ -247,8 +274,9 @@ export const NewClientModal: React.FC<NewClientModalProps> = ({
               <label className="block text-[10px] font-semibold text-slate-400 uppercase mb-1">Credit Score (FICO)</label>
               <input
                 type="number"
-                value={formData.creditScore}
-                onChange={(e) => setFormData({ ...formData, creditScore: Number(e.target.value) })}
+                value={formData.creditScore !== undefined ? formData.creditScore : ''}
+                onChange={(e) => setFormData({ ...formData, creditScore: e.target.value === '' ? undefined : Number(e.target.value) })}
+                placeholder="Optional"
                 className="w-full bg-slate-950 border border-slate-800 rounded-xl p-2 text-xs text-slate-100 font-mono focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500/50"
               />
             </div>
@@ -265,8 +293,9 @@ export const NewClientModal: React.FC<NewClientModalProps> = ({
               <label className="block text-[10px] font-semibold text-slate-400 uppercase mb-1">Initial Requested Amount ($)</label>
               <input
                 type="number"
-                value={formData.requestedAmount}
-                onChange={(e) => setFormData({ ...formData, requestedAmount: Number(e.target.value) })}
+                value={formData.requestedAmount !== undefined ? formData.requestedAmount : ''}
+                onChange={(e) => setFormData({ ...formData, requestedAmount: e.target.value === '' ? undefined : Number(e.target.value) })}
+                placeholder="Optional"
                 className="w-full bg-slate-950 border border-slate-800 rounded-xl p-2 text-xs text-slate-100 font-mono focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500/50"
               />
             </div>

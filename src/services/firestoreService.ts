@@ -2640,6 +2640,17 @@ export const firestoreService = {
     return res || (data as DocumentItem);
   },
 
+  updateLocalDocument(docItem: DocumentItem) {
+    localStore.updateDataset((ds) => {
+      const idx = ds.documents.findIndex((d) => d.id === docItem.id);
+      if (idx !== -1) {
+        ds.documents[idx] = { ...ds.documents[idx], ...docItem };
+      } else {
+        ds.documents.unshift(docItem);
+      }
+    }, ['documents']);
+  },
+
   async deleteDocument(id: string): Promise<void> {
     const db = getDb();
     localStore.updateDataset((ds) => {

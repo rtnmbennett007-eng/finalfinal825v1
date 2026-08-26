@@ -25,7 +25,7 @@ export const ClientInfoTab: React.FC<ClientInfoTabProps> = ({ client, onRefresh 
     city: client.city || '',
     state: client.state || '',
     zip: client.zip || '',
-    creditScore: client.creditScore || 700,
+    creditScore: client.creditScore,
     bankruptcy: client.bankruptcy || 'None',
     foreclosure: client.foreclosure || 'None',
     repossession: client.repossession || 'None',
@@ -80,7 +80,7 @@ export const ClientInfoTab: React.FC<ClientInfoTabProps> = ({ client, onRefresh 
                 city: client.city || '',
                 state: client.state || '',
                 zip: client.zip || '',
-                creditScore: client.creditScore || 700,
+                creditScore: client.creditScore,
                 bankruptcy: client.bankruptcy || 'None',
                 foreclosure: client.foreclosure || 'None',
                 repossession: client.repossession || 'None',
@@ -240,7 +240,9 @@ export const ClientInfoTab: React.FC<ClientInfoTabProps> = ({ client, onRefresh 
               </div>
               <div className="flex items-center justify-between pt-2">
                 <span className="text-slate-400">Personal FICO Score:</span>
-                <span className="font-mono font-bold text-amber-300">{client.creditScore || 700} FICO</span>
+                <span className="font-mono font-bold text-amber-300">
+                  {client.creditScore ? `${client.creditScore} FICO` : 'Not Provided'}
+                </span>
               </div>
             </div>
           </div>

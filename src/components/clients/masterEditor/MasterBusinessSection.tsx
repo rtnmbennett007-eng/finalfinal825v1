@@ -270,12 +270,12 @@ export const MasterBusinessSection: React.FC<MasterBusinessSectionProps> = ({ fo
               <span className="absolute left-3 top-2.5 text-slate-400 font-mono text-xs">$</span>
               <input
                 type="number"
-                value={form.annualRevenue ?? 0}
+                value={form.annualRevenue !== undefined && form.annualRevenue !== null ? form.annualRevenue : ''}
                 onChange={(e) => {
-                  const val = Number(e.target.value);
+                  const val = e.target.value === '' ? undefined : Number(e.target.value);
                   onChange({
                     annualRevenue: val,
-                    monthlyRevenue: Math.round(val / 12),
+                    monthlyRevenue: val !== undefined ? Math.round(val / 12) : undefined,
                   });
                 }}
                 className="w-full bg-[#070d18] border border-blue-900/70 rounded-xl p-2.5 pl-7 text-xs text-slate-100 font-mono focus:border-amber-400 focus:outline-none font-bold"
@@ -290,8 +290,14 @@ export const MasterBusinessSection: React.FC<MasterBusinessSectionProps> = ({ fo
               <span className="absolute left-3 top-2.5 text-slate-400 font-mono text-xs">$</span>
               <input
                 type="number"
-                value={form.monthlyRevenue ?? 0}
-                onChange={(e) => onChange({ monthlyRevenue: Number(e.target.value) })}
+                value={form.monthlyRevenue !== undefined && form.monthlyRevenue !== null ? form.monthlyRevenue : ''}
+                onChange={(e) => {
+                  const val = e.target.value === '' ? undefined : Number(e.target.value);
+                  onChange({
+                    monthlyRevenue: val,
+                    annualRevenue: val !== undefined ? Math.round(val * 12) : undefined,
+                  });
+                }}
                 className="w-full bg-[#070d18] border border-blue-900/70 rounded-xl p-2.5 pl-7 text-xs text-slate-100 font-mono focus:border-amber-400 focus:outline-none"
                 placeholder="100,000"
               />

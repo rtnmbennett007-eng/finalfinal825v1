@@ -414,6 +414,7 @@ export interface Client {
   ownershipPercentage: number;
   ownerTitle?: string;
   employeesCount?: number;
+  numberOfEmployees?: number;
   website?: string;
   businessDescription: string;
   businessBank?: string;
@@ -464,6 +465,7 @@ export interface Client {
   applicationStatus?: string;
   applicationNotes?: string;
   personalAnnualIncome?: number;
+  personalMonthlyIncome?: number;
   useOfFunds?: string;
   creditScore: number;
   ficoScore?: number;
@@ -785,6 +787,16 @@ export interface MasterVerificationField {
   status: VerificationStatusType;
   notes: string;
   script?: string;
+  extracted?: {
+    value: string;
+    sourceDocTitle: string;
+    docId?: string;
+    confidence: number;
+    extractedAt: string;
+    quote?: string;
+    sourceQuote?: string;
+    isConflict?: boolean;
+  };
 }
 
 export interface EmploymentSalaryPayrollVerification {
@@ -1310,7 +1322,7 @@ export interface UnderwritingEvaluationRecord {
   };
 
   // 8. Underwriter Recommendation
-  recommendation: 'RECOMMEND' | 'RECOMMEND_WITH_CONDITIONS' | 'HOLD_NEED_MORE_INFO' | 'NOT_RECOMMENDED';
+  recommendation: 'RECOMMEND' | 'RECOMMEND_WITH_CONDITIONS' | 'HOLD_NEED_MORE_INFO' | 'NEEDS_INFO' | 'NOT_RECOMMENDED';
   recommendedFundingAmount: number;
   recommendedProduct: FundingProductType;
   recommendedLenderType: string;
@@ -1423,6 +1435,36 @@ export type DocumentCategoryType =
   | 'Pay Stubs'
   | 'Other';
 
+export interface ExtractedFieldItem {
+  key: string;
+  label: string;
+  section: 'identity' | 'business' | 'employment' | 'employmentVerification' | 'income' | 'payroll' | 'banking' | 'documentChecklist' | 'other';
+  extractedValue: string | number | boolean;
+  confidence: number; // e.g. 0.95
+  sourceQuote?: string; // verbatim snippet from the document
+  pageOrLocation?: string; // e.g. "Page 1, Box 1a" or "Header block"
+  currentVerifiedValue?: string | number | boolean;
+  currentAppliedValue?: string | number | boolean;
+  isConflictWithVerified?: boolean;
+  isAppliedToVerification?: boolean;
+  status: 'UNVERIFIED' | 'VERIFIED' | 'REJECTED' | 'OVERRIDDEN';
+  userOverrideValue?: string | number | boolean;
+}
+
+export interface DocumentAiExtractionResult {
+  id: string;
+  docId: string;
+  clientId: string;
+  detectedCategory: DocumentCategoryType;
+  confidenceScore: number; // 0.0 - 1.0
+  documentSummary: string;
+  extractedDate: string;
+  extractedFields: ExtractedFieldItem[];
+  modelUsed?: string;
+  hasConflicts?: boolean;
+  status: 'PENDING_REVIEW' | 'APPLIED_UNVERIFIED' | 'VERIFIED' | 'DISMISSED';
+}
+
 export interface DocumentItem {
   id: string;
   clientId: string;
@@ -1432,12 +1474,15 @@ export interface DocumentItem {
   fileName: string;
   fileSize: string;
   fileUrl?: string;
+  fileBase64?: string;
+  fileMimeType?: string;
   uploadedBy: string;
   uploadedDate: string;
   reviewedBy?: string;
   reviewedDate?: string;
   status: 'PENDING' | 'RECEIVED' | 'REVIEWED' | 'REJECTED';
   notes?: string;
+  aiExtraction?: DocumentAiExtractionResult;
 }
 
 export interface CommunicationLogItem {

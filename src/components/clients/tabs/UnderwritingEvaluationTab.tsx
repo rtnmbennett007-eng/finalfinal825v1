@@ -123,7 +123,7 @@ export const UnderwritingEvaluationTab: React.FC<UnderwritingEvaluationTabProps>
     const existingDebts = masterVerification?.existingDebts || [];
     const totalDebtMonthly = existingDebts.reduce((sum, d) => sum + (Number(d.monthlyPayment) || 0), 0);
 
-    const positionsFromDebts: ExistingPositionRecord[] = existingDebts.map((d, idx) => ({
+    const positionsFromDebts: ExistingPositionItem[] = existingDebts.map((d, idx) => ({
       id: d.id || `pos-${idx + 1}`,
       lender: d.lender || 'Lender',
       product: d.loanType || 'Term Loan',

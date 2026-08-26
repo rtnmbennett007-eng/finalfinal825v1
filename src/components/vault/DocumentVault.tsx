@@ -9,6 +9,7 @@ import {
   ArrowRight,
   Filter,
   Download,
+  Sparkles,
 } from 'lucide-react';
 import { useData } from '../../context/DataContext';
 import { formatDate } from '../../utils/dateUtils';
@@ -61,13 +62,18 @@ export const DocumentVault: React.FC<DocumentVaultProps> = ({ setActiveTab }) =>
             </span>
             <span className="text-xs text-slate-500">•</span>
             <span className="text-xs text-slate-400">Total Encrypted Documents: {allDocs.length}</span>
+            <span className="text-xs text-slate-500">•</span>
+            <span className="text-xs text-indigo-400 font-semibold flex items-center gap-1">
+              <Sparkles className="w-3 h-3" />
+              {allDocs.filter((d) => d.aiExtraction).length} AI Analyzed
+            </span>
           </div>
           <h1 className="text-xl font-bold text-slate-100 mt-1 flex items-center gap-2">
             <FolderLock className="w-5 h-5 text-blue-400" />
-            Global Document Vault
+            Global Document Vault & AI Intelligence
           </h1>
           <p className="text-xs text-slate-400 mt-0.5">
-            Encrypted client document repository categorized by Driver's License, Bank Statements, Tax Returns, Voided Checks, and Financial Statements.
+            Encrypted client document repository with automated AI underwriter extraction (Bank Statements, Tax Returns, Driver's Licenses, Voided Checks).
           </p>
         </div>
       </div>
@@ -107,16 +113,28 @@ export const DocumentVault: React.FC<DocumentVaultProps> = ({ setActiveTab }) =>
         {filteredDocs.map((doc) => (
           <div
             key={doc.id}
-            className="bg-slate-900/40 border border-slate-800 p-4 rounded-xl space-y-3 flex flex-col justify-between hover:border-slate-700 transition-colors"
+            className={`p-4 rounded-xl space-y-3 flex flex-col justify-between transition-colors border ${
+              doc.aiExtraction
+                ? 'bg-slate-900/50 border-indigo-900/50 hover:border-indigo-700/60'
+                : 'bg-slate-900/40 border-slate-800 hover:border-slate-700'
+            }`}
           >
             <div>
-              <div className="flex items-center justify-between">
+              <div className="flex items-center justify-between gap-1 flex-wrap">
                 <span className="text-[10px] px-2 py-0.5 rounded bg-slate-800 text-blue-400 font-semibold uppercase">
                   {doc.category}
                 </span>
-                <span className="text-[10px] px-1.5 py-0.2 rounded bg-emerald-500/10 text-emerald-300 border border-emerald-500/20 font-mono font-bold">
-                  {doc.status || 'REVIEWED'}
-                </span>
+                <div className="flex items-center gap-1.5">
+                  {doc.aiExtraction && (
+                    <span className="text-[10px] px-2 py-0.5 rounded bg-indigo-500/20 text-indigo-300 border border-indigo-500/30 font-semibold flex items-center gap-1">
+                      <Sparkles className="w-2.5 h-2.5 text-indigo-400" />
+                      <span>{doc.aiExtraction.extractedFields?.length || 0} fields</span>
+                    </span>
+                  )}
+                  <span className="text-[10px] px-1.5 py-0.2 rounded bg-emerald-500/10 text-emerald-300 border border-emerald-500/20 font-mono font-bold">
+                    {doc.status || 'REVIEWED'}
+                  </span>
+                </div>
               </div>
 
               <div className="text-xs font-bold text-slate-100 mt-2">{doc.title}</div>

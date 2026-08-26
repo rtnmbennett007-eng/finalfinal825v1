@@ -170,8 +170,16 @@ export const BusinessInfoTab: React.FC<BusinessInfoTabProps> = ({ client, onRefr
               <label className="block text-slate-300 font-semibold mb-1">Monthly Gross Revenue ($)</label>
               <input
                 type="number"
-                value={form.monthlyRevenue || 0}
-                onChange={(e) => setForm({ ...form, monthlyRevenue: parseFloat(e.target.value) || 0 })}
+                value={form.monthlyRevenue !== undefined && form.monthlyRevenue !== null ? form.monthlyRevenue : ''}
+                onChange={(e) => {
+                  const val = e.target.value === '' ? undefined : parseFloat(e.target.value);
+                  setForm({
+                    ...form,
+                    monthlyRevenue: val,
+                    annualRevenue: val !== undefined ? Math.round(val * 12) : undefined,
+                  });
+                }}
+                placeholder="Optional"
                 className="w-full bg-[#070d18] border border-blue-900/70 rounded-xl p-2.5 text-slate-100 focus:outline-none font-mono"
               />
             </div>
@@ -179,8 +187,16 @@ export const BusinessInfoTab: React.FC<BusinessInfoTabProps> = ({ client, onRefr
               <label className="block text-slate-300 font-semibold mb-1">Annual Gross Revenue ($)</label>
               <input
                 type="number"
-                value={form.annualRevenue || 0}
-                onChange={(e) => setForm({ ...form, annualRevenue: parseFloat(e.target.value) || 0 })}
+                value={form.annualRevenue !== undefined && form.annualRevenue !== null ? form.annualRevenue : ''}
+                onChange={(e) => {
+                  const val = e.target.value === '' ? undefined : parseFloat(e.target.value);
+                  setForm({
+                    ...form,
+                    annualRevenue: val,
+                    monthlyRevenue: val !== undefined ? Math.round(val / 12) : undefined,
+                  });
+                }}
+                placeholder="Optional"
                 className="w-full bg-[#070d18] border border-blue-900/70 rounded-xl p-2.5 text-slate-100 focus:outline-none font-mono"
               />
             </div>
@@ -188,8 +204,9 @@ export const BusinessInfoTab: React.FC<BusinessInfoTabProps> = ({ client, onRefr
               <label className="block text-slate-300 font-semibold mb-1">Ownership Stake (%)</label>
               <input
                 type="number"
-                value={form.ownershipPercentage || 100}
-                onChange={(e) => setForm({ ...form, ownershipPercentage: parseFloat(e.target.value) || 0 })}
+                value={form.ownershipPercentage !== undefined && form.ownershipPercentage !== null ? form.ownershipPercentage : ''}
+                onChange={(e) => setForm({ ...form, ownershipPercentage: e.target.value === '' ? undefined : parseFloat(e.target.value) })}
+                placeholder="e.g. 100"
                 className="w-full bg-[#070d18] border border-blue-900/70 rounded-xl p-2.5 text-slate-100 focus:outline-none font-mono"
               />
             </div>

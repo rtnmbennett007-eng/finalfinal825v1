@@ -2,6 +2,7 @@ import express from 'express';
 import path from 'path';
 import fs from 'fs';
 import { createServer as createViteServer } from 'vite';
+import { analyzeDocumentWithAi } from './server/documentAiService';
 
 const app = express();
 const PORT = 3000;
@@ -3127,6 +3128,284 @@ app.delete('/api/documents/:id', (req, res) => {
   db.documents = db.documents.filter((d) => d.id !== id);
   saveDb();
   res.json({ success: true });
+});
+
+// AI Document Analysis & Verification Pre-filling Endpoints
+app.post('/api/documents/analyze', async (req, res) => {
+  try {
+    const { docId, clientId, fileName, fileBase64, fileMimeType, rawText, categoryHint } = req.body;
+
+    if (!clientId) {
+      return res.status(400).json({ error: 'clientId is required for document analysis' });
+    }
+
+    const clientRecord = db.clients.find((c) => c.id === clientId);
+    const currentMasterVerification = db.masterVerifications[clientId];
+
+    const extraction = await analyzeDocumentWithAi({
+      clientId,
+      fileName: fileName || 'Uploaded Document',
+      fileBase64,
+      fileMimeType,
+      rawText,
+      categoryHint,
+      clientRecord,
+      currentMasterVerification,
+    });
+
+    if (docId) {
+      extraction.docId = docId;
+      const docIdx = db.documents.findIndex((d) => d.id === docId);
+      if (docIdx !== -1) {
+        db.documents[docIdx].aiExtraction = extraction;
+        if (extraction.detectedCategory && extraction.detectedCategory !== 'Other') {
+          db.documents[docIdx].category = extraction.detectedCategory;
+        }
+        saveDb();
+      }
+    }
+
+    res.json({ success: true, extraction });
+  } catch (err: any) {
+    console.error('Error analyzing document:', err);
+    res.status(500).json({ error: err.message || 'Document analysis failed' });
+  }
+});
+
+app.post('/api/documents/upload-and-analyze', async (req, res) => {
+  try {
+    const { clientId, dealId, title, fileName, fileSize, fileUrl, fileBase64, fileMimeType, rawText, category, uploadedBy } = req.body;
+
+    if (!clientId) {
+      return res.status(400).json({ error: 'clientId is required' });
+    }
+
+    const clientRecord = db.clients.find((c) => c.id === clientId);
+    const currentMasterVerification = db.masterVerifications[clientId];
+
+    const extraction = await analyzeDocumentWithAi({
+      clientId,
+      fileName: fileName || title || 'Document',
+      fileBase64,
+      fileMimeType,
+      rawText,
+      categoryHint: category,
+      clientRecord,
+      currentMasterVerification,
+    });
+
+    const now = new Date().toISOString();
+    const docId = `doc-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
+    extraction.docId = docId;
+
+    const newDoc = {
+      id: docId,
+      clientId,
+      dealId,
+      category: (extraction.detectedCategory && extraction.detectedCategory !== 'Other') ? extraction.detectedCategory : (category || 'Other'),
+      title: title || fileName || `${extraction.detectedCategory} (${new Date().toLocaleDateString()})`,
+      fileName: fileName || 'document.pdf',
+      fileSize: fileSize || '1.2 MB',
+      fileUrl: fileUrl || (fileBase64 ? 'data:application/pdf;base64,...' : undefined),
+      uploadedBy: uploadedBy || 'Staff',
+      uploadedDate: now,
+      status: 'RECEIVED',
+      aiExtraction: extraction,
+    };
+
+    db.documents.unshift(newDoc);
+
+    addTimelineEvent(
+      clientId,
+      `AI Scanned Document: ${newDoc.category}`,
+      `Document "${newDoc.title}" scanned by AI Engine. Extracted ${extraction.extractedFields.length} data points ready for unverified pre-fill review.`,
+      uploadedBy || 'Staff',
+      'DOCUMENT',
+      dealId
+    );
+
+    saveDb();
+    res.status(201).json({ success: true, document: newDoc, extraction });
+  } catch (err: any) {
+    console.error('Error uploading and analyzing document:', err);
+    res.status(500).json({ error: err.message || 'Upload and analysis failed' });
+  }
+});
+
+app.post('/api/documents/:docId/apply-to-verification', (req, res) => {
+  try {
+    const { docId } = req.params;
+    const { clientId, fieldsToApply, appliedBy, overwriteVerified } = req.body;
+
+    if (!clientId) {
+      return res.status(400).json({ error: 'clientId is required' });
+    }
+
+    let verification = db.masterVerifications[clientId];
+    if (!verification) {
+      // Lazy init verification worksheet
+      verification = getOrGenerateMasterVerification(clientId);
+      db.masterVerifications[clientId] = verification;
+    }
+
+    const doc = db.documents.find((d) => d.id === docId);
+    const docTitle = doc ? (doc.title || doc.fileName) : 'Uploaded Document';
+
+    const clientIdx = db.clients.findIndex((c) => c.id === clientId);
+    const client = clientIdx !== -1 ? db.clients[clientIdx] : null;
+
+    let appliedCount = 0;
+    let skippedVerifiedCount = 0;
+
+    (fieldsToApply || []).forEach((item: any) => {
+      const { key, value, section, label, confidence, quote } = item;
+      if (!section || !key) return;
+
+      const secObj = verification[section];
+      if (!secObj) return;
+
+      const fieldObj = secObj[key];
+      if (fieldObj && typeof fieldObj === 'object' && 'asApplied' in fieldObj) {
+        const isAlreadyVerified = fieldObj.status === 'Verified' || fieldObj.status === 'Matches Application';
+        if (isAlreadyVerified && !overwriteVerified) {
+          // DO NOT SILENTLY OVERWRITE VERIFIED VALUE
+          fieldObj.extracted = {
+            value: String(value),
+            sourceDocTitle: docTitle,
+            docId,
+            confidence: confidence || 0.95,
+            extractedAt: new Date().toISOString(),
+            quote: quote || '',
+            isConflict: true,
+          };
+          skippedVerifiedCount++;
+        } else {
+          // Pre-fill as unverified
+          fieldObj.asApplied = String(value);
+          fieldObj.status = 'Unverified';
+          fieldObj.notes = `AI Extracted from ${docTitle} (Unverified)`;
+          fieldObj.extracted = {
+            value: String(value),
+            sourceDocTitle: docTitle,
+            docId,
+            confidence: confidence || 0.95,
+            extractedAt: new Date().toISOString(),
+            quote: quote || '',
+            isConflict: false,
+          };
+          appliedCount++;
+
+          // Sync with Client record if matching field
+          if (client) {
+            if (key === 'businessName') client.businessName = String(value);
+            if (key === 'ein') client.federalTaxId = String(value);
+            if (key === 'stateOfIncorporation') client.stateOfOrganization = String(value);
+            if (key === 'entityType') client.entityType = String(value);
+            if (key === 'businessStartDate') client.businessStartDate = String(value);
+            if (key === 'annualRevenue') client.annualRevenue = Number(value) || client.annualRevenue;
+            if (key === 'monthlyRevenue') client.monthlyRevenue = Number(value) || client.monthlyRevenue;
+            if (key === 'legalName') {
+              const parts = String(value).split(' ');
+              if (parts.length >= 2) {
+                client.firstName = parts[0];
+                client.lastName = parts.slice(1).join(' ');
+              }
+            }
+            if (key === 'dob') client.dob = String(value);
+            if (key === 'address') client.address = String(value);
+            if (key === 'primaryBank') client.businessBank = String(value);
+            client.updatedAt = new Date().toISOString();
+          }
+        }
+      } else if (secObj[key] !== undefined) {
+        // Direct property
+        secObj[key] = value;
+        appliedCount++;
+      }
+    });
+
+    verification.updatedAt = new Date().toISOString();
+
+    if (doc && doc.aiExtraction) {
+      doc.aiExtraction.status = 'APPLIED_UNVERIFIED';
+    }
+
+    addTimelineEvent(
+      clientId,
+      `AI Verification Pre-Fill Applied (${appliedCount} fields)`,
+      `Extracted fields from "${docTitle}" pre-filled into Verification worksheet as "Unverified" for underwriter phone/document confirmation. (Preserved ${skippedVerifiedCount} already verified fields).`,
+      appliedBy || 'Staff',
+      'VERIFICATION',
+      doc?.dealId
+    );
+
+    saveDb();
+    res.json({
+      success: true,
+      appliedCount,
+      skippedVerifiedCount,
+      masterVerification: verification,
+      client,
+    });
+  } catch (err: any) {
+    console.error('Error applying to verification:', err);
+    res.status(500).json({ error: err.message || 'Failed to apply extracted fields' });
+  }
+});
+
+app.post('/api/documents/:docId/verify-field', (req, res) => {
+  try {
+    const { docId } = req.params;
+    const { clientId, section, key, verifiedValue, verifiedBy, notes } = req.body;
+
+    if (!clientId || !section || !key) {
+      return res.status(400).json({ error: 'clientId, section, and key are required' });
+    }
+
+    const verification = db.masterVerifications[clientId];
+    if (!verification || !verification[section]) {
+      return res.status(404).json({ error: 'Verification section not found' });
+    }
+
+    const fieldObj = verification[section][key];
+    if (fieldObj && typeof fieldObj === 'object') {
+      fieldObj.verified = verifiedValue !== undefined ? String(verifiedValue) : fieldObj.asApplied;
+      fieldObj.status = 'Verified';
+      fieldObj.notes = notes || `Verified by ${verifiedBy || 'Staff'} on ${new Date().toLocaleDateString()}`;
+    }
+
+    verification.updatedAt = new Date().toISOString();
+
+    // Check if client record needs sync
+    const clientIdx = db.clients.findIndex((c) => c.id === clientId);
+    if (clientIdx !== -1) {
+      const client = db.clients[clientIdx];
+      const val = verifiedValue || (fieldObj ? fieldObj.verified : undefined);
+      if (val !== undefined) {
+        if (key === 'businessName') client.businessName = String(val);
+        if (key === 'ein') client.federalTaxId = String(val);
+        if (key === 'annualRevenue') client.annualRevenue = Number(val) || client.annualRevenue;
+        if (key === 'monthlyRevenue') client.monthlyRevenue = Number(val) || client.monthlyRevenue;
+        if (key === 'dob') client.dob = String(val);
+        if (key === 'primaryBank') client.businessBank = String(val);
+        client.updatedAt = new Date().toISOString();
+      }
+    }
+
+    addTimelineEvent(
+      clientId,
+      `Field Verified: ${key}`,
+      `Underwriter verified field "${key}" with value "${verifiedValue || fieldObj?.verified}". Marked strictly as Verified.`,
+      verifiedBy || 'Staff',
+      'VERIFICATION'
+    );
+
+    saveDb();
+    res.json({ success: true, masterVerification: verification, client: clientIdx !== -1 ? db.clients[clientIdx] : null });
+  } catch (err: any) {
+    console.error('Error verifying field:', err);
+    res.status(500).json({ error: err.message || 'Failed to verify field' });
+  }
 });
 
 // GHL & Settings APIs

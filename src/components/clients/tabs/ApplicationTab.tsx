@@ -13,10 +13,10 @@ export const ApplicationTab: React.FC<ApplicationTabProps> = ({ client, onRefres
   const [isEditing, setIsEditing] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [form, setForm] = useState<Partial<Client>>({
-    requestedAmount: client.requestedAmount || 0,
+    requestedAmount: client.requestedAmount,
     requestedProduct: client.requestedProduct || '0% Business Cards & Lines of Credit',
     useOfFunds: client.useOfFunds || '',
-    creditScore: client.creditScore || 700,
+    creditScore: client.creditScore,
     bankruptcy: client.bankruptcy || 'None',
     foreclosure: client.foreclosure || 'None',
     repossession: client.repossession || 'None',
@@ -65,10 +65,10 @@ export const ApplicationTab: React.FC<ApplicationTabProps> = ({ client, onRefres
           <button
             onClick={() => {
               setForm({
-                requestedAmount: client.requestedAmount || 0,
+                requestedAmount: client.requestedAmount,
                 requestedProduct: client.requestedProduct || '0% Business Cards & Lines of Credit',
                 useOfFunds: client.useOfFunds || '',
-                creditScore: client.creditScore || 700,
+                creditScore: client.creditScore,
                 bankruptcy: client.bankruptcy || 'None',
                 foreclosure: client.foreclosure || 'None',
                 repossession: client.repossession || 'None',
@@ -101,12 +101,12 @@ export const ApplicationTab: React.FC<ApplicationTabProps> = ({ client, onRefres
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
-              <label className="block text-slate-300 font-semibold mb-1">Requested Funding Amount ($) *</label>
+              <label className="block text-slate-300 font-semibold mb-1">Requested Funding Amount ($)</label>
               <input
                 type="number"
-                required
-                value={form.requestedAmount || 0}
-                onChange={(e) => setForm({ ...form, requestedAmount: parseFloat(e.target.value) || 0 })}
+                value={form.requestedAmount !== undefined && form.requestedAmount !== null ? form.requestedAmount : ''}
+                onChange={(e) => setForm({ ...form, requestedAmount: e.target.value === '' ? undefined : parseFloat(e.target.value) })}
+                placeholder="e.g. 150,000"
                 className="w-full bg-[#070d18] border border-blue-900/70 rounded-xl p-2.5 text-slate-100 focus:outline-none font-mono font-bold text-amber-400"
               />
             </div>
@@ -210,7 +210,7 @@ export const ApplicationTab: React.FC<ApplicationTabProps> = ({ client, onRefres
               <div className="flex items-center justify-between pt-2">
                 <span className="text-slate-400">Target Funding Amount:</span>
                 <span className="font-mono font-bold text-amber-300 text-sm">
-                  ${Number(client.requestedAmount || 0).toLocaleString()}
+                  {client.requestedAmount !== undefined && client.requestedAmount !== null ? `$${Number(client.requestedAmount).toLocaleString()}` : 'Not Provided'}
                 </span>
               </div>
               <div className="flex items-center justify-between pt-2">
@@ -222,7 +222,7 @@ export const ApplicationTab: React.FC<ApplicationTabProps> = ({ client, onRefres
               <div className="pt-2">
                 <span className="text-slate-400 block mb-1">Declared Use of Funds:</span>
                 <p className="text-slate-200 bg-[#070d18] p-3 rounded-xl border border-blue-900/50">
-                  {client.useOfFunds || 'General business expansion, equipment procurement, and working capital cashflow buffer.'}
+                  {client.useOfFunds || 'Not Disclosed'}
                 </p>
               </div>
             </div>
@@ -237,7 +237,9 @@ export const ApplicationTab: React.FC<ApplicationTabProps> = ({ client, onRefres
             <div className="space-y-3 text-xs text-slate-200 divide-y divide-blue-900/40">
               <div className="flex items-center justify-between pt-2">
                 <span className="text-slate-400">Reported FICO Score:</span>
-                <span className="font-mono font-bold text-slate-100">{client.creditScore || 700}</span>
+                <span className="font-mono font-bold text-slate-100">
+                  {client.creditScore ? `${client.creditScore}` : 'Not Provided'}
+                </span>
               </div>
               <div className="flex items-center justify-between pt-2">
                 <span className="text-slate-400">Prior Bankruptcies:</span>

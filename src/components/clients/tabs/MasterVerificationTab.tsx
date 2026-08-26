@@ -25,6 +25,9 @@ import {
   ExternalLink,
   ChevronRight,
   ArrowRight,
+  Sparkles,
+  Eye,
+  FileText
 } from 'lucide-react';
 import {
   Client,
@@ -35,12 +38,14 @@ import {
   RecentCreditActivityRecord,
   VerificationStatusType,
   EmploymentSalaryPayrollVerification,
+  DocumentItem
 } from '../../../types';
 import { api } from '../../../services/api';
 import { useData } from '../../../context/DataContext';
 import { useAuth } from '../../../context/AuthContext';
 import { firestoreService } from '../../../services/firestoreService';
 import { formatDate, formatDateTime } from '../../../utils/dateUtils';
+import { DocumentAiReviewModal } from '../../documents/DocumentAiReviewModal';
 
 interface MasterVerificationTabProps {
   client: Client;
@@ -64,6 +69,110 @@ export const MasterVerificationTab: React.FC<MasterVerificationTabProps> = ({
     masterVerification?.verifiedBy || currentUser?.name || 'Staff Underwriter'
   );
   const [isCompleting, setIsCompleting] = useState(false);
+  const [activeReviewDoc, setActiveReviewDoc] = useState<DocumentItem | null>(null);
+  const [clientDocs, setClientDocs] = useState<DocumentItem[]>(client.documents || []);
+
+  // Fetch client documents for AI intelligence
+  useEffect(() => {
+    let isMounted = true;
+    api.getDocuments(client.id).then((docs) => {
+      if (isMounted && docs && docs.length > 0) {
+        setClientDocs(docs);
+      }
+    });
+    return () => {
+      isMounted = false;
+    };
+  }, [client.id]);
+
+  // Quick single-field verifier
+  const handleQuickVerifyField = (
+    section: 'identity' | 'business',
+    fieldKey: string,
+    fieldData?: MasterVerificationField
+  ) => {
+    const candidateValue = fieldData?.verified || fieldData?.extracted?.value || fieldData?.asApplied || '';
+    if (!candidateValue) {
+      addToast('warning', 'Empty Value', 'Cannot verify an empty value.');
+      return;
+    }
+
+    setIsDirty(true);
+    setSaveSuccess(false);
+    setFormData((prev: any) => ({
+      ...prev,
+      [section]: {
+        ...prev[section],
+        [fieldKey]: {
+          ...prev[section][fieldKey],
+          verified: candidateValue,
+          status: 'Verified',
+          notes: prev[section][fieldKey]?.notes
+            ? `${prev[section][fieldKey].notes} (Verified by ${currentUser?.name || 'Caller'})`
+            : `Verified by ${currentUser?.name || 'Caller'} on call`,
+        },
+      },
+    }));
+    addToast('success', 'Field Verified', `Marked ${fieldKey} as strictly Verified.`);
+  };
+
+  const handleQuickVerifyEmploymentField = (
+    fieldKey: keyof EmploymentSalaryPayrollVerification,
+    fieldData?: MasterVerificationField
+  ) => {
+    const candidateValue = fieldData?.verified || fieldData?.extracted?.value || fieldData?.asApplied || '';
+    if (!candidateValue) {
+      addToast('warning', 'Empty Value', 'Cannot verify an empty value.');
+      return;
+    }
+
+    setIsDirty(true);
+    setSaveSuccess(false);
+    setFormData((prev: any) => {
+      const existingSection = prev.employmentVerification || {};
+      return {
+        ...prev,
+        employmentVerification: {
+          ...existingSection,
+          [fieldKey]: {
+            ...(existingSection[fieldKey] || {}),
+            verified: candidateValue,
+            status: 'Verified',
+            notes: existingSection[fieldKey]?.notes
+              ? `${existingSection[fieldKey].notes} (Verified by ${currentUser?.name || 'Caller'})`
+              : `Verified by ${currentUser?.name || 'Caller'} on call`,
+          },
+        },
+      };
+    });
+    addToast('success', 'Field Verified', `Marked ${String(fieldKey)} as strictly Verified.`);
+  };
+
+  const handleAcceptAiValue = (
+    section: 'identity' | 'business',
+    fieldKey: string,
+    aiValue: any
+  ) => {
+    setIsDirty(true);
+    setFormData((prev: any) => ({
+      ...prev,
+      [section]: {
+        ...prev[section],
+        [fieldKey]: {
+          ...prev[section][fieldKey],
+          verified: String(aiValue),
+          asApplied: String(aiValue),
+          status: 'Client Corrected It',
+          notes: `Updated to match AI extracted document value (${aiValue}) confirmed with client.`,
+          extracted: {
+            ...prev[section][fieldKey]?.extracted,
+            isConflict: false,
+          },
+        },
+      },
+    }));
+    addToast('info', 'Document Value Accepted', `Updated ${fieldKey} with document value.`);
+  };
 
   // New Debt / Card Modal States
   const [showAddDebtModal, setShowAddDebtModal] = useState(false);
@@ -135,31 +244,31 @@ export const MasterVerificationTab: React.FC<MasterVerificationTabProps> = ({
       identity: {
         legalName: masterVerification?.identity?.legalName || {
           asApplied: `${client.firstName || ''} ${client.lastName || ''}`.trim() || 'Not Provided',
-          verified: `${client.firstName || ''} ${client.lastName || ''}`.trim() || '',
+          verified: '',
           status: 'Unverified',
           notes: '',
         },
         phone: masterVerification?.identity?.phone || {
           asApplied: client.phone || 'Not Provided',
-          verified: client.phone || '',
+          verified: '',
           status: 'Unverified',
           notes: '',
         },
         email: masterVerification?.identity?.email || {
           asApplied: client.email || 'Not Provided',
-          verified: client.email || '',
+          verified: '',
           status: 'Unverified',
           notes: '',
         },
         dob: masterVerification?.identity?.dob || {
           asApplied: client.dob || 'Not Provided',
-          verified: client.dob || '',
+          verified: '',
           status: 'Unverified',
           notes: '',
         },
         ssnLast4: masterVerification?.identity?.ssnLast4 || {
           asApplied: client.ssn ? client.ssn.slice(-4) : 'Not Provided',
-          verified: client.ssn ? client.ssn.slice(-4) : '',
+          verified: '',
           status: 'Unverified',
           notes: '',
         },
@@ -168,73 +277,73 @@ export const MasterVerificationTab: React.FC<MasterVerificationTabProps> = ({
       business: {
         businessName: masterVerification?.business?.businessName || {
           asApplied: client.businessName || 'Not Provided',
-          verified: client.businessName || '',
+          verified: '',
           status: 'Unverified',
           notes: '',
         },
         dba: masterVerification?.business?.dba || {
-          asApplied: client.dba || 'None',
-          verified: client.dba || '',
+          asApplied: client.dba || 'Not Provided',
+          verified: '',
           status: 'Unverified',
           notes: '',
         },
         businessAddress: masterVerification?.business?.businessAddress || {
           asApplied: client.businessAddress || (client.address ? `${client.address}, ${client.city || ''}, ${client.state || ''}`.trim() : 'Not Provided'),
-          verified: client.businessAddress || (client.address ? `${client.address}, ${client.city || ''}, ${client.state || ''}`.trim() : ''),
+          verified: '',
           status: 'Unverified',
           notes: '',
         },
         ein: masterVerification?.business?.ein || {
           asApplied: client.federalTaxId || 'Not Provided',
-          verified: client.federalTaxId || '',
+          verified: '',
           status: 'Unverified',
           notes: '',
         },
         stateOfIncorporation: masterVerification?.business?.stateOfIncorporation || {
           asApplied: client.stateOfOrganization || client.state || 'Not Provided',
-          verified: client.stateOfOrganization || client.state || '',
+          verified: '',
           status: 'Unverified',
           notes: '',
         },
         entityType: masterVerification?.business?.entityType || {
           asApplied: client.entityType || 'Not Provided',
-          verified: client.entityType || '',
+          verified: '',
           status: 'Unverified',
           notes: '',
         },
         businessStartDate: masterVerification?.business?.businessStartDate || {
           asApplied: client.businessStartDate || 'Not Provided',
-          verified: client.businessStartDate || '',
+          verified: '',
           status: 'Unverified',
           notes: '',
         },
         timeInBusiness: masterVerification?.business?.timeInBusiness || {
           asApplied: client.timeInBusiness || 'Not Provided',
-          verified: client.timeInBusiness || '',
+          verified: '',
           status: 'Unverified',
           notes: '',
         },
         industry: masterVerification?.business?.industry || {
           asApplied: client.industry || 'Not Provided',
-          verified: client.industry || '',
+          verified: '',
           status: 'Unverified',
           notes: '',
         },
         businessDescription: masterVerification?.business?.businessDescription || {
           asApplied: client.businessDescription || 'Not Provided',
-          verified: client.businessDescription || '',
+          verified: '',
           status: 'Unverified',
           notes: '',
         },
         ownershipPercentage: masterVerification?.business?.ownershipPercentage || {
-          asApplied: client.ownershipPercentage ? `${client.ownershipPercentage}%` : 'Not Provided',
-          verified: client.ownershipPercentage ? `${client.ownershipPercentage}%` : '',
+          asApplied: client.ownershipPercentage !== undefined && client.ownershipPercentage !== null ? `${client.ownershipPercentage}%` : 'Not Provided',
+          verified: '',
           status: 'Unverified',
           notes: '',
         },
         ownerTitle: masterVerification?.business?.ownerTitle || {
           asApplied: client.ownerTitle || 'Not Provided',
-          verified: client.ownerTitle || '',
+          verified: '',
           status: 'Unverified',
           notes: '',
         },
@@ -243,13 +352,13 @@ export const MasterVerificationTab: React.FC<MasterVerificationTabProps> = ({
       employment: {
         selfEmployedOnly: masterVerification?.employment?.selfEmployedOnly ?? true,
         alsoEmployedFullTime: masterVerification?.employment?.alsoEmployedFullTime ?? false,
-        employer: masterVerification?.employment?.employer || client.businessName || '',
-        position: masterVerification?.employment?.position || client.ownerTitle || '',
-        yearsEmployed: masterVerification?.employment?.yearsEmployed || client.timeInBusiness || '',
-        employmentStartDate: masterVerification?.employment?.employmentStartDate || client.businessStartDate || '',
+        employer: masterVerification?.employment?.employer || '',
+        position: masterVerification?.employment?.position || '',
+        yearsEmployed: masterVerification?.employment?.yearsEmployed || '',
+        employmentStartDate: masterVerification?.employment?.employmentStartDate || '',
         employmentStatus: masterVerification?.employment?.employmentStatus || '',
-        annualSalary: masterVerification?.employment?.annualSalary ?? client.personalAnnualIncome ?? 0,
-        monthlySalary: masterVerification?.employment?.monthlySalary ?? client.personalMonthlyIncome ?? (client.personalAnnualIncome ? Math.round((client.personalAnnualIncome / 12) * 100) / 100 : 0),
+        annualSalary: masterVerification?.employment?.annualSalary ?? client.personalAnnualIncome ?? undefined,
+        monthlySalary: masterVerification?.employment?.monthlySalary ?? client.personalMonthlyIncome ?? (client.personalAnnualIncome ? Math.round((client.personalAnnualIncome / 12) * 100) / 100 : undefined),
         payFrequency: masterVerification?.employment?.payFrequency || '',
         otherEmploymentIncome: masterVerification?.employment?.otherEmploymentIncome || '',
         employmentNotes: masterVerification?.employment?.employmentNotes || '',
@@ -281,42 +390,42 @@ export const MasterVerificationTab: React.FC<MasterVerificationTabProps> = ({
         },
         employerName: masterVerification?.employmentVerification?.employerName || {
           asApplied: client.businessName || 'Not Provided',
-          verified: client.businessName || '',
+          verified: '',
           status: 'Unverified',
           notes: '',
           script: 'What is the name of your current employer?',
         },
         jobTitle: masterVerification?.employmentVerification?.jobTitle || {
           asApplied: client.ownerTitle || 'Not Provided',
-          verified: client.ownerTitle || '',
+          verified: '',
           status: 'Unverified',
           notes: '',
           script: 'What is your current job title or position?',
         },
         jobOccupation: masterVerification?.employmentVerification?.jobOccupation || {
           asApplied: client.industry || 'Not Provided',
-          verified: client.industry || '',
+          verified: '',
           status: 'Unverified',
           notes: '',
           script: 'What do you do in your current job?',
         },
         jobDescription: masterVerification?.employmentVerification?.jobDescription || {
           asApplied: client.businessDescription || 'Not Provided',
-          verified: client.businessDescription || '',
+          verified: '',
           status: 'Unverified',
           notes: '',
           script: 'Can you briefly explain what your responsibilities are in your current job?',
         },
         employmentStartDate: masterVerification?.employmentVerification?.employmentStartDate || {
           asApplied: client.businessStartDate || 'Not Provided',
-          verified: client.businessStartDate || '',
+          verified: '',
           status: 'Unverified',
           notes: '',
           script: 'When did you start working for your current employer?',
         },
         yearsWithEmployer: masterVerification?.employmentVerification?.yearsWithEmployer || {
           asApplied: client.timeInBusiness || 'Not Provided',
-          verified: client.timeInBusiness || '',
+          verified: '',
           status: 'Unverified',
           notes: '',
           script: 'How long have you been with your current employer?',
@@ -329,28 +438,28 @@ export const MasterVerificationTab: React.FC<MasterVerificationTabProps> = ({
           script: 'Would you consider your current employment full-time, part-time, contract, seasonal, or other?',
         },
         annualSalary: masterVerification?.employmentVerification?.annualSalary || {
-          asApplied: client.personalAnnualIncome ? `$${Number(client.personalAnnualIncome).toLocaleString()}` : 'Not Provided',
-          verified: client.personalAnnualIncome ? `$${Number(client.personalAnnualIncome).toLocaleString()}` : '',
+          asApplied: client.personalAnnualIncome !== undefined && client.personalAnnualIncome !== null ? `$${Number(client.personalAnnualIncome).toLocaleString()}` : 'Not Provided',
+          verified: '',
           status: 'Unverified',
           notes: '',
           script: 'What is your current annual salary?',
         },
         monthlySalary: masterVerification?.employmentVerification?.monthlySalary || {
-          asApplied: client.personalMonthlyIncome ? `$${Number(client.personalMonthlyIncome).toLocaleString()}` : (client.personalAnnualIncome ? `$${Math.round(client.personalAnnualIncome / 12).toLocaleString()}` : 'Not Provided'),
-          verified: client.personalMonthlyIncome ? `$${Number(client.personalMonthlyIncome).toLocaleString()}` : (client.personalAnnualIncome ? `$${Math.round(client.personalAnnualIncome / 12).toLocaleString()}` : ''),
+          asApplied: client.personalMonthlyIncome !== undefined && client.personalMonthlyIncome !== null ? `$${Number(client.personalMonthlyIncome).toLocaleString()}` : (client.personalAnnualIncome ? `$${Math.round(client.personalAnnualIncome / 12).toLocaleString()}` : 'Not Provided'),
+          verified: '',
           status: 'Unverified',
           notes: '',
           script: 'Approximately how much do you earn from your employment each month?',
         },
         annualEmploymentIncome: masterVerification?.employmentVerification?.annualEmploymentIncome || {
-          asApplied: client.personalAnnualIncome ? `$${Number(client.personalAnnualIncome).toLocaleString()}` : 'Not Provided',
+          asApplied: client.personalAnnualIncome !== undefined && client.personalAnnualIncome !== null ? `$${Number(client.personalAnnualIncome).toLocaleString()}` : 'Not Provided',
           verified: '',
           status: 'Unverified',
           notes: '',
           script: 'What is your total annual employment income?',
         },
         monthlyEmploymentIncome: masterVerification?.employmentVerification?.monthlyEmploymentIncome || {
-          asApplied: client.personalMonthlyIncome ? `$${Number(client.personalMonthlyIncome).toLocaleString()}` : (client.personalAnnualIncome ? `$${Math.round(client.personalAnnualIncome / 12).toLocaleString()}` : 'Not Provided'),
+          asApplied: client.personalMonthlyIncome !== undefined && client.personalMonthlyIncome !== null ? `$${Number(client.personalMonthlyIncome).toLocaleString()}` : (client.personalAnnualIncome ? `$${Math.round(client.personalAnnualIncome / 12).toLocaleString()}` : 'Not Provided'),
           verified: '',
           status: 'Unverified',
           notes: '',
@@ -419,11 +528,11 @@ export const MasterVerificationTab: React.FC<MasterVerificationTabProps> = ({
       },
 
       income: {
-        personalAnnualIncome: masterVerification?.income?.personalAnnualIncome ?? client.personalAnnualIncome ?? 0,
-        monthlyBusinessRevenue: masterVerification?.income?.monthlyBusinessRevenue ?? client.monthlyRevenue ?? (client.annualRevenue ? Math.round((client.annualRevenue / 12) * 100) / 100 : 0),
-        verifiedPersonalAnnualIncome: masterVerification?.income?.verifiedPersonalAnnualIncome ?? client.personalAnnualIncome ?? 0,
-        verifiedMonthlyBusinessRevenue: masterVerification?.income?.verifiedMonthlyBusinessRevenue ?? client.monthlyRevenue ?? (client.annualRevenue ? Math.round((client.annualRevenue / 12) * 100) / 100 : 0),
-        exactCreditScore: masterVerification?.income?.exactCreditScore ?? client.creditScore ?? 0,
+        personalAnnualIncome: masterVerification?.income?.personalAnnualIncome ?? client.personalAnnualIncome ?? undefined,
+        monthlyBusinessRevenue: masterVerification?.income?.monthlyBusinessRevenue ?? client.monthlyRevenue ?? (client.annualRevenue ? Math.round((client.annualRevenue / 12) * 100) / 100 : undefined),
+        verifiedPersonalAnnualIncome: masterVerification?.income?.verifiedPersonalAnnualIncome ?? undefined,
+        verifiedMonthlyBusinessRevenue: masterVerification?.income?.verifiedMonthlyBusinessRevenue ?? undefined,
+        exactCreditScore: masterVerification?.income?.exactCreditScore ?? client.creditScore ?? undefined,
         revenueTrend: masterVerification?.income?.revenueTrend || 'Consistent',
         revenueTrendExplanation: masterVerification?.income?.revenueTrendExplanation || '',
         incomeNotes: masterVerification?.income?.incomeNotes || '',
@@ -433,9 +542,9 @@ export const MasterVerificationTab: React.FC<MasterVerificationTabProps> = ({
       payroll: {
         paysSelfThroughPayroll: masterVerification?.payroll?.paysSelfThroughPayroll ?? false,
         issuesPayStubs: masterVerification?.payroll?.issuesPayStubs ?? false,
-        salary: masterVerification?.payroll?.salary ?? client.personalAnnualIncome ?? 0,
-        grossPay: masterVerification?.payroll?.grossPay ?? 0,
-        netPay: masterVerification?.payroll?.netPay ?? 0,
+        salary: masterVerification?.payroll?.salary ?? client.personalAnnualIncome ?? undefined,
+        grossPay: masterVerification?.payroll?.grossPay ?? undefined,
+        netPay: masterVerification?.payroll?.netPay ?? undefined,
         payFrequency: masterVerification?.payroll?.payFrequency || '',
         payrollStartDate: masterVerification?.payroll?.payrollStartDate || '',
         latestPayStubDate: masterVerification?.payroll?.latestPayStubDate || '',
@@ -453,7 +562,7 @@ export const MasterVerificationTab: React.FC<MasterVerificationTabProps> = ({
         businessIncomeDepositedIntoPersonal: masterVerification?.banking?.businessIncomeDepositedIntoPersonal ?? false,
         regularBusinessToPersonalTransfers: masterVerification?.banking?.regularBusinessToPersonalTransfers ?? false,
         transferFrequency: masterVerification?.banking?.transferFrequency || '',
-        approximateTransferAmount: masterVerification?.banking?.approximateTransferAmount ?? 0,
+        approximateTransferAmount: masterVerification?.banking?.approximateTransferAmount ?? undefined,
         bankingExplanation: masterVerification?.banking?.bankingExplanation || '',
         bankingNotes: masterVerification?.banking?.bankingNotes || '',
         redFlags: masterVerification?.banking?.redFlags || '',
@@ -481,22 +590,22 @@ export const MasterVerificationTab: React.FC<MasterVerificationTabProps> = ({
         homeAddressSameAsBusiness: masterVerification?.housing?.homeAddressSameAsBusiness ?? false,
         homeAddressIfDifferent: masterVerification?.housing?.homeAddressIfDifferent || client.address || '',
         housingType: masterVerification?.housing?.housingType || client.housingStatus || 'Homeowner',
-        monthlyMortgageOrRent: masterVerification?.housing?.monthlyMortgageOrRent ?? client.monthlyHousingPayment ?? 0,
+        monthlyMortgageOrRent: masterVerification?.housing?.monthlyMortgageOrRent ?? client.monthlyHousingPayment ?? undefined,
         housingNotes: masterVerification?.housing?.housingNotes || '',
         redFlags: masterVerification?.housing?.redFlags || '',
       },
 
       fundingRequest: {
-        requestedAmount: masterVerification?.fundingRequest?.requestedAmount ?? client.requestedAmount ?? 0,
-        verifiedRequestedAmount: masterVerification?.fundingRequest?.verifiedRequestedAmount ?? client.requestedAmount ?? 0,
-        purposeOfFunds: masterVerification?.fundingRequest?.purposeOfFunds || client.useOfFunds || '',
-        fundingUrgency: masterVerification?.fundingRequest?.fundingUrgency || client.fundingUrgency || '',
+        requestedAmount: masterVerification?.fundingRequest?.requestedAmount ?? client.requestedAmount ?? undefined,
+        verifiedRequestedAmount: masterVerification?.fundingRequest?.verifiedRequestedAmount ?? undefined,
+        purposeOfFunds: (masterVerification?.fundingRequest?.purposeOfFunds || (['Working Capital', 'Equipment Purchase', 'Payroll', 'Expansion / Growth', 'Debt Consolidation / Refinance', 'Inventory', 'Marketing'].includes(client.useOfFunds || '') ? client.useOfFunds : 'Working Capital')) as any,
+        fundingUrgency: (masterVerification?.fundingRequest?.fundingUrgency || (['Immediately', 'This Week', 'This Month'].includes(client.fundingUrgency || '') ? client.fundingUrgency : 'Immediately')) as any,
         purposeNotes: masterVerification?.fundingRequest?.purposeNotes || '',
         redFlags: masterVerification?.fundingRequest?.redFlags || '',
       },
 
       creditVerification: {
-        exactCreditScore: masterVerification?.creditVerification?.exactCreditScore ?? client.creditScore ?? 0,
+        exactCreditScore: masterVerification?.creditVerification?.exactCreditScore ?? client.creditScore ?? undefined,
         creditUnlocked: masterVerification?.creditVerification?.creditUnlocked ?? false,
         fraudAlert: masterVerification?.creditVerification?.fraudAlert ?? false,
         securityFreeze: masterVerification?.creditVerification?.securityFreeze ?? false,
@@ -505,7 +614,7 @@ export const MasterVerificationTab: React.FC<MasterVerificationTabProps> = ({
       },
 
       underwriterSummary: {
-        overallImpression: masterVerification?.underwriterSummary?.overallImpression || '',
+        overallImpression: (masterVerification?.underwriterSummary?.overallImpression || 'Needs More Info') as any,
         biggestStrength: masterVerification?.underwriterSummary?.biggestStrength || '',
         biggestConcern: masterVerification?.underwriterSummary?.biggestConcern || '',
         cashFlowNotes: masterVerification?.underwriterSummary?.cashFlowNotes || '',
@@ -896,7 +1005,7 @@ export const MasterVerificationTab: React.FC<MasterVerificationTabProps> = ({
     }
   };
 
-  // Render a standard Verification Field row (As Applied vs Verified + Status + Notes + Call Script)
+  // Render a standard Verification Field row (As Applied vs Verified + Status + Notes + Call Script + AI Provenance)
   const renderFieldRow = (
     section: 'identity' | 'business',
     fieldKey: string,
@@ -912,17 +1021,52 @@ export const MasterVerificationTab: React.FC<MasterVerificationTabProps> = ({
       notes: '',
       script: scriptText,
     };
+
+    const hasAiExtraction = Boolean(safeFieldData.extracted);
+    const isConflict = Boolean(safeFieldData.extracted?.isConflict);
+
     return (
       <div
         key={fieldKey}
-        className="p-4 bg-[#070d18] border border-blue-900/40 hover:border-blue-700/60 rounded-xl space-y-3 transition-colors shadow-sm"
+        className={`p-4 rounded-xl space-y-3 transition-colors shadow-sm border ${
+          isConflict
+            ? 'bg-amber-950/15 border-amber-500/40'
+            : hasAiExtraction
+            ? 'bg-[#080e1d] border-indigo-500/40'
+            : 'bg-[#070d18] border-blue-900/40 hover:border-blue-700/60'
+        }`}
       >
-        {/* Row Header with Label & Verification Status Selector */}
+        {/* Row Header with Label, AI Badge & Verification Status Selector */}
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-blue-900/30 pb-2">
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-wrap">
             <span className="text-xs font-bold text-slate-100 uppercase tracking-wide">{label}</span>
+            {hasAiExtraction && (
+              <span className="px-2 py-0.5 text-[10px] font-semibold rounded bg-indigo-500/20 text-indigo-300 border border-indigo-500/30 flex items-center gap-1">
+                <Sparkles className="w-2.5 h-2.5 text-indigo-400" />
+                <span>AI Extracted ({Math.round((safeFieldData.extracted?.confidence || 0.95) * 100)}%)</span>
+              </span>
+            )}
+            {isConflict && (
+              <span className="px-2 py-0.5 text-[10px] font-semibold rounded bg-amber-500/20 text-amber-300 border border-amber-500/30 flex items-center gap-1">
+                <AlertTriangle className="w-2.5 h-2.5 text-amber-400" />
+                <span>Conflict Flagged</span>
+              </span>
+            )}
           </div>
+
           <div className="flex items-center gap-2">
+            {safeFieldData.status === 'Unverified' && (
+              <button
+                type="button"
+                onClick={() => handleQuickVerifyField(section, fieldKey, safeFieldData)}
+                className="px-2 py-1 bg-emerald-600/20 hover:bg-emerald-600/30 text-emerald-300 border border-emerald-500/30 rounded-lg text-[11px] font-semibold flex items-center gap-1 transition"
+                title="Confirm & Mark Verified"
+              >
+                <ShieldCheck className="w-3 h-3 text-emerald-400" />
+                <span>Confirm & Verify</span>
+              </button>
+            )}
+
             <span className="text-[10px] text-slate-400 font-semibold uppercase">Status:</span>
             <select
               value={safeFieldData.status || 'Unverified'}
@@ -947,6 +1091,42 @@ export const MasterVerificationTab: React.FC<MasterVerificationTabProps> = ({
           </div>
         </div>
 
+        {/* AI Provenance / Source Info or Conflict Banner */}
+        {hasAiExtraction && safeFieldData.extracted && (
+          <div className={`p-2 rounded-lg text-xs flex items-start justify-between gap-2 border ${
+            isConflict
+              ? 'bg-amber-950/30 border-amber-500/30 text-amber-200'
+              : 'bg-indigo-950/30 border-indigo-500/30 text-indigo-200'
+          }`}>
+            <div className="flex items-start gap-2">
+              <FileText className="w-3.5 h-3.5 shrink-0 mt-0.5 text-indigo-400" />
+              <div>
+                <span className="font-semibold text-slate-100">Source: </span>
+                <span>{safeFieldData.extracted.sourceDocTitle || 'Uploaded Document'}</span>
+                {safeFieldData.extracted.sourceQuote && (
+                  <span className="italic text-slate-300 block text-[11px]">
+                    &ldquo;{safeFieldData.extracted.sourceQuote}&rdquo;
+                  </span>
+                )}
+                {isConflict && (
+                  <p className="text-[11px] text-amber-300 mt-1 font-medium">
+                    ⚠️ Document value is &ldquo;{String(safeFieldData.extracted.value)}&rdquo;, while verified value is &ldquo;{safeFieldData.verified}&rdquo;. Existing verified value was preserved.
+                  </p>
+                )}
+              </div>
+            </div>
+            {isConflict && (
+              <button
+                type="button"
+                onClick={() => handleAcceptAiValue(section, fieldKey, safeFieldData.extracted?.value)}
+                className="px-2.5 py-1 bg-amber-600/30 hover:bg-amber-600/50 text-amber-200 border border-amber-500/40 rounded text-[11px] font-semibold whitespace-nowrap transition"
+              >
+                Accept Doc Value
+              </button>
+            )}
+          </div>
+        )}
+
         {/* Prominent Call Script / What to Ask */}
         {scriptText && (
           <div className="flex items-start gap-2 bg-blue-950/40 border border-blue-800/40 rounded-lg p-2.5 text-xs text-blue-200/90 font-medium italic">
@@ -964,7 +1144,7 @@ export const MasterVerificationTab: React.FC<MasterVerificationTabProps> = ({
         <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs">
           <div>
             <label className="block text-[10px] text-slate-400 font-semibold mb-1 uppercase tracking-wider">
-              As Applied / Application Answer
+              As Applied / Extracted Unverified Answer
             </label>
             {inputType === 'textarea' ? (
               <textarea
@@ -1040,17 +1220,44 @@ export const MasterVerificationTab: React.FC<MasterVerificationTabProps> = ({
       script: scriptText,
     };
 
+    const hasAiExtraction = Boolean(safeData.extracted);
+    const isConflict = Boolean(safeData.extracted?.isConflict);
+
     return (
       <div
         key={fieldKey as string}
-        className="p-4 bg-[#070d18] border border-blue-900/40 rounded-xl space-y-3 hover:border-blue-700/60 transition-colors shadow-sm"
+        className={`p-4 rounded-xl space-y-3 transition-colors shadow-sm border ${
+          isConflict
+            ? 'bg-amber-950/15 border-amber-500/40'
+            : hasAiExtraction
+            ? 'bg-[#080e1d] border-indigo-500/40'
+            : 'bg-[#070d18] border-blue-900/40 hover:border-blue-700/60'
+        }`}
       >
         {/* Row Header with Label & Verification Status Selector */}
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-blue-900/30 pb-2">
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-wrap">
             <span className="text-xs font-bold text-slate-100 uppercase tracking-wide">{label}</span>
+            {hasAiExtraction && (
+              <span className="px-2 py-0.5 text-[10px] font-semibold rounded bg-indigo-500/20 text-indigo-300 border border-indigo-500/30 flex items-center gap-1">
+                <Sparkles className="w-2.5 h-2.5 text-indigo-400" />
+                <span>AI Extracted ({Math.round((safeData.extracted?.confidence || 0.95) * 100)}%)</span>
+              </span>
+            )}
           </div>
           <div className="flex items-center gap-2">
+            {safeData.status === 'Unverified' && (
+              <button
+                type="button"
+                onClick={() => handleQuickVerifyEmploymentField(fieldKey, safeData)}
+                className="px-2 py-1 bg-emerald-600/20 hover:bg-emerald-600/30 text-emerald-300 border border-emerald-500/30 rounded-lg text-[11px] font-semibold flex items-center gap-1 transition"
+                title="Confirm & Mark Verified"
+              >
+                <ShieldCheck className="w-3 h-3 text-emerald-400" />
+                <span>Confirm & Verify</span>
+              </button>
+            )}
+
             <span className="text-[10px] text-slate-400 font-semibold uppercase">Status:</span>
             <select
               value={safeData.status || 'Unverified'}
@@ -1074,6 +1281,22 @@ export const MasterVerificationTab: React.FC<MasterVerificationTabProps> = ({
             </select>
           </div>
         </div>
+
+        {/* AI Provenance Banner */}
+        {hasAiExtraction && safeData.extracted && (
+          <div className="p-2 rounded-lg text-xs bg-indigo-950/30 border border-indigo-500/30 text-indigo-200 flex items-start gap-2">
+            <FileText className="w-3.5 h-3.5 shrink-0 mt-0.5 text-indigo-400" />
+            <div>
+              <span className="font-semibold text-slate-100">Source: </span>
+              <span>{safeData.extracted.sourceDocTitle || 'Uploaded Document'}</span>
+              {safeData.extracted.sourceQuote && (
+                <span className="italic text-slate-300 block text-[11px]">
+                  &ldquo;{safeData.extracted.sourceQuote}&rdquo;
+                </span>
+              )}
+            </div>
+          </div>
+        )}
 
         {/* Script Callout Box */}
         {scriptText && (
@@ -1420,6 +1643,80 @@ export const MasterVerificationTab: React.FC<MasterVerificationTabProps> = ({
         </div>
       </div>
 
+      {/* AI DOCUMENT INTELLIGENCE BAR */}
+      {clientDocs.length > 0 && (
+        <div className="bg-[#0b1426] border border-indigo-500/40 rounded-xl p-4 flex flex-col md:flex-row items-start md:items-center justify-between gap-3 shadow-lg">
+          <div className="flex items-center gap-3">
+            <div className="p-2 rounded-xl bg-indigo-500/10 border border-indigo-500/30 text-indigo-400 shrink-0">
+              <Sparkles className="w-4 h-4 animate-pulse" />
+            </div>
+            <div>
+              <div className="flex items-center gap-2 flex-wrap">
+                <h4 className="text-xs font-bold text-slate-100 uppercase tracking-wider">
+                  AI Document Underwriting Intelligence
+                </h4>
+                <span className="text-[10px] px-2 py-0.5 rounded bg-indigo-500/20 text-indigo-300 font-semibold border border-indigo-500/30">
+                  {clientDocs.filter((d) => d.aiExtraction).length} / {clientDocs.length} Docs Parsed
+                </span>
+              </div>
+              <p className="text-[11px] text-slate-400 mt-0.5">
+                AI extracts verified fields (Bank Statements, Tax Returns, DL, P&L) into unverified staging. Staff confirms or edits each field before marking Verified.
+              </p>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2 shrink-0 flex-wrap">
+            {clientDocs.some((d) => d.aiExtraction) && (
+              <button
+                type="button"
+                onClick={() => {
+                  const docWithAi = clientDocs.find((d) => d.aiExtraction);
+                  if (docWithAi) setActiveReviewDoc(docWithAi);
+                }}
+                className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg text-xs font-bold transition flex items-center gap-1.5 shadow-md shadow-indigo-600/20"
+              >
+                <Eye className="w-3.5 h-3.5" />
+                <span>Review Document Extractions</span>
+              </button>
+            )}
+            {clientDocs.some((d) => !d.aiExtraction) && (
+              <button
+                type="button"
+                onClick={async () => {
+                  const unparsed = clientDocs.find((d) => !d.aiExtraction);
+                  if (unparsed) {
+                    addToast('info', 'AI Scanning', `Reading ${unparsed.title}...`);
+                    try {
+                      const res = await api.analyzeDocument({
+                        docId: unparsed.id,
+                        clientId: client.id,
+                        fileName: unparsed.fileName,
+                        categoryHint: unparsed.category,
+                      });
+                      if (res) {
+                        const updatedDocs = clientDocs.map((d) =>
+                          d.id === unparsed.id ? { ...d, aiExtraction: res } : d
+                        );
+                        setClientDocs(updatedDocs);
+                        const updated = updatedDocs.find((d) => d.id === unparsed.id);
+                        if (updated) setActiveReviewDoc(updated);
+                        addToast('success', 'Extraction Complete', `Extracted ${res.extractedFields.length} fields.`);
+                      }
+                    } catch (err: any) {
+                      addToast('error', 'AI Scan Failed', err.message);
+                    }
+                  }
+                }}
+                className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-amber-300 border border-amber-500/30 rounded-lg text-xs font-bold transition flex items-center gap-1.5"
+              >
+                <Sparkles className="w-3.5 h-3.5 text-amber-400" />
+                <span>Scan Next Doc</span>
+              </button>
+            )}
+          </div>
+        </div>
+      )}
+
       {/* Section Navigation Pills */}
       <div className="flex items-center space-x-2 overflow-x-auto pb-2 border-b border-blue-900/60">
         {[
@@ -1639,16 +1936,18 @@ export const MasterVerificationTab: React.FC<MasterVerificationTabProps> = ({
                 </div>
                 <input
                   type="number"
-                  value={formData.income.verifiedMonthlyBusinessRevenue}
-                  onChange={(e) =>
+                  value={formData.income.verifiedMonthlyBusinessRevenue !== undefined && formData.income.verifiedMonthlyBusinessRevenue !== null ? formData.income.verifiedMonthlyBusinessRevenue : ''}
+                  onChange={(e) => {
+                    const val = e.target.value === '' ? undefined : parseFloat(e.target.value);
                     setFormData({
                       ...formData,
                       income: {
                         ...formData.income,
-                        verifiedMonthlyBusinessRevenue: parseFloat(e.target.value) || 0,
+                        verifiedMonthlyBusinessRevenue: val,
                       },
-                    })
-                  }
+                    });
+                  }}
+                  placeholder="Enter verified monthly revenue"
                   className="w-full bg-[#0b1528] border border-emerald-500/50 rounded-lg p-2 text-emerald-300 font-bold font-mono text-sm focus:outline-none"
                 />
               </div>
@@ -1666,16 +1965,18 @@ export const MasterVerificationTab: React.FC<MasterVerificationTabProps> = ({
                 </div>
                 <input
                   type="number"
-                  value={formData.income.verifiedPersonalAnnualIncome}
-                  onChange={(e) =>
+                  value={formData.income.verifiedPersonalAnnualIncome !== undefined && formData.income.verifiedPersonalAnnualIncome !== null ? formData.income.verifiedPersonalAnnualIncome : ''}
+                  onChange={(e) => {
+                    const val = e.target.value === '' ? undefined : parseFloat(e.target.value);
                     setFormData({
                       ...formData,
                       income: {
                         ...formData.income,
-                        verifiedPersonalAnnualIncome: parseFloat(e.target.value) || 0,
+                        verifiedPersonalAnnualIncome: val,
                       },
-                    })
-                  }
+                    });
+                  }}
+                  placeholder="Enter verified annual income"
                   className="w-full bg-[#0b1528] border border-emerald-500/50 rounded-lg p-2 text-emerald-300 font-bold font-mono text-sm focus:outline-none"
                 />
               </div>
@@ -1693,16 +1994,18 @@ export const MasterVerificationTab: React.FC<MasterVerificationTabProps> = ({
                 </div>
                 <input
                   type="number"
-                  value={formData.income.exactCreditScore}
-                  onChange={(e) =>
+                  value={formData.income.exactCreditScore !== undefined && formData.income.exactCreditScore !== null ? formData.income.exactCreditScore : ''}
+                  onChange={(e) => {
+                    const val = e.target.value === '' ? undefined : parseInt(e.target.value);
                     setFormData({
                       ...formData,
                       income: {
                         ...formData.income,
-                        exactCreditScore: parseInt(e.target.value) || 0,
+                        exactCreditScore: val,
                       },
-                    })
-                  }
+                    });
+                  }}
+                  placeholder="e.g. 720"
                   className="w-full bg-[#0b1528] border border-amber-500/50 rounded-lg p-2 text-amber-300 font-bold font-mono text-sm focus:outline-none"
                 />
               </div>
@@ -2922,6 +3225,24 @@ export const MasterVerificationTab: React.FC<MasterVerificationTabProps> = ({
             </button>
           </div>
         </div>
+      )}
+
+      {/* AI Review Modal */}
+      {activeReviewDoc && (
+        <DocumentAiReviewModal
+          isOpen={Boolean(activeReviewDoc)}
+          onClose={() => setActiveReviewDoc(null)}
+          document={activeReviewDoc}
+          clientId={client.id}
+          clientName={`${client.firstName} ${client.lastName}`}
+          businessName={client.businessName}
+          onVerificationUpdated={() => {
+            onRefresh();
+            api.getMasterVerification(client.id).then((mv) => {
+              if (mv) setFormData(mv);
+            });
+          }}
+        />
       )}
     </div>
   );

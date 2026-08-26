@@ -31,6 +31,7 @@ import {
 } from '../../types';
 import { useData } from '../../context/DataContext';
 import { useAuth } from '../../context/AuthContext';
+import { api } from '../../services/api';
 import { firestoreService } from '../../services/firestoreService';
 import { MasterPersonalSection } from './masterEditor/MasterPersonalSection';
 import { MasterBusinessSection } from './masterEditor/MasterBusinessSection';
@@ -412,8 +413,15 @@ export const MasterFileEditor: React.FC<MasterFileEditorProps> = ({
           {activeTab === 'documents' && (
             <MasterDocumentsSection
               clientId={client.id}
+              clientName={`${clientForm.firstName || client.firstName} ${clientForm.lastName || client.lastName}`}
+              businessName={clientForm.businessName || client.businessName}
               documents={documentsList}
               onChangeDocuments={handleDocumentsChange}
+              onVerificationUpdated={() => {
+                api.getMasterVerification(client.id).then((mv) => {
+                  if (mv) setVerificationForm(mv);
+                });
+              }}
             />
           )}
 

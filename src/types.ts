@@ -1426,14 +1426,21 @@ export interface LenderResponse {
 
 export type DocumentCategoryType =
   | "Driver's License"
+  | 'Bank Statement'
   | 'Bank Statements'
+  | 'Tax Return'
   | 'Tax Returns'
-  | 'Voided Check'
   | 'Profit & Loss'
-  | 'Articles of Incorporation'
+  | 'Voided Check'
   | 'Business License'
+  | 'Articles of Incorporation'
+  | 'Business Credit Card Statement'
+  | 'Loan Statement'
+  | 'MCA Statement'
   | 'Pay Stubs'
-  | 'Other';
+  | 'Other Financial Document'
+  | 'Other'
+  | string;
 
 export interface ExtractedFieldItem {
   key: string;

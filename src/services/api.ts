@@ -405,6 +405,26 @@ export const api = {
     return null;
   },
 
+  retryAiDocumentAnalysis: async (docId: string, requestedBy = 'Staff') => {
+    try {
+      const res = await fetch(`/api/documents/${docId}/retry-ai`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ requestedBy }),
+      });
+      if (res.ok) {
+        const result = await res.json();
+        if (result.document) {
+          firestoreService.updateLocalDocument(result.document);
+        }
+        return result;
+      }
+    } catch (err) {
+      console.warn('Backend /api/documents/retry-ai error:', err);
+    }
+    return null;
+  },
+
   applyExtractionToVerification: async (
     docId: string,
     payload: {

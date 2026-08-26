@@ -3180,56 +3180,162 @@ app.post('/api/documents/upload-and-analyze', async (req, res) => {
       return res.status(400).json({ error: 'clientId is required' });
     }
 
-    const clientRecord = db.clients.find((c) => c.id === clientId);
-    const currentMasterVerification = db.masterVerifications[clientId];
-
-    const extraction = await analyzeDocumentWithAi({
-      clientId,
-      fileName: fileName || title || 'Document',
-      fileBase64,
-      fileMimeType,
-      rawText,
-      categoryHint: category,
-      clientRecord,
-      currentMasterVerification,
-    });
-
     const now = new Date().toISOString();
     const docId = `doc-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
-    extraction.docId = docId;
+    const effectiveFileName = fileName || 'document.pdf';
+    const effectiveTitle = title && title.trim() ? title.trim() : effectiveFileName.replace(/\.[^/.]+$/, '').replace(/[_-]/g, ' ');
 
-    const newDoc = {
+    // 1. ALWAYS store the document safely FIRST
+    const newDoc: any = {
       id: docId,
       clientId,
-      dealId,
-      category: (extraction.detectedCategory && extraction.detectedCategory !== 'Other') ? extraction.detectedCategory : (category || 'Other'),
-      title: title || fileName || `${extraction.detectedCategory} (${new Date().toLocaleDateString()})`,
-      fileName: fileName || 'document.pdf',
+      dealId: dealId || undefined,
+      category: category || 'Other',
+      title: effectiveTitle,
+      fileName: effectiveFileName,
       fileSize: fileSize || '1.2 MB',
-      fileUrl: fileUrl || (fileBase64 ? 'data:application/pdf;base64,...' : undefined),
+      fileUrl: fileUrl || (fileBase64 ? fileBase64 : undefined),
+      fileBase64: fileBase64 || undefined,
+      fileMimeType: fileMimeType || 'application/pdf',
       uploadedBy: uploadedBy || 'Staff',
       uploadedDate: now,
       status: 'RECEIVED',
-      aiExtraction: extraction,
+      aiExtraction: undefined,
     };
 
     db.documents.unshift(newDoc);
 
     addTimelineEvent(
       clientId,
-      `AI Scanned Document: ${newDoc.category}`,
-      `Document "${newDoc.title}" scanned by AI Engine. Extracted ${extraction.extractedFields.length} data points ready for unverified pre-fill review.`,
+      `Document Uploaded: ${newDoc.category}`,
+      `File "${newDoc.fileName}" (${newDoc.fileSize}) safely uploaded by ${newDoc.uploadedBy} to Document Vault.`,
       uploadedBy || 'Staff',
       'DOCUMENT',
       dealId
     );
 
     saveDb();
-    res.status(201).json({ success: true, document: newDoc, extraction });
+
+    // 2. Run AI Analysis (Non-blocking to document storage)
+    let extraction: any = null;
+    let aiError: string | null = null;
+
+    try {
+      const clientRecord = db.clients.find((c) => c.id === clientId);
+      const currentMasterVerification = db.masterVerifications[clientId];
+
+      extraction = await analyzeDocumentWithAi({
+        clientId,
+        fileName: effectiveFileName,
+        fileBase64,
+        fileMimeType,
+        rawText,
+        categoryHint: category,
+        clientRecord,
+        currentMasterVerification,
+      });
+
+      if (extraction) {
+        extraction.docId = docId;
+        newDoc.aiExtraction = extraction;
+        if (extraction.detectedCategory && extraction.detectedCategory !== 'Other') {
+          newDoc.category = extraction.detectedCategory;
+        }
+
+        addTimelineEvent(
+          clientId,
+          `AI Scanned Document: ${newDoc.category}`,
+          `Document "${newDoc.title}" scanned by AI Engine. Extracted ${extraction.extractedFields?.length || 0} data points ready for unverified pre-fill review.`,
+          uploadedBy || 'Staff',
+          'DOCUMENT',
+          dealId
+        );
+
+        saveDb();
+      }
+    } catch (err: any) {
+      console.warn('AI Document Analysis failed after upload, document remains safely stored:', err);
+      aiError = err.message || 'AI document analysis failed';
+    }
+
+    res.status(201).json({
+      success: true,
+      document: newDoc,
+      extraction: extraction || undefined,
+      aiError: aiError || undefined,
+    });
   } catch (err: any) {
-    console.error('Error uploading and analyzing document:', err);
-    res.status(500).json({ error: err.message || 'Upload and analysis failed' });
+    console.error('Error uploading document to vault:', err);
+    res.status(500).json({ error: err.message || 'Upload failed' });
   }
+});
+
+// Retry AI extraction on existing stored document
+app.post('/api/documents/:id/retry-ai', async (req, res) => {
+  const { id } = req.params;
+  const doc = db.documents.find((d) => d.id === id);
+  if (!doc) return res.status(404).json({ error: 'Document not found' });
+
+  try {
+    const clientRecord = db.clients.find((c) => c.id === doc.clientId);
+    const currentMasterVerification = db.masterVerifications[doc.clientId];
+
+    const extraction = await analyzeDocumentWithAi({
+      clientId: doc.clientId,
+      fileName: doc.fileName || doc.title,
+      fileBase64: doc.fileBase64,
+      fileMimeType: doc.fileMimeType,
+      categoryHint: doc.category,
+      clientRecord,
+      currentMasterVerification,
+    });
+
+    extraction.docId = doc.id;
+    doc.aiExtraction = extraction;
+    if (extraction.detectedCategory && extraction.detectedCategory !== 'Other') {
+      doc.category = extraction.detectedCategory;
+    }
+
+    addTimelineEvent(
+      doc.clientId,
+      `AI Analysis Retried: ${doc.category}`,
+      `AI analysis re-run for "${doc.title}". Extracted ${extraction.extractedFields?.length || 0} data points.`,
+      req.body.requestedBy || 'Staff',
+      'DOCUMENT',
+      doc.dealId
+    );
+
+    saveDb();
+    res.json({ success: true, document: doc, extraction });
+  } catch (err: any) {
+    console.error('Retry AI analysis error:', err);
+    res.status(500).json({ error: err.message || 'AI Retry failed' });
+  }
+});
+
+// Download / View document endpoint
+app.get('/api/documents/:id/download', (req, res) => {
+  const { id } = req.params;
+  const doc = db.documents.find((d) => d.id === id);
+  if (!doc) return res.status(404).json({ error: 'Document not found' });
+
+  if (doc.fileBase64 && doc.fileBase64.includes('base64,')) {
+    const parts = doc.fileBase64.split('base64,');
+    const mime = doc.fileMimeType || 'application/octet-stream';
+    const buffer = Buffer.from(parts[1], 'base64');
+
+    res.setHeader('Content-Type', mime);
+    res.setHeader('Content-Disposition', `attachment; filename="${encodeURIComponent(doc.fileName || 'document')}"`);
+    return res.send(buffer);
+  } else if (doc.fileUrl && doc.fileUrl.startsWith('http')) {
+    return res.redirect(doc.fileUrl);
+  }
+
+  // Fallback plaintext simulated file content
+  const mockContent = `Document: ${doc.title}\nCategory: ${doc.category}\nFile: ${doc.fileName}\nClient ID: ${doc.clientId}\nUploaded Date: ${doc.uploadedDate}\nStatus: ${doc.status}\n\n[Maple X Financial Encrypted Document Archive]`;
+  res.setHeader('Content-Type', 'text/plain');
+  res.setHeader('Content-Disposition', `attachment; filename="${encodeURIComponent(doc.fileName || 'document.txt')}"`);
+  res.send(mockContent);
 });
 
 app.post('/api/documents/:docId/apply-to-verification', (req, res) => {

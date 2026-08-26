@@ -23,6 +23,7 @@ import {
 import { useAuth } from '../../context/AuthContext';
 import { useData } from '../../context/DataContext';
 import { api } from '../../services/api';
+import { formatDateTime } from '../../utils/dateUtils';
 import { Client, Lead, FundingDeal, AppNotification } from '../../types';
 import { UserProfileModal } from '../auth/UserProfileModal';
 
@@ -355,9 +356,9 @@ export const Header: React.FC<HeaderProps> = ({
                               High Priority
                             </span>
                           )}
-                          <span className="text-[10px] text-slate-400 flex items-center gap-1">
+                          <span className="text-[10px] text-slate-400 flex items-center gap-1 font-mono">
                             <Clock className="w-3 h-3 text-slate-500" />
-                            {new Date(notif.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                            {formatDateTime(notif.createdAt)}
                           </span>
                         </div>
                         {!notif.isRead && (

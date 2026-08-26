@@ -13,6 +13,7 @@ import {
   CreditCardRecord,
   LenderHistoryRecord,
 } from '../types';
+import { formatDate } from './dateUtils';
 
 export interface PdfExportOptions {
   includeVerification?: boolean;
@@ -84,11 +85,7 @@ function addHeader(
   doc.setFont('helvetica', 'bold');
   doc.text(subtitle, 14, 34);
 
-  const dateStr = new Date().toLocaleDateString('en-US', {
-    year: 'numeric',
-    month: 'short',
-    day: 'numeric',
-  });
+  const dateStr = formatDate(new Date());
   doc.setFont('helvetica', 'normal');
   doc.setTextColor(...TEXT_MUTED);
   doc.text(`Generated: ${dateStr}`, pageWidth - 14, 34, { align: 'right' });
@@ -297,7 +294,7 @@ export function generateClientMasterFilePdf(
       head: [['UNDERWRITING OVERVIEW & DECISION MATRIX', '']],
       body: [
         ['Underwriting Decision', `${uw.recommendation || 'QUALIFIED'} (Status: ${uw.status || 'READY_FOR_LENDER'})`],
-        ['Underwriter Assigned', `${uw.preparedBy || 'Dana Javier'} | Date Prepared: ${uw.preparedDate || new Date().toISOString().split('T')[0]}`],
+        ['Underwriter Assigned', `${uw.preparedBy || 'Dana Javier'} | Date Prepared: ${formatDate(uw.preparedDate || new Date())}`],
         ['Recommended Funding Amount', `$${Number(uw.recommendedFundingAmount || uw.fundingRequest?.recommendedAmount || 50000).toLocaleString()}`],
         ['Recommended Product', uw.recommendedProduct || 'Business Line of Credit'],
         ['Recommendation Recommendation', uw.recommendation || 'RECOMMEND WITH CONDITIONS'],
@@ -411,7 +408,7 @@ export function generateClientMasterFilePdf(
         docItem.category || 'Standard Document',
         docItem.status || 'VERIFIED',
         docItem.fileSize || '1.0 MB',
-        docItem.uploadedDate ? new Date(docItem.uploadedDate).toLocaleDateString() : 'Current',
+        formatDate(docItem.uploadedDate, 'Current'),
       ]),
       theme: 'grid',
       headStyles: { fillColor: NAVY, textColor: [255, 255, 255], fontStyle: 'bold', fontSize: 8 },
@@ -432,7 +429,7 @@ export function generateClientMasterFilePdf(
       startY: currentY,
       head: [['DATE / TIME', 'AUTHOR', 'CATEGORY', 'INTERNAL NOTE DETAILS']],
       body: data.internalNotes.map((n) => [
-        n.timestamp ? new Date(n.timestamp).toLocaleDateString() : 'Recent',
+        formatDate(n.timestamp, 'Recent'),
         n.author || 'Staff',
         n.type || 'General',
         n.content || '',
@@ -629,7 +626,7 @@ export function generateUnderwritingReportPdf(
     body: [
       ['Evaluation Status', `${underwriting.status || 'READY_FOR_LENDER'} — Approved for Lender Submission`],
       ['Prepared & Audited By', `${underwriting.preparedBy || 'Dana Javier'} (Supreme Funding Commander)`],
-      ['Date Signed', underwriting.preparedDate || new Date().toISOString().split('T')[0]],
+      ['Date Signed', formatDate(underwriting.preparedDate || new Date())],
       ['Final Underwriting Conclusion', underwriting.underwriterComments || 'File meets all Tier-1 capital underwriting guidelines. Strongly recommended for approval.'],
     ],
     theme: 'grid',

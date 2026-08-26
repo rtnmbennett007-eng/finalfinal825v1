@@ -57,6 +57,7 @@ import {
   UnderwritingRecord,
   UnderwritingEvaluationRecord,
 } from '../../types';
+import { formatDate, formatDateTime } from '../../utils/dateUtils';
 
 // Tab Subcomponents
 import { FundingStrategyTab } from './tabs/FundingStrategyTab';
@@ -715,7 +716,7 @@ export const ClientDetailView: React.FC<ClientDetailViewProps> = ({
           <div className="bg-[#070d18] p-2.5 rounded-xl border border-blue-900/40">
             <span className="text-slate-400 block text-[10px] uppercase font-bold tracking-wider">Last Activity</span>
             <span className="font-semibold text-slate-200 truncate block mt-0.5">
-              {client.updatedAt ? new Date(client.updatedAt).toLocaleDateString() : 'Recent'}
+              {formatDate(client.updatedAt, 'Recent')}
             </span>
           </div>
 
@@ -865,7 +866,7 @@ export const ClientDetailView: React.FC<ClientDetailViewProps> = ({
 
                 <div className="flex items-center justify-between pt-2">
                   <span className="text-slate-400">Date of Birth:</span>
-                  <span className="font-mono">{client.dob || 'Not Provided'}</span>
+                  <span className="font-mono">{formatDate(client.dob, 'Not Provided')}</span>
                 </div>
 
                 <div className="flex items-center justify-between pt-2">
@@ -910,7 +911,7 @@ export const ClientDetailView: React.FC<ClientDetailViewProps> = ({
 
                 <div className="flex items-center justify-between pt-2">
                   <span className="text-slate-400">Business Start Date:</span>
-                  <span className="font-mono">{client.businessStartDate}</span>
+                  <span className="font-mono">{formatDate(client.businessStartDate, 'Not Provided')}</span>
                 </div>
 
                 <div className="flex items-center justify-between pt-2">
@@ -1293,7 +1294,7 @@ export const ClientDetailView: React.FC<ClientDetailViewProps> = ({
                 </div>
 
                 <div className="text-[11px] text-slate-400 flex items-center justify-between pt-2 border-t border-blue-900/40">
-                  <span>Uploaded: {doc.uploadedDate?.split('T')[0]}</span>
+                  <span>Uploaded: {formatDate(doc.uploadedDate, 'Recent')}</span>
                   <span>{doc.fileSize}</span>
                 </div>
               </div>
@@ -1341,7 +1342,7 @@ export const ClientDetailView: React.FC<ClientDetailViewProps> = ({
                   <div className="flex items-center justify-between">
                     <span className="font-bold text-slate-100">{event.title}</span>
                     <span className="text-[10px] text-slate-400 font-mono">
-                      {event.timestamp?.replace('T', ' ').slice(0, 16)}
+                      {formatDateTime(event.timestamp)}
                     </span>
                   </div>
                   <p className="text-slate-300 mt-0.5">{event.description}</p>

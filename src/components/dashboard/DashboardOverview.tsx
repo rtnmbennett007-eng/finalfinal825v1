@@ -40,6 +40,7 @@ import { InternalTask, PriorityLevel, TaskStatus } from '../../types';
 import { ClientHealthDashboard } from '../clients/tabs/ClientHealthDashboard';
 import { Activity } from 'lucide-react';
 import { calculateDashboardMetrics } from '../../utils/dashboardMetrics';
+import { formatDate, formatDateTime, formatTime } from '../../utils/dateUtils';
 
 interface DashboardOverviewProps {
   setActiveTab: (tab: string) => void;
@@ -730,7 +731,7 @@ export const DashboardOverview: React.FC<DashboardOverviewProps> = ({
                                 }`}
                               >
                                 <Calendar className="w-3 h-3" />
-                                {task.dueDate} {task.dueTime ? `@ ${task.dueTime}` : ''}
+                                {formatDate(task.dueDate)} {task.dueTime ? `@ ${task.dueTime}` : ''}
                                 {isOverdue && ' (OVERDUE)'}
                               </span>
 
@@ -840,7 +841,7 @@ export const DashboardOverview: React.FC<DashboardOverviewProps> = ({
                           </span>
                         )}
                         <span className="text-[10px] text-blue-300/80 font-mono">
-                          {new Date(notif.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                          {formatDateTime(notif.createdAt)}
                         </span>
                       </div>
                       {!notif.isRead && (
@@ -1438,7 +1439,7 @@ export const DashboardOverview: React.FC<DashboardOverviewProps> = ({
                                 <ProductBadge product={deal.product} />
                               </td>
                               <td className="py-3 font-mono text-slate-400">
-                                {deal.fundingDate ? deal.fundingDate.split('T')[0] : 'Recent'}
+                                {formatDate(deal.fundingDate, 'Recent')}
                               </td>
                               <td className="py-3 text-slate-300">{deal.lenderName || 'Direct'}</td>
                               <td className="py-3 text-right font-mono font-bold text-emerald-400">
@@ -1612,7 +1613,7 @@ export const DashboardOverview: React.FC<DashboardOverviewProps> = ({
                               </td>
                               <td className="py-3 text-slate-300">{deal.lenderName || 'Direct'}</td>
                               <td className="py-3 font-mono text-slate-400">
-                                {deal.collectionDate ? deal.collectionDate.split('T')[0] : 'Recorded'}
+                                {formatDate(deal.collectionDate, 'Recorded')}
                               </td>
                               <td className="py-3 text-right font-mono text-slate-200">
                                 ${Number(deal.fundingAmount).toLocaleString()}

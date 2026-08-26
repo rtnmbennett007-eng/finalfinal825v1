@@ -20,6 +20,7 @@ import { Lead, PipelineStage } from '../../types';
 import { StatusBadge } from '../common/StatusBadge';
 import { ConfirmModal } from '../common/ConfirmModal';
 import { LeadModal } from './LeadModal';
+import { formatDate } from '../../utils/dateUtils';
 
 interface LeadsWorkspaceProps {
   onOpenNewLeadModal: () => void;
@@ -285,8 +286,8 @@ export const LeadsWorkspace: React.FC<LeadsWorkspaceProps> = ({
                       </div>
                     </td>
 
-                    <td className="py-3 px-3 text-slate-500 text-[10px] font-mono">
-                      {lead.createdAt?.split('T')[0] || 'Recent'}
+                    <td className="py-3 px-3 text-slate-400 text-[11px] font-mono">
+                      {formatDate(lead.createdAt, 'Recent')}
                     </td>
 
                     <td className="py-3 px-4 text-right">

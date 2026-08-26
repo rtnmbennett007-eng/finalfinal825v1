@@ -19,6 +19,7 @@ import { Client, InternalTask, PriorityLevel, TaskStatus } from '../../../types'
 import { useData } from '../../../context/DataContext';
 import { useAuth } from '../../../context/AuthContext';
 import { ConfirmModal } from '../../common/ConfirmModal';
+import { formatDate } from '../../../utils/dateUtils';
 
 interface ClientTasksTabProps {
   client: Client;
@@ -254,7 +255,7 @@ export const ClientTasksTab: React.FC<ClientTasksTabProps> = ({
                       <span>•</span>
                       <span className="flex items-center gap-1">
                         <Calendar className="w-3.5 h-3.5 text-slate-400" />
-                        Due: {task.dueDate} {task.dueTime}
+                        Due: {formatDate(task.dueDate)} {task.dueTime ? `@ ${task.dueTime}` : ''}
                       </span>
                     </div>
                   </div>

@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { Share2, MessageSquare, RefreshCw, CheckCircle2, AlertTriangle, ExternalLink } from 'lucide-react';
 import { Client } from '../../../types';
 import { useData } from '../../../context/DataContext';
+import { formatDateTime } from '../../../utils/dateUtils';
 
 interface MasterIntegrationsSectionProps {
   form: Partial<Client>;
@@ -91,7 +92,7 @@ export const MasterIntegrationsSection: React.FC<MasterIntegrationsSectionProps>
             <input
               type="text"
               readOnly
-              value={form.ghlLastSync ? new Date(form.ghlLastSync).toLocaleString() : 'Never synced'}
+              value={formatDateTime(form.ghlLastSync, 'Never synced')}
               className="w-full bg-[#070d18] border border-blue-900/70 rounded-xl p-2.5 text-xs text-slate-400 font-mono cursor-not-allowed"
             />
           </div>

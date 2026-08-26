@@ -39,6 +39,7 @@ import { api } from '../../../services/api';
 import { useData } from '../../../context/DataContext';
 import { useAuth } from '../../../context/AuthContext';
 import { firestoreService } from '../../../services/firestoreService';
+import { formatDate, formatDateTime } from '../../../utils/dateUtils';
 
 interface MasterVerificationTabProps {
   client: Client;
@@ -1176,7 +1177,7 @@ export const MasterVerificationTab: React.FC<MasterVerificationTabProps> = ({
                   Specialist: <strong className="text-slate-200">{formData.verificationSpecialist}</strong>
                 </span>
                 <span className="text-slate-500">•</span>
-                <span className="text-xs text-slate-400 font-mono">Date: {formData.date}</span>
+                <span className="text-xs text-slate-400 font-mono">Date: {formatDate(formData.date)}</span>
               </div>
               <h2 className="text-lg font-bold text-slate-100 mt-1">
                 Live Phone & Underwriting Verification Worksheet
@@ -1223,7 +1224,7 @@ export const MasterVerificationTab: React.FC<MasterVerificationTabProps> = ({
               {formData.status === 'COMPLETE' && formData.verifiedBy ? (
                 <span className="text-emerald-300 font-semibold">
                   Signed off by <strong className="text-white">{formData.verifiedBy}</strong> on{' '}
-                  {formData.verifiedAt ? new Date(formData.verifiedAt).toLocaleDateString() : 'N/A'}. Client advanced to Underwriting.
+                  {formData.verifiedAt ? formatDate(formData.verifiedAt) : 'N/A'}. Client advanced to Underwriting.
                 </span>
               ) : (
                 'All fields must be confirmed and verified before signing off. Marking complete advances client pipeline to Underwriting.'
@@ -1778,7 +1779,7 @@ export const MasterVerificationTab: React.FC<MasterVerificationTabProps> = ({
                 <span>Last updated: </span>
                 <span className="font-mono text-slate-200">
                   {formData.employmentVerification?.updatedAt
-                    ? new Date(formData.employmentVerification.updatedAt).toLocaleString()
+                    ? formatDateTime(formData.employmentVerification.updatedAt)
                     : 'Current session'}
                 </span>
                 <span className="ml-2 text-amber-400 font-semibold">

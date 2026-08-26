@@ -31,6 +31,7 @@ import { api } from '../../../services/api';
 import { useData } from '../../../context/DataContext';
 import { ConfirmModal } from '../../common/ConfirmModal';
 import { useAuth } from '../../../context/AuthContext';
+import { formatDate } from '../../../utils/dateUtils';
 
 interface FundingStrategyTabProps {
   client: Client;
@@ -428,7 +429,7 @@ export const FundingStrategyTab: React.FC<FundingStrategyTabProps> = ({
               </span>
               <span>•</span>
               <span className="text-xs text-slate-400">
-                Next Review: <strong className="text-amber-300 font-mono">{formData.nextReviewDate}</strong>
+                Next Review: <strong className="text-amber-300 font-mono">{formatDate(formData.nextReviewDate)}</strong>
               </span>
             </div>
             <h2 className="text-lg font-bold text-slate-100 mt-1">
@@ -694,7 +695,7 @@ export const FundingStrategyTab: React.FC<FundingStrategyTabProps> = ({
                   />
                 ) : (
                   <div className="p-2 rounded-xl bg-[#070d18] border border-blue-900/40 text-xs text-slate-200 font-mono">
-                    {formData.nextReviewDate}
+                    {formatDate(formData.nextReviewDate)}
                   </div>
                 )}
               </div>
@@ -814,7 +815,7 @@ export const FundingStrategyTab: React.FC<FundingStrategyTabProps> = ({
                             <span>•</span>
                             <span className="flex items-center gap-1">
                               <Calendar className="w-3 h-3 text-slate-400" />
-                              Due: {step.dueDate}
+                              Due: {formatDate(step.dueDate)}
                             </span>
                             <span>•</span>
                             <span

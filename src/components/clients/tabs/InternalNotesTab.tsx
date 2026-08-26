@@ -3,6 +3,7 @@ import { MessageSquare, Plus, Pin, Clock, User, AlertCircle, Save, Tag } from 'l
 import { Client, ClientInternalNote } from '../../../types';
 import { useData } from '../../../context/DataContext';
 import { useAuth } from '../../../context/AuthContext';
+import { formatDateTime } from '../../../utils/dateUtils';
 
 interface InternalNotesTabProps {
   client: Client;
@@ -218,7 +219,7 @@ export const InternalNotesTab: React.FC<InternalNotesTabProps> = ({
 
                 <span className="text-[10px] text-slate-400 font-mono flex items-center gap-1 shrink-0">
                   <Clock className="w-3 h-3" />
-                  {note.createdAt ? note.createdAt.replace('T', ' ').slice(0, 16) : 'Logged'}
+                  {formatDateTime(note.createdAt, 'Logged')}
                 </span>
               </div>
 

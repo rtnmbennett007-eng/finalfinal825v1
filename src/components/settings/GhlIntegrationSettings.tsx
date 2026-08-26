@@ -23,6 +23,7 @@ import {
 } from 'lucide-react';
 import { useData } from '../../context/DataContext';
 import { GhlConfig, PipelineStage } from '../../types';
+import { formatDateTime } from '../../utils/dateUtils';
 import { api } from '../../services/api';
 
 const ALL_PIPELINE_STAGES: { stage: PipelineStage; label: string; defaultGhl: string; category: string }[] = [
@@ -267,20 +268,7 @@ export const GhlIntegrationSettings: React.FC = () => {
   // Format last sync timestamp
   const formatLastSync = (isoString?: string) => {
     if (!isoString) return 'Never synced';
-    try {
-      const date = new Date(isoString);
-      return date.toLocaleString('en-US', {
-        month: 'short',
-        day: 'numeric',
-        year: 'numeric',
-        hour: 'numeric',
-        minute: '2-digit',
-        second: '2-digit',
-        hour12: true,
-      });
-    } catch {
-      return isoString;
-    }
+    return formatDateTime(isoString, 'Never synced');
   };
 
   return (

@@ -23,6 +23,7 @@ import { api } from '../../../services/api';
 import { useData } from '../../../context/DataContext';
 import { useAuth } from '../../../context/AuthContext';
 import { ConfirmModal } from '../../common/ConfirmModal';
+import { formatDate } from '../../../utils/dateUtils';
 
 interface LenderHistoryTabProps {
   client: Client;
@@ -235,7 +236,7 @@ export const LenderHistoryTab: React.FC<LenderHistoryTabProps> = ({
                     <div className="text-xs text-slate-400 flex items-center space-x-3 mt-0.5">
                       <span>Product: <strong className="text-amber-300">{record.fundingProduct}</strong></span>
                       <span>•</span>
-                      <span>Sent Date: {record.dateSent}</span>
+                      <span>Sent Date: {formatDate(record.dateSent)}</span>
                       <span>•</span>
                       <span>Sent By: {record.sentBy}</span>
                     </div>
@@ -293,7 +294,7 @@ export const LenderHistoryTab: React.FC<LenderHistoryTabProps> = ({
                 <div className="p-3 rounded-xl bg-[#070d18] border border-blue-900/40">
                   <div className="text-[10px] text-slate-400 uppercase font-bold">Response Date</div>
                   <div className="text-sm font-bold text-slate-200 mt-0.5">
-                    {record.responseDate || 'Pending'}
+                    {formatDate(record.responseDate, 'Pending')}
                   </div>
                 </div>
 

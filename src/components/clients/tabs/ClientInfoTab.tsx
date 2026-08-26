@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { User, Phone, Mail, MapPin, Calendar, ShieldCheck, Edit2, Save, X, Lock } from 'lucide-react';
 import { Client } from '../../../types';
 import { SsnViewer } from '../../common/SsnViewer';
+import { formatDate } from '../../../utils/dateUtils';
 import { useData } from '../../../context/DataContext';
 
 interface ClientInfoTabProps {
@@ -235,7 +236,7 @@ export const ClientInfoTab: React.FC<ClientInfoTabProps> = ({ client, onRefresh 
               </div>
               <div className="flex items-center justify-between pt-2">
                 <span className="text-slate-400">Date of Birth:</span>
-                <span className="font-mono">{client.dob || 'Not Provided'}</span>
+                <span className="font-mono">{formatDate(client.dob, 'Not Provided')}</span>
               </div>
               <div className="flex items-center justify-between pt-2">
                 <span className="text-slate-400">Personal FICO Score:</span>

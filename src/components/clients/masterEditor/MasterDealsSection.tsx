@@ -13,6 +13,7 @@ import {
   Sparkles,
 } from 'lucide-react';
 import { FundingDeal, FundingProductType } from '../../../types';
+import { formatDate } from '../../../utils/dateUtils';
 
 interface MasterDealsSectionProps {
   clientId: string;
@@ -194,7 +195,7 @@ export const MasterDealsSection: React.FC<MasterDealsSectionProps> = ({
                         </span>
                       </div>
                       <p className="text-xs text-slate-400">
-                        Funded: {deal.fundingDate || 'Pending'} • Status: {deal.status}
+                        Funded: {formatDate(deal.fundingDate, 'Pending')} • Status: {deal.status}
                       </p>
                     </div>
                   </div>

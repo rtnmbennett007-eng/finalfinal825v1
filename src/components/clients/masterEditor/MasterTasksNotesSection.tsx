@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { ListTodo, MessageSquare, Plus, Trash2, CheckCircle2, Clock, Pin, AlertTriangle } from 'lucide-react';
 import { ClientInternalNote, InternalTask, TaskPriority, TaskStatus } from '../../../types';
+import { formatDate, formatDateTime } from '../../../utils/dateUtils';
 
 interface MasterTasksNotesSectionProps {
   clientId: string;
@@ -164,7 +165,7 @@ export const MasterTasksNotesSection: React.FC<MasterTasksNotesSectionProps> = (
                     {task.title}
                   </span>
                   <span className="text-[10px] text-slate-400">
-                    Due: {task.dueDate} • Assigned: {task.assignedTo} • Priority: {task.priority}
+                    Due: {formatDate(task.dueDate)} • Assigned: {task.assignedTo} • Priority: {task.priority}
                   </span>
                 </div>
               </div>
@@ -255,7 +256,7 @@ export const MasterTasksNotesSection: React.FC<MasterTasksNotesSectionProps> = (
                 </div>
                 <div className="flex items-center space-x-2">
                   <span className="text-[10px] text-slate-400">
-                    {note.createdAt ? new Date(note.createdAt).toLocaleString() : 'Recent'}
+                    {formatDateTime(note.createdAt, 'Recent')}
                   </span>
                   <button
                     type="button"

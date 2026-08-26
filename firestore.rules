@@ -6,58 +6,71 @@ service cloud.firestore {
       return request.auth != null;
     }
 
+    function hasUserDoc() {
+      return isAuthenticated() && exists(/databases/$(database)/documents/users/$(request.auth.uid));
+    }
+
     function getUserData() {
       return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
     }
 
     function isStaffOrAdmin() {
       return isAuthenticated() && (
-        (exists(/databases/$(database)/documents/users/$(request.auth.uid)) && (
+        (hasUserDoc() && (
           getUserData().role == 'admin' ||
           getUserData().role == 'staff' ||
           getUserData().role == 'INTERNAL_STAFF_ADMIN' ||
           getUserData().role == 'Senior Underwriter' ||
-          getUserData().role == 'Operations Specialist'
+          getUserData().role == 'Operations Specialist' ||
+          getUserData().role == 'DIRECTOR_UNDERWRITING' ||
+          getUserData().role == 'SALES_EXECUTIVE' ||
+          getUserData().role == 'UNDERWRITER' ||
+          getUserData().role == 'EXECUTIVE'
         )) ||
-        request.auth.token.email.matches('.*@maplexfinancial[.]com$') ||
-        request.auth.token.email == 'rtnmbennett007@gmail.com' ||
-        request.auth.token.email == 'rtnmbennett.ambrosia@gmail.com' ||
-        request.auth.token.email == 'elev8deals@gmail.com'
+        (request.auth.token.email != null && (
+          request.auth.token.email.matches('.*@maplexfinancial[.]com$') ||
+          request.auth.token.email == 'rtnmbennett007@gmail.com' ||
+          request.auth.token.email == 'rtnmbennett.ambrosia@gmail.com' ||
+          request.auth.token.email == 'elev8deals@gmail.com'
+        ))
       );
     }
 
     function isAdmin() {
       return isAuthenticated() && (
-        (exists(/databases/$(database)/documents/users/$(request.auth.uid)) && (
+        (hasUserDoc() && (
           getUserData().role == 'admin' ||
-          getUserData().role == 'INTERNAL_STAFF_ADMIN'
+          getUserData().role == 'INTERNAL_STAFF_ADMIN' ||
+          getUserData().role == 'EXECUTIVE'
         )) ||
-        request.auth.token.email == 'robert@maplexfinancial.com' ||
-        request.auth.token.email == 'dana.javier@maplexfinancial.com' ||
-        request.auth.token.email == 'luke.cowan@maplexfinancial.com' ||
-        request.auth.token.email == 'steve@maplexfinancial.com' ||
-        request.auth.token.email == 'rtnmbennett007@gmail.com' ||
-        request.auth.token.email == 'rtnmbennett.ambrosia@gmail.com' ||
-        request.auth.token.email == 'elev8deals@gmail.com'
+        (request.auth.token.email != null && (
+          request.auth.token.email == 'robert@maplexfinancial.com' ||
+          request.auth.token.email == 'dana.javier@maplexfinancial.com' ||
+          request.auth.token.email == 'luke.cowan@maplexfinancial.com' ||
+          request.auth.token.email == 'steve@maplexfinancial.com' ||
+          request.auth.token.email == 'rtnmbennett007@gmail.com' ||
+          request.auth.token.email == 'rtnmbennett.ambrosia@gmail.com' ||
+          request.auth.token.email == 'elev8deals@gmail.com'
+        ))
       );
     }
 
     function isClientOwner(clientId) {
       return isAuthenticated() && (
-        (exists(/databases/$(database)/documents/users/$(request.auth.uid)) && getUserData().clientId == clientId) ||
+        (hasUserDoc() && ('clientId' in getUserData()) && getUserData().clientId == clientId) ||
         request.auth.uid == clientId
       );
     }
 
-    // Users Collection
+    // Users Collection - User Profiles & RBAC
     match /users/{userId} {
       allow read: if isAuthenticated() && (request.auth.uid == userId || isStaffOrAdmin());
       allow create: if isAuthenticated() && (request.auth.uid == userId || isStaffOrAdmin());
       allow update: if isAuthenticated() && (request.auth.uid == userId || isStaffOrAdmin());
-      allow delete: if isStaffOrAdmin();
+      allow delete: if isAdmin();
     }
 
-    // Clients Collection
+    // Clients Collection - Master client records
     match /clients/{clientId} {
       allow read: if isStaffOrAdmin() || isClientOwner(clientId);
       allow create: if isStaffOrAdmin();
@@ -65,82 +78,89 @@ service cloud.firestore {
       allow delete: if isStaffOrAdmin();
     }
 
-    // Deals Collection (Funding Stacking: Multiple deals per client)
+    // Deals Collection - Commercial funding deals (Multiple deals per client supported)
     match /deals/{dealId} {
-      allow read: if isStaffOrAdmin() || (isAuthenticated() && isClientOwner(resource.data.clientId));
-      allow write: if isStaffOrAdmin();
+      allow read: if isStaffOrAdmin() || (isAuthenticated() && resource.data.clientId != null && isClientOwner(resource.data.clientId));
+      allow create, update, delete: if isStaffOrAdmin();
     }
 
-    // Tasks Collection
+    // Tasks Collection - Operational staff workflow tasks
     match /tasks/{taskId} {
       allow read: if isStaffOrAdmin() || (isAuthenticated() && resource.data.clientId != null && isClientOwner(resource.data.clientId));
       allow write: if isStaffOrAdmin();
     }
 
-    // Leads Collection
+    // Leads Collection - Prospective intake leads
     match /leads/{leadId} {
       allow read, write: if isStaffOrAdmin();
     }
 
-    // Commissions Collection
+    // Commissions Collection - Deal participant allocations
     match /commissions/{commissionId} {
-      allow read: if isStaffOrAdmin();
-      allow write: if isStaffOrAdmin();
+      allow read, write: if isStaffOrAdmin();
     }
 
-    // Commission Rules Collection (by loan/funding type)
+    // Commission Rules Collection - Configured rates by loan/funding type
     match /commissionRules/{ruleId} {
-      allow read: if isStaffOrAdmin();
-      allow write: if isStaffOrAdmin();
+      allow read, write: if isStaffOrAdmin();
     }
 
-    // Commission Directory
+    // Commission Directory - Staff & partner split directory
     match /commissionDirectory/{dirId} {
-      allow read: if isStaffOrAdmin();
-      allow write: if isStaffOrAdmin();
+      allow read, write: if isStaffOrAdmin();
     }
 
-    // Documents metadata collection (Files in Firebase Storage)
+    // Documents metadata collection (Files linked to Firebase Storage)
     match /documents/{docId} {
-      allow read: if isStaffOrAdmin() || (isAuthenticated() && isClientOwner(resource.data.clientId));
-      allow create: if isStaffOrAdmin() || (isAuthenticated() && isClientOwner(request.resource.data.clientId));
-      allow update: if isStaffOrAdmin() || (isAuthenticated() && isClientOwner(resource.data.clientId));
+      allow read: if isStaffOrAdmin() || (isAuthenticated() && resource.data.clientId != null && isClientOwner(resource.data.clientId));
+      allow create: if isStaffOrAdmin() || (isAuthenticated() && request.resource.data.clientId != null && isClientOwner(request.resource.data.clientId));
+      allow update: if isStaffOrAdmin() || (isAuthenticated() && resource.data.clientId != null && isClientOwner(resource.data.clientId));
       allow delete: if isStaffOrAdmin();
     }
 
-    // Timeline Events & Activity
+    // Timeline Events & Activity Stream
     match /timelineEvents/{eventId} {
       allow read: if isStaffOrAdmin() || (isAuthenticated() && resource.data.clientId != null && isClientOwner(resource.data.clientId));
-      allow write: if isStaffOrAdmin();
+      allow create: if isStaffOrAdmin() || (isAuthenticated() && request.resource.data.clientId != null && isClientOwner(request.resource.data.clientId));
+      allow update, delete: if isStaffOrAdmin();
     }
 
-    // Notifications
+    // Notifications - User alerts and task notifications
     match /notifications/{notifId} {
-      allow read: if isAuthenticated();
-      allow write: if isAuthenticated();
+      allow read, write: if isAuthenticated();
     }
 
-    // Funding Strategies
+    // Funding Strategies - Lender submission strategies
     match /fundingStrategies/{stratId} {
       allow read, write: if isStaffOrAdmin();
     }
 
-    // Master Verifications (Worksheet)
+    // Master Verifications (Client Verification Worksheets)
     match /masterVerifications/{clientId} {
       allow read, write: if isStaffOrAdmin();
     }
 
-    // Internal Notes
+    // Underwriting Records - Staged underwriting submissions & calculations
+    match /underwritingRecords/{clientId} {
+      allow read, write: if isStaffOrAdmin();
+    }
+
+    // Underwriting Evaluations - Comprehensive underwriting notes & evaluations
+    match /underwritingEvaluations/{evalId} {
+      allow read, write: if isStaffOrAdmin();
+    }
+
+    // Internal Notes - Internal staff communication on client files
     match /internalNotes/{noteId} {
       allow read, write: if isStaffOrAdmin();
     }
 
-    // Credit Cards
+    // Credit Cards - 0% card stacking records
     match /creditCards/{cardId} {
       allow read, write: if isStaffOrAdmin();
     }
 
-    // Lender History
+    // Lender History - Lender submission and decision history
     match /lenderHistory/{historyId} {
       allow read, write: if isStaffOrAdmin();
     }
@@ -155,34 +175,32 @@ service cloud.firestore {
       allow write: if isAdmin();
     }
 
-    // Settings (Lead Sources, Referral Partners, Integrations)
+    // Settings (Discord, GoHighLevel, Integrations)
     match /settings/{settingId} {
       allow read, write: if isStaffOrAdmin();
     }
 
-    // Lead Sources (dropdown options for lead intake)
+    // Lead Sources - Intake source dropdown options
     match /leadSources/{sourceId} {
       allow read, write: if isStaffOrAdmin();
     }
 
-    // Referral Partners (dropdown options for lead intake)
+    // Referral Partners - Partner dropdown options
     match /referralPartners/{partnerId} {
       allow read, write: if isStaffOrAdmin();
     }
 
-    // Products & Funding Types Catalog
+    // Products & Funding Types Catalog (canonical funding_products and alias products)
+    match /funding_products/{productId} {
+      allow read, write: if isStaffOrAdmin();
+    }
     match /products/{productId} {
       allow read, write: if isStaffOrAdmin();
     }
 
-    // Underwriting Evaluations
-    match /underwritingEvaluations/{evalId} {
-      allow read, write: if isStaffOrAdmin();
-    }
-
-    // System connectivity validation
+    // System connectivity and diagnostics
     match /system/{docId} {
-      allow read, write: if true;
+      allow read, write: if isAuthenticated();
     }
   }
 }

@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { Building2, DollarSign, Edit2, Save, X, FileText, MapPin, Calendar, Percent } from 'lucide-react';
 import { Client } from '../../../types';
 import { useData } from '../../../context/DataContext';
+import { formatDate } from '../../../utils/dateUtils';
 
 interface BusinessInfoTabProps {
   client: Client;
@@ -255,7 +256,7 @@ export const BusinessInfoTab: React.FC<BusinessInfoTabProps> = ({ client, onRefr
               </div>
               <div className="flex items-center justify-between pt-2">
                 <span className="text-slate-400">Formation Date:</span>
-                <span className="font-mono">{client.businessStartDate || 'Not Provided'}</span>
+                <span className="font-mono">{formatDate(client.businessStartDate, 'Not Provided')}</span>
               </div>
             </div>
           </div>

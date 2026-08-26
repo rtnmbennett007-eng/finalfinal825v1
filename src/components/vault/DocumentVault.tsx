@@ -11,6 +11,7 @@ import {
   Download,
 } from 'lucide-react';
 import { useData } from '../../context/DataContext';
+import { formatDate } from '../../utils/dateUtils';
 
 interface DocumentVaultProps {
   setActiveTab: (tab: string) => void;
@@ -131,7 +132,7 @@ export const DocumentVault: React.FC<DocumentVaultProps> = ({ setActiveTab }) =>
 
             <div className="pt-3 border-t border-slate-800 flex items-center justify-between">
               <span className="text-[10px] text-slate-500 font-mono">
-                {doc.uploadedDate?.split('T')[0]}
+                {formatDate(doc.uploadedDate, 'Recent')}
               </span>
 
               <button

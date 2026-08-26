@@ -885,73 +885,128 @@ export const MasterVerificationTab: React.FC<MasterVerificationTabProps> = ({
     }
   };
 
-  // Render a standard Verification Field row (As Applied vs Verified + Status + Notes)
+  // Render a standard Verification Field row (As Applied vs Verified + Status + Notes + Call Script)
   const renderFieldRow = (
     section: 'identity' | 'business',
     fieldKey: string,
     label: string,
-    fieldData?: MasterVerificationField
+    scriptText: string,
+    fieldData?: MasterVerificationField,
+    inputType: 'text' | 'date' | 'textarea' = 'text'
   ) => {
     const safeFieldData: MasterVerificationField = fieldData || {
       asApplied: '',
       verified: '',
       status: 'Unverified',
       notes: '',
+      script: scriptText,
     };
     return (
-      <div key={fieldKey} className="p-3.5 bg-[#070d18] border border-blue-900/40 rounded-xl space-y-2">
-        <div className="flex items-center justify-between">
-          <span className="text-xs font-bold text-slate-100">{label}</span>
-          <select
-            value={safeFieldData.status || 'Unverified'}
-            onChange={(e) => updateField(section, fieldKey, 'status', e.target.value as VerificationStatusType)}
-            className={`text-[10px] font-mono font-bold px-2 py-0.5 rounded border focus:outline-none ${
-              safeFieldData.status === 'Verified' || safeFieldData.status === 'Matches Application'
-                ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40'
-                : safeFieldData.status === 'Client Corrected It'
-                ? 'bg-blue-500/20 text-blue-300 border-blue-500/40'
-                : safeFieldData.status === 'Needs Correction'
-                ? 'bg-amber-500/20 text-amber-300 border-amber-500/40'
-                : 'bg-rose-500/20 text-rose-300 border-rose-500/40'
-            }`}
-          >
-            <option value="Unverified">Unverified</option>
-            <option value="Verified">Verified</option>
-            <option value="Matches Application">Matches Application</option>
-            <option value="Client Corrected It">Client Corrected It</option>
-            <option value="Needs Correction">Needs Correction</option>
-          </select>
+      <div
+        key={fieldKey}
+        className="p-4 bg-[#070d18] border border-blue-900/40 hover:border-blue-700/60 rounded-xl space-y-3 transition-colors shadow-sm"
+      >
+        {/* Row Header with Label & Verification Status Selector */}
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-blue-900/30 pb-2">
+          <div className="flex items-center gap-2">
+            <span className="text-xs font-bold text-slate-100 uppercase tracking-wide">{label}</span>
+          </div>
+          <div className="flex items-center gap-2">
+            <span className="text-[10px] text-slate-400 font-semibold uppercase">Status:</span>
+            <select
+              value={safeFieldData.status || 'Unverified'}
+              onChange={(e) => updateField(section, fieldKey, 'status', e.target.value as VerificationStatusType)}
+              className={`text-[11px] font-mono font-bold px-2.5 py-1 rounded-lg border focus:outline-none transition-colors cursor-pointer ${
+                safeFieldData.status === 'Verified' || safeFieldData.status === 'Matches Application'
+                  ? 'bg-emerald-950 text-emerald-300 border-emerald-500/80'
+                  : safeFieldData.status === 'Client Corrected It'
+                  ? 'bg-blue-950 text-blue-300 border-blue-500/80'
+                  : safeFieldData.status === 'Needs Correction'
+                  ? 'bg-amber-950 text-amber-300 border-amber-500/80'
+                  : 'bg-rose-950 text-rose-300 border-rose-500/80'
+              }`}
+            >
+              <option value="Unverified" className="bg-[#0b1528] text-rose-300 font-bold">Unverified</option>
+              <option value="Verified" className="bg-[#0b1528] text-emerald-300 font-bold">Verified</option>
+              <option value="Matches Application" className="bg-[#0b1528] text-emerald-300 font-bold">Matches Application</option>
+              <option value="Client Corrected It" className="bg-[#0b1528] text-cyan-300 font-bold">Client Corrected It</option>
+              <option value="Needs Correction" className="bg-[#0b1528] text-amber-300 font-bold">Needs Correction</option>
+              <option value="Pending" className="bg-[#0b1528] text-slate-300 font-bold">Pending</option>
+            </select>
+          </div>
         </div>
 
+        {/* Prominent Call Script / What to Ask */}
+        {scriptText && (
+          <div className="flex items-start gap-2 bg-blue-950/40 border border-blue-800/40 rounded-lg p-2.5 text-xs text-blue-200/90 font-medium italic">
+            <PhoneCall className="w-3.5 h-3.5 text-amber-400 shrink-0 mt-0.5" />
+            <div>
+              <span className="text-[10px] font-bold uppercase tracking-wider text-amber-400 not-italic block mb-0.5">
+                Verification Script / What to Ask
+              </span>
+              <span>"{scriptText}"</span>
+            </div>
+          </div>
+        )}
+
+        {/* As Applied vs Verified Inputs */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs">
           <div>
-            <label className="block text-[10px] text-slate-400 font-semibold mb-0.5">As Applied</label>
-            <input
-              type="text"
-              value={safeFieldData.asApplied || ''}
-              onChange={(e) => updateField(section, fieldKey, 'asApplied', e.target.value)}
-              className="w-full bg-[#0b1528] border border-blue-900/60 rounded-lg p-2 text-xs text-slate-300 focus:outline-none focus:border-amber-400"
-            />
+            <label className="block text-[10px] text-slate-400 font-semibold mb-1 uppercase tracking-wider">
+              As Applied / Application Answer
+            </label>
+            {inputType === 'textarea' ? (
+              <textarea
+                rows={2}
+                value={safeFieldData.asApplied || ''}
+                onChange={(e) => updateField(section, fieldKey, 'asApplied', e.target.value)}
+                placeholder="As reported on intake application..."
+                className="w-full bg-[#0b1528] border border-blue-900/60 rounded-lg p-2 text-xs text-slate-300 focus:outline-none focus:border-amber-400 resize-y"
+              />
+            ) : (
+              <input
+                type={inputType === 'date' ? 'date' : 'text'}
+                value={safeFieldData.asApplied || ''}
+                onChange={(e) => updateField(section, fieldKey, 'asApplied', e.target.value)}
+                placeholder="As reported..."
+                className="w-full bg-[#0b1528] border border-blue-900/60 rounded-lg p-2 text-xs text-slate-300 focus:outline-none focus:border-amber-400 font-medium"
+              />
+            )}
           </div>
 
           <div>
-            <label className="block text-[10px] text-emerald-400 font-semibold mb-0.5">Verified Value</label>
-            <input
-              type="text"
-              value={safeFieldData.verified || ''}
-              onChange={(e) => updateField(section, fieldKey, 'verified', e.target.value)}
-              className="w-full bg-[#0b1528] border border-emerald-500/50 rounded-lg p-2 text-xs text-emerald-200 font-bold focus:outline-none focus:border-emerald-400"
-            />
+            <label className="block text-[10px] text-emerald-400 font-semibold mb-1 uppercase tracking-wider flex items-center justify-between">
+              <span>Verified / Corrected Value</span>
+              <span className="text-[9px] text-emerald-500 font-normal">Active Underwriting Value</span>
+            </label>
+            {inputType === 'textarea' ? (
+              <textarea
+                rows={2}
+                value={safeFieldData.verified || ''}
+                onChange={(e) => updateField(section, fieldKey, 'verified', e.target.value)}
+                placeholder="Verified value confirmed with client..."
+                className="w-full bg-[#0b1528] border border-emerald-500/50 rounded-lg p-2 text-xs text-emerald-200 font-bold focus:outline-none focus:border-emerald-400 resize-y"
+              />
+            ) : (
+              <input
+                type={inputType === 'date' ? 'date' : 'text'}
+                value={safeFieldData.verified || ''}
+                onChange={(e) => updateField(section, fieldKey, 'verified', e.target.value)}
+                placeholder="Verified value..."
+                className="w-full bg-[#0b1528] border border-emerald-500/50 rounded-lg p-2 text-xs text-emerald-200 font-bold focus:outline-none focus:border-emerald-400 font-mono"
+              />
+            )}
           </div>
         </div>
 
+        {/* Verification Notes */}
         <div>
           <input
             type="text"
             value={safeFieldData.notes || ''}
             onChange={(e) => updateField(section, fieldKey, 'notes', e.target.value)}
-            placeholder="Verification notes or documentation reference..."
-            className="w-full bg-[#0b1528] border border-blue-900/40 rounded-lg px-2.5 py-1.5 text-[11px] text-slate-400 placeholder-slate-600 focus:outline-none focus:border-blue-700"
+            placeholder={`Verification notes for ${label.toLowerCase()} (e.g. verified on call, document match)...`}
+            className="w-full bg-[#0b1528] border border-blue-900/40 rounded-lg px-3 py-2 text-xs text-slate-300 placeholder-slate-600 focus:outline-none focus:border-blue-700"
           />
         </div>
       </div>
@@ -1265,6 +1320,28 @@ export const MasterVerificationTab: React.FC<MasterVerificationTabProps> = ({
         </div>
       </div>
 
+      {/* MASTER CALL SCRIPT INTRODUCTION BANNER */}
+      <div className="bg-blue-950/30 border border-blue-800/40 rounded-xl p-4 flex flex-col md:flex-row items-start md:items-center justify-between gap-3 shadow-inner">
+        <div className="flex items-start gap-3">
+          <div className="p-2.5 rounded-lg bg-amber-500/20 border border-amber-500/30 text-amber-400 shrink-0 mt-0.5">
+            <PhoneCall className="w-4 h-4" />
+          </div>
+          <div>
+            <span className="text-[10px] font-bold uppercase tracking-wider text-amber-400 block mb-0.5">
+              Caller Opening Script (Read Word-For-Word)
+            </span>
+            <p className="text-xs text-blue-100 italic leading-relaxed">
+              "Hello {client ? `${client.firstName} ${client.lastName}` : 'there'}, this is <strong className="text-amber-300 not-italic">{formData.verificationSpecialist || 'Underwriting Verification'}</strong> calling regarding your active business funding application for <strong className="text-amber-300 not-italic">{client?.businessName || formData.business.businessName.verified || 'your business'}</strong>. I'm conducting your quick 5-minute file verification call to verify your business details and deposit history so we can finalize lender submissions. Do you have a quick moment?"
+            </p>
+          </div>
+        </div>
+        <div className="flex items-center gap-2 shrink-0">
+          <span className="text-[10px] font-mono px-2.5 py-1 rounded bg-blue-900/40 border border-blue-700/50 text-blue-300 font-bold uppercase">
+            Live Call Mode
+          </span>
+        </div>
+      </div>
+
       {/* Section Navigation Pills */}
       <div className="flex items-center space-x-2 overflow-x-auto pb-2 border-b border-blue-900/60">
         {[
@@ -1298,16 +1375,50 @@ export const MasterVerificationTab: React.FC<MasterVerificationTabProps> = ({
       {/* SECTION 1: IDENTITY & CONTACT */}
       {activeSection === 'identity' && (
         <div className="bg-[#0b1528] border border-blue-900/60 p-6 rounded-2xl shadow-xl space-y-4">
-          <h3 className="text-sm font-bold text-amber-400 uppercase tracking-wider flex items-center gap-2">
-            <User className="w-4 h-4" />
-            Identity & Contact Information
-          </h3>
+          <div className="flex items-center justify-between border-b border-blue-900/40 pb-3">
+            <h3 className="text-sm font-bold text-amber-400 uppercase tracking-wider flex items-center gap-2">
+              <User className="w-4 h-4" />
+              Identity & Contact Information
+            </h3>
+            <span className="text-[10px] text-slate-400 font-mono">5 Verification Fields</span>
+          </div>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {renderFieldRow('identity', 'legalName', 'Client Legal Name', formData.identity.legalName)}
-            {renderFieldRow('identity', 'phone', 'Primary Contact Phone', formData.identity.phone)}
-            {renderFieldRow('identity', 'email', 'Primary Email Address', formData.identity.email)}
-            {renderFieldRow('identity', 'dob', 'Date of Birth', formData.identity.dob)}
-            {renderFieldRow('identity', 'ssnLast4', 'SSN (Last 4 Digits)', formData.identity.ssnLast4)}
+            {renderFieldRow(
+              'identity',
+              'legalName',
+              'Client Legal Name',
+              'Can you please confirm your full legal name as it appears on your government-issued ID?',
+              formData.identity.legalName
+            )}
+            {renderFieldRow(
+              'identity',
+              'phone',
+              'Primary Contact Phone',
+              'Can you confirm the best direct phone number where our team and lenders can reach you?',
+              formData.identity.phone
+            )}
+            {renderFieldRow(
+              'identity',
+              'email',
+              'Primary Email Address',
+              'What is your primary email address for receiving official funding agreements and disclosures?',
+              formData.identity.email
+            )}
+            {renderFieldRow(
+              'identity',
+              'dob',
+              'Date of Birth',
+              'Can you please confirm your date of birth for identity and credit bureau verification?',
+              formData.identity.dob,
+              'date'
+            )}
+            {renderFieldRow(
+              'identity',
+              'ssnLast4',
+              'SSN (Last 4 Digits)',
+              'Can you please confirm the last 4 digits of your Social Security Number for identity verification?',
+              formData.identity.ssnLast4
+            )}
           </div>
         </div>
       )}
@@ -1315,21 +1426,86 @@ export const MasterVerificationTab: React.FC<MasterVerificationTabProps> = ({
       {/* SECTION 2: BUSINESS PROFILE */}
       {activeSection === 'business' && (
         <div className="bg-[#0b1528] border border-blue-900/60 p-6 rounded-2xl shadow-xl space-y-4">
-          <h3 className="text-sm font-bold text-amber-400 uppercase tracking-wider flex items-center gap-2">
-            <Building2 className="w-4 h-4" />
-            Business Organization & Entity Details
-          </h3>
+          <div className="flex items-center justify-between border-b border-blue-900/40 pb-3">
+            <h3 className="text-sm font-bold text-amber-400 uppercase tracking-wider flex items-center gap-2">
+              <Building2 className="w-4 h-4" />
+              Business Organization & Entity Details
+            </h3>
+            <span className="text-[10px] text-slate-400 font-mono">10 Verification Fields</span>
+          </div>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {renderFieldRow('business', 'businessName', 'Legal Business Name', formData.business.businessName)}
-            {renderFieldRow('business', 'dba', 'DBA (If Applicable)', formData.business.dba)}
-            {renderFieldRow('business', 'businessAddress', 'Physical Business Address', formData.business.businessAddress)}
-            {renderFieldRow('business', 'ein', 'Federal Tax ID (EIN)', formData.business.ein)}
-            {renderFieldRow('business', 'stateOfIncorporation', 'State of Incorporation', formData.business.stateOfIncorporation)}
-            {renderFieldRow('business', 'entityType', 'Entity Structure (LLC, S-Corp, etc.)', formData.business.entityType)}
-            {renderFieldRow('business', 'businessStartDate', 'Business Inception Date', formData.business.businessStartDate)}
-            {renderFieldRow('business', 'ownershipPercentage', 'Ownership Percentage', formData.business.ownershipPercentage)}
-            {renderFieldRow('business', 'industry', 'Industry / NAICS Sector', formData.business.industry)}
-            {renderFieldRow('business', 'businessDescription', 'Business Nature & Description', formData.business.businessDescription)}
+            {renderFieldRow(
+              'business',
+              'businessName',
+              'Legal Business Name',
+              'Can you please confirm the exact legal name of your business as registered on your official documents?',
+              formData.business.businessName
+            )}
+            {renderFieldRow(
+              'business',
+              'dba',
+              'DBA (If Applicable)',
+              'Does your company operate under any DBA or trade name, or is it strictly operating under the legal name?',
+              formData.business.dba
+            )}
+            {renderFieldRow(
+              'business',
+              'businessAddress',
+              'Physical Business Address',
+              'What is the physical commercial address where your business operates?',
+              formData.business.businessAddress
+            )}
+            {renderFieldRow(
+              'business',
+              'ein',
+              'Federal Tax ID (EIN)',
+              'Can you please confirm your Federal Employer Identification Number (EIN) as assigned by the IRS?',
+              formData.business.ein
+            )}
+            {renderFieldRow(
+              'business',
+              'stateOfIncorporation',
+              'State of Incorporation',
+              'In which state is your business entity legally registered?',
+              formData.business.stateOfIncorporation
+            )}
+            {renderFieldRow(
+              'business',
+              'entityType',
+              'Entity Structure (LLC, S-Corp, etc.)',
+              'What is the legal structure of your business entity (such as LLC, S-Corp, C-Corp, or Sole Proprietorship)?',
+              formData.business.entityType
+            )}
+            {renderFieldRow(
+              'business',
+              'businessStartDate',
+              'Business Inception Date',
+              'What is the official start date or inception date of your business?',
+              formData.business.businessStartDate,
+              'date'
+            )}
+            {renderFieldRow(
+              'business',
+              'ownershipPercentage',
+              'Ownership Percentage',
+              'What percentage of the business do you personally own?',
+              formData.business.ownershipPercentage
+            )}
+            {renderFieldRow(
+              'business',
+              'industry',
+              'Industry / NAICS Sector',
+              'What primary industry or commercial sector does your business operate within?',
+              formData.business.industry
+            )}
+            {renderFieldRow(
+              'business',
+              'businessDescription',
+              'Business Nature & Description',
+              'Can you briefly describe the primary operations and products or services your business provides?',
+              formData.business.businessDescription,
+              'textarea'
+            )}
           </div>
         </div>
       )}
@@ -1339,16 +1515,26 @@ export const MasterVerificationTab: React.FC<MasterVerificationTabProps> = ({
         <div className="space-y-6">
           {/* Top Card: Verified Monthly Business Revenue, Personal Income, & Credit Score */}
           <div className="bg-[#0b1528] border border-blue-900/60 p-6 rounded-2xl shadow-xl space-y-5">
-            <h3 className="text-sm font-bold text-amber-400 uppercase tracking-wider flex items-center gap-2">
-              <DollarSign className="w-4 h-4" />
-              Income, Monthly Revenue & Credit Score Verification
-            </h3>
+            <div className="flex items-center justify-between border-b border-blue-900/40 pb-3">
+              <h3 className="text-sm font-bold text-amber-400 uppercase tracking-wider flex items-center gap-2">
+                <DollarSign className="w-4 h-4" />
+                Income, Monthly Revenue & Credit Score Verification
+              </h3>
+              <span className="text-[10px] text-slate-400 font-mono">Revenue & Personal Income Verification</span>
+            </div>
 
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              <div className="p-3.5 bg-[#070d18] border border-blue-900/40 rounded-xl">
-                <label className="block text-[10px] text-slate-400 uppercase font-bold mb-1">
-                  Verified Monthly Business Revenue
-                </label>
+              <div className="p-4 bg-[#070d18] border border-blue-900/40 rounded-xl space-y-2.5">
+                <div className="flex items-center justify-between">
+                  <label className="block text-[10px] text-slate-400 uppercase font-bold">
+                    Verified Monthly Business Revenue
+                  </label>
+                  <span className="text-[9px] text-emerald-400 font-mono uppercase font-bold">Bank Deposits</span>
+                </div>
+                <div className="flex items-start gap-1.5 bg-blue-950/40 border border-blue-800/40 rounded-lg p-2 text-[11px] text-blue-200/90 italic">
+                  <PhoneCall className="w-3 h-3 text-amber-400 shrink-0 mt-0.5" />
+                  <span>"Can you please confirm your average gross monthly revenue across all business accounts?"</span>
+                </div>
                 <input
                   type="number"
                   value={formData.income.verifiedMonthlyBusinessRevenue}
@@ -1365,10 +1551,17 @@ export const MasterVerificationTab: React.FC<MasterVerificationTabProps> = ({
                 />
               </div>
 
-              <div className="p-3.5 bg-[#070d18] border border-blue-900/40 rounded-xl">
-                <label className="block text-[10px] text-slate-400 uppercase font-bold mb-1">
-                  Verified Personal Annual Income
-                </label>
+              <div className="p-4 bg-[#070d18] border border-blue-900/40 rounded-xl space-y-2.5">
+                <div className="flex items-center justify-between">
+                  <label className="block text-[10px] text-slate-400 uppercase font-bold">
+                    Verified Personal Annual Income
+                  </label>
+                  <span className="text-[9px] text-emerald-400 font-mono uppercase font-bold">Total Sources</span>
+                </div>
+                <div className="flex items-start gap-1.5 bg-blue-950/40 border border-blue-800/40 rounded-lg p-2 text-[11px] text-blue-200/90 italic">
+                  <PhoneCall className="w-3 h-3 text-amber-400 shrink-0 mt-0.5" />
+                  <span>"What is your total personal annual income from all sources, including salary and draws?"</span>
+                </div>
                 <input
                   type="number"
                   value={formData.income.verifiedPersonalAnnualIncome}
@@ -1385,10 +1578,17 @@ export const MasterVerificationTab: React.FC<MasterVerificationTabProps> = ({
                 />
               </div>
 
-              <div className="p-3.5 bg-[#070d18] border border-blue-900/40 rounded-xl">
-                <label className="block text-[10px] text-slate-400 uppercase font-bold mb-1">
-                  Exact Numeric Credit Score (Bureau Confirmed)
-                </label>
+              <div className="p-4 bg-[#070d18] border border-blue-900/40 rounded-xl space-y-2.5">
+                <div className="flex items-center justify-between">
+                  <label className="block text-[10px] text-slate-400 uppercase font-bold">
+                    Exact Numeric Credit Score
+                  </label>
+                  <span className="text-[9px] text-amber-400 font-mono uppercase font-bold">Bureau Confirmed</span>
+                </div>
+                <div className="flex items-start gap-1.5 bg-blue-950/40 border border-blue-800/40 rounded-lg p-2 text-[11px] text-blue-200/90 italic">
+                  <PhoneCall className="w-3 h-3 text-amber-400 shrink-0 mt-0.5" />
+                  <span>"What is your approximate credit score, and are all credit bureaus unlocked for lender review?"</span>
+                </div>
                 <input
                   type="number"
                   value={formData.income.exactCreditScore}
@@ -1406,9 +1606,13 @@ export const MasterVerificationTab: React.FC<MasterVerificationTabProps> = ({
               </div>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div>
-                <label className="block text-xs font-semibold text-slate-300 mb-1">Revenue Trend</label>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-2 border-t border-blue-900/40">
+              <div className="p-4 bg-[#070d18] border border-blue-900/40 rounded-xl space-y-2.5">
+                <label className="block text-xs font-semibold text-slate-300">Revenue Trend (Past 3-6 Months)</label>
+                <div className="flex items-start gap-1.5 bg-blue-950/40 border border-blue-800/40 rounded-lg p-2 text-[11px] text-blue-200/90 italic">
+                  <PhoneCall className="w-3 h-3 text-amber-400 shrink-0 mt-0.5" />
+                  <span>"How has your business revenue trended over the past 3 to 6 months—steady, growing, or fluctuating?"</span>
+                </div>
                 <select
                   value={formData.income.revenueTrend}
                   onChange={(e) =>
@@ -1420,7 +1624,7 @@ export const MasterVerificationTab: React.FC<MasterVerificationTabProps> = ({
                       },
                     })
                   }
-                  className="w-full bg-[#070d18] border border-blue-900/70 rounded-xl p-2.5 text-xs text-slate-100 focus:outline-none"
+                  className="w-full bg-[#0b1528] border border-blue-900/70 rounded-xl p-2.5 text-xs text-slate-100 focus:outline-none"
                 >
                   <option value="Consistent">Consistent Revenue Flow</option>
                   <option value="Increased">Growing / Increasing Revenue</option>
@@ -1428,10 +1632,14 @@ export const MasterVerificationTab: React.FC<MasterVerificationTabProps> = ({
                 </select>
               </div>
 
-              <div>
-                <label className="block text-xs font-semibold text-slate-300 mb-1">
+              <div className="p-4 bg-[#070d18] border border-blue-900/40 rounded-xl space-y-2.5">
+                <label className="block text-xs font-semibold text-slate-300">
                   Revenue Explanation & Consistency Notes
                 </label>
+                <div className="flex items-start gap-1.5 bg-blue-950/40 border border-blue-800/40 rounded-lg p-2 text-[11px] text-blue-200/90 italic">
+                  <PhoneCall className="w-3 h-3 text-amber-400 shrink-0 mt-0.5" />
+                  <span>"Could you provide a brief explanation of any recent changes or drivers behind your revenue trend?"</span>
+                </div>
                 <input
                   type="text"
                   value={formData.income.revenueTrendExplanation}
@@ -1444,7 +1652,8 @@ export const MasterVerificationTab: React.FC<MasterVerificationTabProps> = ({
                       },
                     })
                   }
-                  className="w-full bg-[#070d18] border border-blue-900/70 rounded-xl p-2.5 text-xs text-slate-100 focus:outline-none"
+                  placeholder="e.g. Seasonal peak in Q4, expanded sales team in Q2..."
+                  className="w-full bg-[#0b1528] border border-blue-900/70 rounded-xl p-2.5 text-xs text-slate-100 focus:outline-none"
                 />
               </div>
             </div>
@@ -1802,15 +2011,22 @@ export const MasterVerificationTab: React.FC<MasterVerificationTabProps> = ({
 
       {/* SECTION 4: BANKING */}
       {activeSection === 'banking' && (
-        <div className="bg-[#0b1528] border border-blue-900/60 p-6 rounded-2xl shadow-xl space-y-4">
-          <h3 className="text-sm font-bold text-amber-400 uppercase tracking-wider flex items-center gap-2">
-            <CreditCard className="w-4 h-4" />
-            Banking & Cashflow Accounts
-          </h3>
+        <div className="bg-[#0b1528] border border-blue-900/60 p-6 rounded-2xl shadow-xl space-y-5">
+          <div className="flex items-center justify-between border-b border-blue-900/40 pb-3">
+            <h3 className="text-sm font-bold text-amber-400 uppercase tracking-wider flex items-center gap-2">
+              <CreditCard className="w-4 h-4" />
+              Banking & Cashflow Accounts Verification
+            </h3>
+            <span className="text-[10px] text-slate-400 font-mono">Operating Accounts & Cashflow</span>
+          </div>
 
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <div>
-              <label className="block text-xs font-semibold text-slate-300 mb-1">Primary Banking Institution</label>
+            <div className="p-4 bg-[#070d18] border border-blue-900/40 rounded-xl space-y-2.5">
+              <label className="block text-xs font-semibold text-slate-300">Primary Banking Institution</label>
+              <div className="flex items-start gap-1.5 bg-blue-950/40 border border-blue-800/40 rounded-lg p-2 text-[11px] text-blue-200/90 italic">
+                <PhoneCall className="w-3 h-3 text-amber-400 shrink-0 mt-0.5" />
+                <span>"What is the name of the primary financial institution where your company maintains its main operating checking account?"</span>
+              </div>
               <input
                 type="text"
                 value={formData.banking.primaryBank}
@@ -1820,12 +2036,17 @@ export const MasterVerificationTab: React.FC<MasterVerificationTabProps> = ({
                     banking: { ...formData.banking, primaryBank: e.target.value },
                   })
                 }
-                className="w-full bg-[#070d18] border border-blue-900/70 rounded-xl p-2.5 text-xs text-slate-100 focus:outline-none"
+                placeholder="e.g. Chase Bank, Bank of America, Wells Fargo"
+                className="w-full bg-[#0b1528] border border-blue-900/70 rounded-xl p-2.5 text-xs text-slate-100 focus:outline-none focus:border-amber-400"
               />
             </div>
 
-            <div>
-              <label className="block text-xs font-semibold text-slate-300 mb-1">Business Account Title / Number</label>
+            <div className="p-4 bg-[#070d18] border border-blue-900/40 rounded-xl space-y-2.5">
+              <label className="block text-xs font-semibold text-slate-300">Business Account Title / Number</label>
+              <div className="flex items-start gap-1.5 bg-blue-950/40 border border-blue-800/40 rounded-lg p-2 text-[11px] text-blue-200/90 italic">
+                <PhoneCall className="w-3 h-3 text-amber-400 shrink-0 mt-0.5" />
+                <span>"Can you confirm the account title and the last 4 digits of your primary business checking account?"</span>
+              </div>
               <input
                 type="text"
                 value={formData.banking.businessAccount}
@@ -1835,12 +2056,17 @@ export const MasterVerificationTab: React.FC<MasterVerificationTabProps> = ({
                     banking: { ...formData.banking, businessAccount: e.target.value },
                   })
                 }
-                className="w-full bg-[#070d18] border border-blue-900/70 rounded-xl p-2.5 text-xs text-slate-100 focus:outline-none"
+                placeholder="e.g. Acme Corp Primary Operating #4821"
+                className="w-full bg-[#0b1528] border border-blue-900/70 rounded-xl p-2.5 text-xs text-slate-100 focus:outline-none focus:border-amber-400"
               />
             </div>
 
-            <div>
-              <label className="block text-xs font-semibold text-slate-300 mb-1">Approximate Monthly Transfer Amount</label>
+            <div className="p-4 bg-[#070d18] border border-blue-900/40 rounded-xl space-y-2.5">
+              <label className="block text-xs font-semibold text-slate-300">Approximate Monthly Transfer Amount</label>
+              <div className="flex items-start gap-1.5 bg-blue-950/40 border border-blue-800/40 rounded-lg p-2 text-[11px] text-blue-200/90 italic">
+                <PhoneCall className="w-3 h-3 text-amber-400 shrink-0 mt-0.5" />
+                <span>"Approximately what dollar amount do you transfer monthly from the business as owner draws or payroll?"</span>
+              </div>
               <input
                 type="number"
                 value={formData.banking.approximateTransferAmount}
@@ -1853,44 +2079,57 @@ export const MasterVerificationTab: React.FC<MasterVerificationTabProps> = ({
                     },
                   })
                 }
-                className="w-full bg-[#070d18] border border-blue-900/70 rounded-xl p-2.5 text-xs text-emerald-300 font-mono focus:outline-none"
+                placeholder="e.g. 8500"
+                className="w-full bg-[#0b1528] border border-blue-900/70 rounded-xl p-2.5 text-xs text-emerald-300 font-mono font-bold focus:outline-none focus:border-emerald-400"
               />
             </div>
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-2 border-t border-blue-900/40">
-            <label className="flex items-center space-x-2 text-xs text-slate-200 cursor-pointer">
-              <input
-                type="checkbox"
-                checked={formData.banking.dedicatedBusinessChecking}
-                onChange={(e) =>
-                  setFormData({
-                    ...formData,
-                    banking: { ...formData.banking, dedicatedBusinessChecking: e.target.checked },
-                  })
-                }
-                className="rounded border-blue-800 text-amber-500 focus:ring-0"
-              />
-              <span>Dedicated Business Checking Account Used Exclusively</span>
-            </label>
+            <div className="p-4 bg-[#070d18] border border-blue-900/40 rounded-xl space-y-2">
+              <div className="flex items-start gap-1.5 bg-blue-950/40 border border-blue-800/40 rounded-lg p-2 text-[11px] text-blue-200/90 italic mb-2">
+                <PhoneCall className="w-3 h-3 text-amber-400 shrink-0 mt-0.5" />
+                <span>"Do you maintain a dedicated business checking account used exclusively for corporate business transactions?"</span>
+              </div>
+              <label className="flex items-center space-x-2 text-xs text-slate-200 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={formData.banking.dedicatedBusinessChecking}
+                  onChange={(e) =>
+                    setFormData({
+                      ...formData,
+                      banking: { ...formData.banking, dedicatedBusinessChecking: e.target.checked },
+                    })
+                  }
+                  className="rounded border-blue-800 text-amber-500 focus:ring-0"
+                />
+                <span className="font-semibold text-slate-200">Dedicated Business Checking Account Used Exclusively</span>
+              </label>
+            </div>
 
-            <label className="flex items-center space-x-2 text-xs text-slate-200 cursor-pointer">
-              <input
-                type="checkbox"
-                checked={formData.banking.regularBusinessToPersonalTransfers}
-                onChange={(e) =>
-                  setFormData({
-                    ...formData,
-                    banking: {
-                      ...formData.banking,
-                      regularBusinessToPersonalTransfers: e.target.checked,
-                    },
-                  })
-                }
-                className="rounded border-blue-800 text-amber-500 focus:ring-0"
-              />
-              <span>Regular Owner Draw / Business-to-Personal Transfers</span>
-            </label>
+            <div className="p-4 bg-[#070d18] border border-blue-900/40 rounded-xl space-y-2">
+              <div className="flex items-start gap-1.5 bg-blue-950/40 border border-blue-800/40 rounded-lg p-2 text-[11px] text-blue-200/90 italic mb-2">
+                <PhoneCall className="w-3 h-3 text-amber-400 shrink-0 mt-0.5" />
+                <span>"Do you make regular scheduled owner draws or transfers from your business checking account into your personal account?"</span>
+              </div>
+              <label className="flex items-center space-x-2 text-xs text-slate-200 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={formData.banking.regularBusinessToPersonalTransfers}
+                  onChange={(e) =>
+                    setFormData({
+                      ...formData,
+                      banking: {
+                        ...formData.banking,
+                        regularBusinessToPersonalTransfers: e.target.checked,
+                      },
+                    })
+                  }
+                  className="rounded border-blue-800 text-amber-500 focus:ring-0"
+                />
+                <span className="font-semibold text-slate-200">Regular Owner Draw / Business-to-Personal Transfers</span>
+              </label>
+            </div>
           </div>
         </div>
       )}
@@ -1911,6 +2150,17 @@ export const MasterVerificationTab: React.FC<MasterVerificationTabProps> = ({
                 <Plus className="w-3.5 h-3.5" />
                 <span>Add Existing Debt</span>
               </button>
+            </div>
+
+            {/* Script Callout for Existing Loans */}
+            <div className="flex items-start gap-2 bg-blue-950/40 border border-blue-800/40 rounded-lg p-2.5 text-xs text-blue-200/90 font-medium italic mt-3">
+              <PhoneCall className="w-3.5 h-3.5 text-amber-400 shrink-0 mt-0.5" />
+              <div>
+                <span className="text-[10px] font-bold uppercase tracking-wider text-amber-400 not-italic block mb-0.5">
+                  Verification Script / What to Ask
+                </span>
+                <span>"Do you currently have any open business term loans, equipment financing, SBA loans, lines of credit, or Merchant Cash Advances (MCAs) with daily or weekly debits?"</span>
+              </div>
             </div>
 
             <div className="space-y-3 mt-3">
@@ -1977,6 +2227,17 @@ export const MasterVerificationTab: React.FC<MasterVerificationTabProps> = ({
               </button>
             </div>
 
+            {/* Script Callout for Credit Cards */}
+            <div className="flex items-start gap-2 bg-blue-950/40 border border-blue-800/40 rounded-lg p-2.5 text-xs text-blue-200/90 font-medium italic mt-3">
+              <PhoneCall className="w-3.5 h-3.5 text-amber-400 shrink-0 mt-0.5" />
+              <div>
+                <span className="text-[10px] font-bold uppercase tracking-wider text-amber-400 not-italic block mb-0.5">
+                  Verification Script / What to Ask
+                </span>
+                <span>"Can you please confirm your open revolving business and personal credit cards, including the issuing bank, credit limits, and approximate current balances?"</span>
+              </div>
+            </div>
+
             <div className="space-y-3 mt-3">
               {(formData.creditCards || []).map((card, idx) => (
                 <div
@@ -2032,15 +2293,22 @@ export const MasterVerificationTab: React.FC<MasterVerificationTabProps> = ({
 
       {/* SECTION 6: HOUSING & FUNDING REQUEST */}
       {activeSection === 'housing' && (
-        <div className="bg-[#0b1528] border border-blue-900/60 p-6 rounded-2xl shadow-xl space-y-4">
-          <h3 className="text-sm font-bold text-amber-400 uppercase tracking-wider flex items-center gap-2">
-            <Home className="w-4 h-4" />
-            Housing & Funding Request Verification
-          </h3>
+        <div className="bg-[#0b1528] border border-blue-900/60 p-6 rounded-2xl shadow-xl space-y-5">
+          <div className="flex items-center justify-between border-b border-blue-900/40 pb-3">
+            <h3 className="text-sm font-bold text-amber-400 uppercase tracking-wider flex items-center gap-2">
+              <Home className="w-4 h-4" />
+              Housing & Funding Request Verification
+            </h3>
+            <span className="text-[10px] text-slate-400 font-mono">Living Status & Capital Timeline</span>
+          </div>
 
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <div>
-              <label className="block text-xs font-semibold text-slate-300 mb-1">Housing Type</label>
+            <div className="p-4 bg-[#070d18] border border-blue-900/40 rounded-xl space-y-2.5">
+              <label className="block text-xs font-semibold text-slate-300">Housing Type</label>
+              <div className="flex items-start gap-1.5 bg-blue-950/40 border border-blue-800/40 rounded-lg p-2 text-[11px] text-blue-200/90 italic">
+                <PhoneCall className="w-3 h-3 text-amber-400 shrink-0 mt-0.5" />
+                <span>"Do you own your primary residence, rent, or have another living arrangement?"</span>
+              </div>
               <select
                 value={formData.housing.housingType}
                 onChange={(e) =>
@@ -2049,7 +2317,7 @@ export const MasterVerificationTab: React.FC<MasterVerificationTabProps> = ({
                     housing: { ...formData.housing, housingType: e.target.value as any },
                   })
                 }
-                className="w-full bg-[#070d18] border border-blue-900/70 rounded-xl p-2.5 text-xs text-slate-100 focus:outline-none"
+                className="w-full bg-[#0b1528] border border-blue-900/70 rounded-xl p-2.5 text-xs text-slate-100 focus:outline-none focus:border-amber-400"
               >
                 <option value="Homeowner">Homeowner</option>
                 <option value="Renter">Renter</option>
@@ -2057,8 +2325,12 @@ export const MasterVerificationTab: React.FC<MasterVerificationTabProps> = ({
               </select>
             </div>
 
-            <div>
-              <label className="block text-xs font-semibold text-slate-300 mb-1">Monthly Mortgage / Rent</label>
+            <div className="p-4 bg-[#070d18] border border-blue-900/40 rounded-xl space-y-2.5">
+              <label className="block text-xs font-semibold text-slate-300">Monthly Mortgage / Rent</label>
+              <div className="flex items-start gap-1.5 bg-blue-950/40 border border-blue-800/40 rounded-lg p-2 text-[11px] text-blue-200/90 italic">
+                <PhoneCall className="w-3 h-3 text-amber-400 shrink-0 mt-0.5" />
+                <span>"What is your approximate monthly mortgage or rent payment for your primary residence?"</span>
+              </div>
               <input
                 type="number"
                 value={formData.housing.monthlyMortgageOrRent}
@@ -2071,12 +2343,17 @@ export const MasterVerificationTab: React.FC<MasterVerificationTabProps> = ({
                     },
                   })
                 }
-                className="w-full bg-[#070d18] border border-blue-900/70 rounded-xl p-2.5 text-xs text-slate-100 focus:outline-none font-mono"
+                placeholder="e.g. 2400"
+                className="w-full bg-[#0b1528] border border-blue-900/70 rounded-xl p-2.5 text-xs text-slate-100 focus:outline-none focus:border-amber-400 font-mono font-bold"
               />
             </div>
 
-            <div>
-              <label className="block text-xs font-semibold text-slate-300 mb-1">Funding Urgency</label>
+            <div className="p-4 bg-[#070d18] border border-blue-900/40 rounded-xl space-y-2.5">
+              <label className="block text-xs font-semibold text-slate-300">Funding Urgency</label>
+              <div className="flex items-start gap-1.5 bg-blue-950/40 border border-blue-800/40 rounded-lg p-2 text-[11px] text-blue-200/90 italic">
+                <PhoneCall className="w-3 h-3 text-amber-400 shrink-0 mt-0.5" />
+                <span>"What is your timeline for deploying these funds—are you looking to fund immediately within 48 hours, this week, or this month?"</span>
+              </div>
               <select
                 value={formData.fundingRequest.fundingUrgency}
                 onChange={(e) =>
@@ -2088,7 +2365,7 @@ export const MasterVerificationTab: React.FC<MasterVerificationTabProps> = ({
                     },
                   })
                 }
-                className="w-full bg-[#070d18] border border-blue-900/70 rounded-xl p-2.5 text-xs text-amber-300 font-bold focus:outline-none"
+                className="w-full bg-[#0b1528] border border-blue-900/70 rounded-xl p-2.5 text-xs text-amber-300 font-bold focus:outline-none focus:border-amber-400"
               >
                 <option value="Immediately">Immediately (Within 48 Hours)</option>
                 <option value="This Week">This Week</option>
@@ -2103,13 +2380,27 @@ export const MasterVerificationTab: React.FC<MasterVerificationTabProps> = ({
       {activeSection === 'checklist' && (
         <div className="bg-[#0b1528] border border-blue-900/60 p-6 rounded-2xl shadow-xl space-y-6">
           <div>
-            <h3 className="text-sm font-bold text-emerald-400 uppercase tracking-wider flex items-center gap-2">
-              <ShieldCheck className="w-4 h-4" />
-              Final 11-Point Verification Audit Checklist
-            </h3>
-            <p className="text-xs text-slate-400 mt-1">
+            <div className="flex items-center justify-between border-b border-blue-900/40 pb-3">
+              <h3 className="text-sm font-bold text-emerald-400 uppercase tracking-wider flex items-center gap-2">
+                <ShieldCheck className="w-4 h-4" />
+                Final 11-Point Verification Audit Checklist
+              </h3>
+              <span className="text-[10px] text-slate-400 font-mono">11 Quality Gate Milestones</span>
+            </div>
+            <p className="text-xs text-slate-400 mt-2">
               All 11 verification milestones must be confirmed prior to submitting the deal file to institutional lenders.
             </p>
+
+            {/* Script Callout for Checklist */}
+            <div className="flex items-start gap-2 bg-blue-950/40 border border-blue-800/40 rounded-lg p-2.5 text-xs text-blue-200/90 font-medium italic mt-3 mb-4">
+              <PhoneCall className="w-3.5 h-3.5 text-amber-400 shrink-0 mt-0.5" />
+              <div>
+                <span className="text-[10px] font-bold uppercase tracking-wider text-amber-400 not-italic block mb-0.5">
+                  Verification Closing Script / Next Steps Explanation
+                </span>
+                <span>"Thank you for confirming all items. Our underwriting desk will now assemble your verified funding package and match it with our institutional lender network. We will follow up with your term sheets shortly."</span>
+              </div>
+            </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mt-4">
               {Object.entries(formData.finalChecklist).map(([key, val]) => (
@@ -2209,6 +2500,7 @@ export const MasterVerificationTab: React.FC<MasterVerificationTabProps> = ({
                     },
                   })
                 }
+                placeholder="e.g. Strong recurring cashflow, low existing debt, 740+ FICO..."
                 className="w-full bg-[#070d18] border border-blue-900/70 rounded-xl p-2.5 text-xs text-slate-100 focus:outline-none"
               />
             </div>

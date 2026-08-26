@@ -24,12 +24,12 @@ export function formatDate(
       const trimmed = input.trim();
       if (!trimmed || trimmed === 'N/A' || trimmed === '—' || trimmed === '-') return fallback;
 
-      // Match YYYY-MM-DD or YYYY/MM/DD (without time component to prevent timezone shifting)
-      const matchYMD = trimmed.match(/^(\d{4})[-/.](\d{1,2})[-/.](\d{1,2})$/);
-      if (matchYMD) {
-        const year = parseInt(matchYMD[1], 10);
-        const monthIndex = parseInt(matchYMD[2], 10) - 1;
-        const day = parseInt(matchYMD[3], 10);
+      // Match ISO date string starting with YYYY-MM-DD or YYYY/MM/DD
+      const matchISO = trimmed.match(/^(\d{4})[-/.](\d{1,2})[-/.](\d{1,2})/);
+      if (matchISO) {
+        const year = parseInt(matchISO[1], 10);
+        const monthIndex = parseInt(matchISO[2], 10) - 1;
+        const day = parseInt(matchISO[3], 10);
 
         if (monthIndex >= 0 && monthIndex < 12 && day >= 1 && day <= 31) {
           const monthStr = MONTH_NAMES[monthIndex];

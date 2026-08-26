@@ -1506,6 +1506,9 @@ export interface GoogleDriveConfig {
   hasClientSecret?: boolean;
   clientIdConfigured?: boolean;
   clientSecretConfigured?: boolean;
+  redirectUriConfigured?: boolean;
+  rootFolderConfigured?: boolean;
+  accountEmailConfigured?: boolean;
   isConfigured: boolean;
   isConnected: boolean;
   authorizedAccount?: string; // maplexfinancialadmin@gmail.com

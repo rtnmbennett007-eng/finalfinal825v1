@@ -108,14 +108,32 @@ export function loadStoredConfig(): StoredConfig {
   return {};
 }
 
-export function saveStoredConfig(config: Partial<StoredConfig>): void {
+export function saveStoredConfig(config: Partial<StoredConfig>): { success: boolean; error?: string } {
   try {
     ensureDataDir();
     const existing = loadStoredConfig();
-    const merged = { ...existing, ...config };
+    const merged: StoredConfig = { ...existing };
+    if (config.clientId !== undefined && config.clientId.trim() !== '') {
+      merged.clientId = config.clientId.trim();
+    }
+    if (config.clientSecret !== undefined && config.clientSecret.trim() !== '') {
+      merged.clientSecret = config.clientSecret.trim();
+    }
+    if (config.redirectUri !== undefined && config.redirectUri.trim() !== '') {
+      merged.redirectUri = config.redirectUri.trim();
+    }
+    if (config.rootFolderId !== undefined && config.rootFolderId.trim() !== '') {
+      merged.rootFolderId = config.rootFolderId.trim();
+    }
+    if (config.accountEmail !== undefined && config.accountEmail.trim() !== '') {
+      merged.accountEmail = config.accountEmail.trim();
+    }
     fs.writeFileSync(CONFIG_FILE_PATH, JSON.stringify(merged, null, 2), 'utf-8');
-  } catch (err) {
-    console.error('Error saving Google Drive config:', err);
+    return { success: true };
+  } catch (err: any) {
+    const errMsg = err?.message || 'Unknown write error';
+    console.error('Error saving Google Drive config:', errMsg);
+    return { success: false, error: `configuration_storage_error: ${errMsg}` };
   }
 }
 
@@ -136,6 +154,9 @@ export function getEffectiveCredentials(reqHostOrigin?: string) {
 
   const clientIdConfigured = Boolean(clientId && clientId.length > 3);
   const clientSecretConfigured = Boolean(clientSecret && clientSecret.length > 3);
+  const redirectUriConfigured = Boolean(redirectUri && redirectUri.length > 5);
+  const rootFolderConfigured = Boolean(rootFolderId && rootFolderId.length > 5);
+  const accountEmailConfigured = Boolean(accountEmail && accountEmail.includes('@'));
 
   return {
     clientId,
@@ -146,6 +167,9 @@ export function getEffectiveCredentials(reqHostOrigin?: string) {
     hasClientSecret: clientSecretConfigured,
     clientIdConfigured,
     clientSecretConfigured,
+    redirectUriConfigured,
+    rootFolderConfigured,
+    accountEmailConfigured,
     isConfigured: Boolean(clientIdConfigured && clientSecretConfigured),
   };
 }
@@ -287,6 +311,9 @@ export async function getDriveStatus(reqHostOrigin?: string) {
       isConnected: false,
       clientIdConfigured: creds.clientIdConfigured,
       clientSecretConfigured: creds.clientSecretConfigured,
+      redirectUriConfigured: creds.redirectUriConfigured,
+      rootFolderConfigured: creds.rootFolderConfigured,
+      accountEmailConfigured: creds.accountEmailConfigured,
       hasClientSecret: creds.clientSecretConfigured,
       authorizedAccount: tokens?.account_email || creds.accountEmail,
       dedicatedAccountEmail: creds.accountEmail,
@@ -332,6 +359,9 @@ export async function getDriveStatus(reqHostOrigin?: string) {
       isConnected: true,
       clientIdConfigured: creds.clientIdConfigured,
       clientSecretConfigured: creds.clientSecretConfigured,
+      redirectUriConfigured: creds.redirectUriConfigured,
+      rootFolderConfigured: creds.rootFolderConfigured,
+      accountEmailConfigured: creds.accountEmailConfigured,
       hasClientSecret: creds.clientSecretConfigured,
       authorizedAccount: userEmail,
       accountName: userName,
@@ -353,6 +383,9 @@ export async function getDriveStatus(reqHostOrigin?: string) {
       isConnected: false,
       clientIdConfigured: creds.clientIdConfigured,
       clientSecretConfigured: creds.clientSecretConfigured,
+      redirectUriConfigured: creds.redirectUriConfigured,
+      rootFolderConfigured: creds.rootFolderConfigured,
+      accountEmailConfigured: creds.accountEmailConfigured,
       hasClientSecret: creds.clientSecretConfigured,
       authorizedAccount: tokens?.account_email || creds.accountEmail,
       dedicatedAccountEmail: creds.accountEmail,

@@ -3250,18 +3250,23 @@ app.get('/api/drive/config', async (req, res) => {
 // Update Google Drive credentials securely on server
 app.post('/api/drive/config', async (req, res) => {
   try {
-    const { clientId, clientSecret, redirectUri, rootFolderId } = req.body;
-    saveStoredConfig({
+    const { clientId, clientSecret, redirectUri, rootFolderId, accountEmail } = req.body;
+    const saveResult = saveStoredConfig({
       clientId: clientId ? String(clientId).trim() : undefined,
       clientSecret: clientSecret ? String(clientSecret).trim() : undefined,
       redirectUri: redirectUri ? String(redirectUri).trim() : undefined,
       rootFolderId: rootFolderId ? String(rootFolderId).trim() : undefined,
+      accountEmail: accountEmail ? String(accountEmail).trim() : undefined,
     });
+    if (!saveResult.success) {
+      return res.status(500).json({ error: saveResult.error || 'configuration_storage_unavailable' });
+    }
     const hostOrigin = `${req.protocol}://${req.get('host')}`;
     const status = await getDriveStatus(hostOrigin);
     res.json({ success: true, config: status });
   } catch (err: any) {
-    res.status(500).json({ error: err.message || 'Failed to update Google Drive configuration' });
+    console.error('Error updating Google Drive config:', err?.message || err);
+    res.status(500).json({ error: `server_route_failure: ${err?.message || 'Failed to update Google Drive configuration'}` });
   }
 });
 

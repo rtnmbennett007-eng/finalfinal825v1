@@ -1134,6 +1134,27 @@ class LocalDataManager {
     this.data = this.loadFromStorage();
   }
 
+  private sanitizeForLocalStorage(data: LocalDataset): any {
+    try {
+      // Create a shallow copy and strip heavy binary/base64 strings from documents to preserve localStorage quota
+      const safeDocuments = (data.documents || []).map((doc) => {
+        if (!doc) return doc;
+        const cleanDoc: any = { ...doc };
+        if (cleanDoc.fileBase64 && cleanDoc.fileBase64.length > 500) {
+          cleanDoc.fileBase64 = ''; // Omit heavy base64 from localStorage string; retained in memory & backend
+        }
+        return cleanDoc;
+      });
+
+      return {
+        ...data,
+        documents: safeDocuments,
+      };
+    } catch {
+      return data;
+    }
+  }
+
   private loadFromStorage(): LocalDataset {
     try {
       const saved = localStorage.getItem(LOCAL_STORE_KEY);
@@ -1148,6 +1169,15 @@ class LocalDataManager {
           parsed.ghlConfig.locationId = 'qUSput20R0ujNP4DRARJ';
           parsed.ghlConfig.isConnected = true;
         }
+        // Clean any historical large base64 payloads from loaded documents
+        if (Array.isArray(parsed.documents)) {
+          parsed.documents = parsed.documents.map((d: any) => {
+            if (d && d.fileBase64 && d.fileBase64.length > 500) {
+              d.fileBase64 = '';
+            }
+            return d;
+          });
+        }
         return parsed;
       }
     } catch (err) {
@@ -1160,9 +1190,23 @@ class LocalDataManager {
 
   private persist(data: LocalDataset) {
     try {
-      localStorage.setItem(LOCAL_STORE_KEY, JSON.stringify(data));
-    } catch (err) {
-      console.error('Failed to save dataset to localStorage:', err);
+      const sanitized = this.sanitizeForLocalStorage(data);
+      localStorage.setItem(LOCAL_STORE_KEY, JSON.stringify(sanitized));
+    } catch (err: any) {
+      // Quota management fallback: prune non-essential logs and retry
+      try {
+        const pruned = this.sanitizeForLocalStorage(data);
+        if (Array.isArray(pruned.timelineEvents) && pruned.timelineEvents.length > 60) {
+          pruned.timelineEvents = pruned.timelineEvents.slice(0, 60);
+        }
+        if (Array.isArray(pruned.notifications) && pruned.notifications.length > 30) {
+          pruned.notifications = pruned.notifications.slice(0, 30);
+        }
+        localStorage.setItem(LOCAL_STORE_KEY, JSON.stringify(pruned));
+      } catch (innerErr) {
+        // Safe degrade: in-memory state remains fully intact without crashing UI
+        console.info('LocalStorage quota limit reached; dataset active in memory and synchronized with backend.');
+      }
     }
   }
 

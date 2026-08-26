@@ -33,6 +33,14 @@ import {
   MapPin,
   ExternalLink,
   ChevronDown,
+  Download,
+  Eye,
+  FileSpreadsheet,
+  FileImage,
+  FileCode,
+  Search,
+  Filter,
+  Cloud,
 } from 'lucide-react';
 import { useData } from '../../context/DataContext';
 import { useAuth } from '../../context/AuthContext';
@@ -73,6 +81,9 @@ import { InternalNotesTab } from './tabs/InternalNotesTab';
 import { FundingDealsTab } from './tabs/FundingDealsTab';
 import { MasterFileEditor } from './MasterFileEditor';
 import { ClientDownloadModal } from './ClientDownloadModal';
+import { DocumentUploadModal } from '../documents/DocumentUploadModal';
+import { DocumentViewerModal } from '../documents/DocumentViewerModal';
+import { DocumentAiReviewModal } from '../documents/DocumentAiReviewModal';
 
 const ALL_PIPELINE_STAGES: { value: PipelineStage; label: string }[] = [
   { value: 'NEW_LEAD', label: 'New Lead' },
@@ -200,18 +211,13 @@ export const ClientDetailView: React.FC<ClientDetailViewProps> = ({
   // PDF Export Modal State
   const [showDownloadModal, setShowDownloadModal] = useState(false);
 
-  // Document Upload State
+  // Document Management States
   const [showUploadDocModal, setShowUploadDocModal] = useState(false);
-  const [docUploadForm, setDocUploadForm] = useState<Partial<DocumentItem>>({
-    category: "Driver's License",
-    title: '',
-    fileName: '',
-    fileSize: '1.4 MB',
-    fileUrl: '',
-    uploadedBy: currentUser?.name || 'Staff',
-    status: 'RECEIVED',
-    notes: '',
-  });
+  const [activeViewingDoc, setActiveViewingDoc] = useState<DocumentItem | null>(null);
+  const [activeAiReviewDoc, setActiveAiReviewDoc] = useState<DocumentItem | null>(null);
+  const [docSearchQuery, setDocSearchQuery] = useState('');
+  const [docCategoryFilter, setDocCategoryFilter] = useState('ALL');
+  const [docToDelete, setDocToDelete] = useState<DocumentItem | null>(null);
 
   // Load Client Detailed Data with Fallbacks
   const loadClientDetails = async () => {
@@ -413,28 +419,40 @@ export const ClientDetailView: React.FC<ClientDetailViewProps> = ({
     }
   };
 
-  // Upload Document
-  const handleUploadDocument = async (e: React.FormEvent) => {
-    e.preventDefault();
+  // Document Action Handlers
+  const handleDeleteDocument = async (docItem: DocumentItem) => {
     try {
-      await api.uploadDocument({
-        ...docUploadForm,
-        clientId,
-      });
-      addToast('success', 'Document Uploaded', `${docUploadForm.title} added to Document Vault.`);
-      setShowUploadDocModal(false);
-      setDocUploadForm({
-        category: "Driver's License",
-        title: '',
-        fileName: '',
-        fileSize: '1.4 MB',
-        uploadedBy: currentUser?.name || 'Staff',
-        status: 'RECEIVED',
-        notes: '',
-      });
+      await api.deleteDocument(docItem.id);
+      addToast('success', 'Document Removed', `"${docItem.title || docItem.fileName}" was removed from the vault.`);
+      setDocToDelete(null);
       loadClientDetails();
     } catch (err: any) {
-      addToast('error', 'Upload Failed', err.message);
+      addToast('error', 'Delete Failed', err.message || 'Could not delete document.');
+    }
+  };
+
+  const handleUpdateDocStatus = async (docId: string, status: DocumentItem['status']) => {
+    try {
+      await api.updateDocument(docId, { status });
+      addToast('success', 'Status Updated', `Document status updated to ${status}.`);
+      loadClientDetails();
+    } catch (err: any) {
+      addToast('error', 'Update Failed', err.message || 'Could not update document status.');
+    }
+  };
+
+  const handleDownloadDoc = (doc: DocumentItem) => {
+    if (doc.fileBase64 && doc.fileBase64.includes('base64,')) {
+      const link = window.document.createElement('a');
+      link.href = doc.fileBase64;
+      link.download = doc.fileName || 'downloaded_document';
+      window.document.body.appendChild(link);
+      link.click();
+      window.document.body.removeChild(link);
+    } else if (doc.fileUrl && doc.fileUrl.startsWith('http')) {
+      window.open(doc.fileUrl, '_blank');
+    } else {
+      window.open(`/api/documents/${doc.id}/download`, '_blank');
     }
   };
 
@@ -1184,60 +1202,246 @@ export const ClientDetailView: React.FC<ClientDetailViewProps> = ({
       {/* TAB 9: DOCUMENT VAULT */}
       {activeTab === 'documents' && (
         <div className="space-y-6">
-          <div className="bg-[#0b1528] border border-blue-900/60 p-6 rounded-2xl shadow-xl flex flex-col md:flex-row md:items-center justify-between gap-4">
+          <div className="bg-[#0b1528] border border-blue-900/60 p-6 rounded-2xl shadow-xl flex flex-col lg:flex-row lg:items-center justify-between gap-4">
             <div>
-              <h2 className="text-lg font-bold text-slate-100">Document Vault & Verification Files</h2>
-              <p className="text-xs text-slate-400">
-                Securely store driver licenses, bank statements, voided checks, tax returns, and stip documentation.
+              <h2 className="text-lg font-bold text-slate-100 flex items-center gap-2">
+                <FolderLock className="w-5 h-5 text-amber-400" />
+                Document Vault & Verification Files
+              </h2>
+              <p className="text-xs text-slate-400 mt-0.5">
+                Encrypted storage for driver licenses, bank statements, voided checks, tax returns, and stip documentation with AI Extraction.
               </p>
             </div>
 
-            <button
-              onClick={() => setShowUploadDocModal(true)}
-              className="flex items-center space-x-1.5 px-4 py-2.5 bg-amber-500 hover:bg-amber-400 text-slate-950 rounded-xl text-xs font-bold transition-all shadow-md shadow-amber-500/20 shrink-0"
-            >
-              <Plus className="w-4 h-4" />
-              <span>Upload Document</span>
-            </button>
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            {safeDocuments.map((doc: DocumentItem) => (
-              <div
-                key={doc.id}
-                className="bg-[#0b1528] border border-blue-900/60 p-4 rounded-2xl shadow-lg space-y-3"
+            <div className="flex items-center gap-3">
+              <button
+                id="vault-upload-document-btn"
+                onClick={() => setShowUploadDocModal(true)}
+                className="flex items-center space-x-2 px-4 py-2.5 bg-amber-500 hover:bg-amber-400 text-slate-950 rounded-xl text-xs font-bold transition-all shadow-md shadow-amber-500/20 shrink-0"
               >
-                <div className="flex items-start justify-between">
-                  <div className="flex items-center space-x-2.5">
-                    <div className="p-2 rounded-xl bg-blue-950 border border-blue-800 text-blue-400">
-                      <FolderLock className="w-4 h-4" />
-                    </div>
-                    <div>
-                      <h4 className="text-xs font-bold text-slate-100 truncate max-w-[180px]">
-                        {doc.title}
-                      </h4>
-                      <div className="text-[10px] text-slate-400">{doc.category}</div>
-                    </div>
-                  </div>
-
-                  <span
-                    className={`text-[9px] font-mono px-1.5 py-0.2 rounded font-bold ${
-                      doc.status === 'REVIEWED'
-                        ? 'bg-emerald-500/20 text-emerald-300'
-                        : 'bg-amber-500/20 text-amber-300'
-                    }`}
-                  >
-                    {doc.status}
-                  </span>
-                </div>
-
-                <div className="text-[11px] text-slate-400 flex items-center justify-between pt-2 border-t border-blue-900/40">
-                  <span>Uploaded: {formatDate(doc.uploadedDate, 'Recent')}</span>
-                  <span>{doc.fileSize}</span>
-                </div>
-              </div>
-            ))}
+                <Plus className="w-4 h-4" />
+                <span>Upload Document</span>
+              </button>
+            </div>
           </div>
+
+          {/* Search & Category Filter Toolbar */}
+          <div className="bg-[#0b1528] border border-blue-900/60 p-4 rounded-2xl shadow-lg flex flex-col md:flex-row gap-3 items-center justify-between">
+            <div className="relative w-full md:w-72">
+              <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+              <input
+                type="text"
+                value={docSearchQuery}
+                onChange={(e) => setDocSearchQuery(e.target.value)}
+                placeholder="Search documents by title or file name..."
+                className="w-full pl-9 pr-3 py-2 bg-[#070d18] border border-blue-900/70 rounded-xl text-xs text-slate-200 placeholder-slate-500 focus:outline-none focus:border-amber-400"
+              />
+            </div>
+
+            <div className="flex items-center gap-2 w-full md:w-auto overflow-x-auto pb-1 md:pb-0">
+              <span className="text-xs text-slate-400 font-medium shrink-0 flex items-center gap-1">
+                <Filter className="w-3.5 h-3.5 text-slate-500" />
+                Category:
+              </span>
+              <select
+                value={docCategoryFilter}
+                onChange={(e) => setDocCategoryFilter(e.target.value)}
+                className="bg-[#070d18] border border-blue-900/70 rounded-xl px-3 py-2 text-xs text-slate-200 focus:outline-none focus:border-amber-400"
+              >
+                <option value="ALL">All Categories ({safeDocuments.length})</option>
+                <option value="Driver's License">Driver's License</option>
+                <option value="Bank Statements">Bank Statements</option>
+                <option value="Tax Returns">Tax Returns</option>
+                <option value="Voided Check">Voided Check</option>
+                <option value="Articles of Incorporation">Articles of Incorporation</option>
+                <option value="Business License">Business License</option>
+                <option value="Pay Stubs">Pay Stubs</option>
+                <option value="Other">Other</option>
+              </select>
+            </div>
+          </div>
+
+          {/* Document Cards Grid */}
+          {(() => {
+            const filteredDocs = safeDocuments.filter((doc) => {
+              const matchesSearch =
+                !docSearchQuery.trim() ||
+                (doc.title && doc.title.toLowerCase().includes(docSearchQuery.toLowerCase())) ||
+                (doc.fileName && doc.fileName.toLowerCase().includes(docSearchQuery.toLowerCase())) ||
+                (doc.category && doc.category.toLowerCase().includes(docSearchQuery.toLowerCase()));
+
+              const matchesCat = docCategoryFilter === 'ALL' || doc.category === docCategoryFilter;
+              return matchesSearch && matchesCat;
+            });
+
+            if (filteredDocs.length === 0) {
+              return (
+                <div className="bg-[#0b1528] border border-blue-900/60 p-12 rounded-2xl text-center space-y-3">
+                  <div className="w-12 h-12 rounded-xl bg-blue-950/60 border border-blue-800 text-blue-400 mx-auto flex items-center justify-center">
+                    <FolderLock className="w-6 h-6" />
+                  </div>
+                  <h3 className="text-sm font-bold text-slate-200">No Documents Found</h3>
+                  <p className="text-xs text-slate-400 max-w-sm mx-auto">
+                    {docSearchQuery || docCategoryFilter !== 'ALL'
+                      ? 'No documents matched your search criteria. Try adjusting the category or search text.'
+                      : 'No verification or underwriting documents have been uploaded for this client yet.'}
+                  </p>
+                  <button
+                    onClick={() => setShowUploadDocModal(true)}
+                    className="inline-flex items-center gap-1.5 px-4 py-2 bg-amber-500 hover:bg-amber-400 text-slate-950 rounded-xl text-xs font-bold transition-all shadow-md shadow-amber-500/20"
+                  >
+                    <Plus className="w-4 h-4" />
+                    <span>Upload First Document</span>
+                  </button>
+                </div>
+              );
+            }
+
+            return (
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                {filteredDocs.map((doc: DocumentItem) => {
+                  const fileName = doc.fileName || doc.title || '';
+                  const ext = fileName.split('.').pop()?.toLowerCase() || '';
+                  const isPdf = ext === 'pdf' || doc.fileMimeType?.includes('pdf');
+                  const isImage = ['jpg', 'jpeg', 'png', 'webp', 'heic', 'tif', 'tiff'].includes(ext) || doc.fileMimeType?.startsWith('image/');
+                  const isSpreadsheet = ['xls', 'xlsx', 'csv'].includes(ext) || doc.fileMimeType?.includes('spreadsheet') || doc.fileMimeType?.includes('csv');
+                  const isText = ['txt', 'rtf', 'xml', 'json'].includes(ext) || doc.fileMimeType?.startsWith('text/');
+                  const hasAi = Boolean(doc.aiExtraction);
+                  const fieldCount = doc.aiExtraction?.extractedFields?.length || 0;
+
+                  return (
+                    <div
+                      key={doc.id}
+                      className="bg-[#0b1528] border border-blue-900/60 p-4 rounded-2xl shadow-lg hover:border-blue-700 transition-all flex flex-col justify-between space-y-3"
+                    >
+                      <div className="space-y-2.5">
+                        <div className="flex items-start justify-between gap-2">
+                          <div className="flex items-start space-x-2.5 min-w-0">
+                            <div className="p-2 rounded-xl bg-blue-950/80 border border-blue-800 shrink-0 mt-0.5">
+                              {isPdf ? (
+                                <FileText className="w-4 h-4 text-red-400" />
+                              ) : isSpreadsheet ? (
+                                <FileSpreadsheet className="w-4 h-4 text-emerald-400" />
+                              ) : isImage ? (
+                                <FileImage className="w-4 h-4 text-purple-400" />
+                              ) : isText ? (
+                                <FileCode className="w-4 h-4 text-slate-400" />
+                              ) : (
+                                <FolderLock className="w-4 h-4 text-amber-400" />
+                              )}
+                            </div>
+                            <div className="min-w-0">
+                              <h4 className="text-xs font-bold text-slate-100 truncate" title={doc.title || doc.fileName}>
+                                {doc.title || doc.fileName}
+                              </h4>
+                              <div className="text-[10px] text-slate-400 flex items-center gap-1.5 mt-0.5">
+                                <span className="px-1.5 py-0.2 rounded bg-blue-950 border border-blue-900/80 text-blue-300 font-medium">
+                                  {doc.category}
+                                </span>
+                                <span>•</span>
+                                <span className="font-mono uppercase text-slate-400">{ext || 'FILE'}</span>
+                              </div>
+                            </div>
+                          </div>
+
+                          <select
+                            value={doc.status || 'RECEIVED'}
+                            onChange={(e) => handleUpdateDocStatus(doc.id, e.target.value as any)}
+                            className={`text-[10px] font-mono px-2 py-1 rounded-lg font-bold border focus:outline-none cursor-pointer ${
+                              doc.status === 'REVIEWED'
+                                ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30'
+                                : doc.status === 'REJECTED'
+                                ? 'bg-rose-500/20 text-rose-300 border-rose-500/30'
+                                : doc.status === 'PENDING'
+                                ? 'bg-amber-500/20 text-amber-300 border-amber-500/30'
+                                : 'bg-blue-500/20 text-blue-300 border-blue-500/30'
+                            }`}
+                          >
+                            <option value="RECEIVED" className="bg-slate-900 text-blue-300">RECEIVED</option>
+                            <option value="REVIEWED" className="bg-slate-900 text-emerald-300">REVIEWED</option>
+                            <option value="PENDING" className="bg-slate-900 text-amber-300">PENDING</option>
+                            <option value="REJECTED" className="bg-slate-900 text-rose-300">REJECTED</option>
+                          </select>
+                        </div>
+
+                        {/* AI Extraction Pill */}
+                        {hasAi ? (
+                          <div className="flex items-center justify-between p-2 rounded-xl bg-gradient-to-r from-amber-500/10 to-transparent border border-amber-500/20 text-[11px]">
+                            <div className="flex items-center gap-1.5 text-amber-300 font-semibold truncate">
+                              <Sparkles className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+                              <span>{fieldCount} Underwriting Fields</span>
+                            </div>
+                            <button
+                              onClick={() => setActiveAiReviewDoc(doc)}
+                              className="text-[10px] font-bold text-amber-400 hover:text-amber-300 bg-amber-500/20 hover:bg-amber-500/30 px-2 py-0.5 rounded transition shrink-0"
+                            >
+                              Review & Apply
+                            </button>
+                          </div>
+                        ) : null}
+
+                        <div className="text-[10px] text-slate-400 space-y-0.5 pt-1">
+                          <div className="truncate">File: <span className="text-slate-300 font-mono">{doc.fileName || doc.title}</span></div>
+                          <div className="flex items-center justify-between">
+                            <span>Uploaded: {formatDate(doc.uploadedDate, 'Recent')}</span>
+                            <span>{doc.fileSize || 'Standard'}</span>
+                          </div>
+                          {(doc.driveFileId || doc.storageProvider === 'google_drive') && (
+                            <div className="flex items-center gap-1 text-[10px] text-blue-400 pt-0.5">
+                              <Cloud className="w-3 h-3 text-blue-400 shrink-0" />
+                              <span className="font-semibold">Google Drive Cloud Storage</span>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Action Buttons */}
+                      <div className="flex items-center justify-between pt-2 border-t border-blue-900/40 text-xs">
+                        <div className="flex items-center gap-1.5">
+                          <button
+                            onClick={() => setActiveViewingDoc(doc)}
+                            className="px-2.5 py-1.5 rounded-lg bg-blue-950/60 hover:bg-blue-900/60 text-slate-200 border border-blue-800/80 text-[11px] font-medium flex items-center gap-1 transition-colors"
+                            title="Preview Document"
+                          >
+                            <Eye className="w-3.5 h-3.5 text-blue-400" />
+                            <span>Preview</span>
+                          </button>
+
+                          <button
+                            onClick={() => handleDownloadDoc(doc)}
+                            className="p-1.5 rounded-lg bg-blue-950/60 hover:bg-blue-900/60 text-slate-200 border border-blue-800/80 transition-colors"
+                            title="Download File"
+                          >
+                            <Download className="w-3.5 h-3.5 text-amber-400" />
+                          </button>
+
+                          {(doc.driveWebViewLink || doc.driveFileId) && (
+                            <a
+                              href={doc.driveWebViewLink || `https://drive.google.com/file/d/${doc.driveFileId}/view`}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="p-1.5 rounded-lg bg-blue-950/60 hover:bg-blue-900/60 text-blue-400 hover:text-blue-300 border border-blue-800/80 transition-colors"
+                              title="Open in Google Drive"
+                            >
+                              <ExternalLink className="w-3.5 h-3.5" />
+                            </a>
+                          )}
+                        </div>
+
+                        <button
+                          onClick={() => setDocToDelete(doc)}
+                          className="p-1.5 rounded-lg text-rose-400 hover:text-rose-300 hover:bg-rose-500/10 transition-colors"
+                          title="Delete Document"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            );
+          })()}
         </div>
       )}
 
@@ -1396,69 +1600,64 @@ export const ClientDetailView: React.FC<ClientDetailViewProps> = ({
         </div>
       )}
 
-      {/* Upload Document Modal */}
-      {showUploadDocModal && (
-        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-[#0c1832] border border-blue-800 rounded-2xl max-w-md w-full p-6 shadow-2xl space-y-4 animate-fadeIn">
-            <div className="flex items-center justify-between border-b border-blue-900 pb-3">
-              <h3 className="text-base font-bold text-slate-100 flex items-center gap-2">
-                <FolderLock className="w-4 h-4 text-amber-400" />
-                Upload Document to Vault
-              </h3>
-              <button onClick={() => setShowUploadDocModal(false)} className="text-slate-400 hover:text-slate-200">
-                <X className="w-4 h-4" />
-              </button>
-            </div>
+      {/* Document Upload Modal */}
+      <DocumentUploadModal
+        isOpen={showUploadDocModal}
+        onClose={() => setShowUploadDocModal(false)}
+        clientId={clientId}
+        clientName={client ? `${client.firstName} ${client.lastName}` : 'Client'}
+        businessName={client?.businessName || ''}
+        availableDeals={safeDeals.map((d) => ({
+          id: d.id,
+          title: d.product || 'Funding Deal',
+          product: d.product,
+          lenderName: d.lenderName,
+        }))}
+        onDocumentUploaded={() => {
+          loadClientDetails();
+          addToast('success', 'Document Saved', 'Document successfully uploaded and saved to vault.');
+        }}
+        currentUser={currentUser?.name || 'Staff Underwriter'}
+        onOpenReviewModal={(doc) => setActiveAiReviewDoc(doc)}
+      />
 
-            <form onSubmit={handleUploadDocument} className="space-y-3 text-xs">
-              <div>
-                <label className="block text-slate-300 font-semibold mb-1">Document Category</label>
-                <select
-                  value={docUploadForm.category}
-                  onChange={(e) => setDocUploadForm({ ...docUploadForm, category: e.target.value as any })}
-                  className="w-full bg-[#070d18] border border-blue-900/70 rounded-xl p-2.5 text-slate-100 focus:outline-none"
-                >
-                  <option value="Driver's License">Driver's License</option>
-                  <option value="Bank Statements">Bank Statements</option>
-                  <option value="Tax Returns">Tax Returns</option>
-                  <option value="Voided Check">Voided Check</option>
-                  <option value="Articles of Incorporation">Articles of Incorporation</option>
-                  <option value="Business License">Business License</option>
-                  <option value="Pay Stubs">Pay Stubs</option>
-                  <option value="Other">Other</option>
-                </select>
-              </div>
+      {/* Document Viewer Modal */}
+      <DocumentViewerModal
+        isOpen={Boolean(activeViewingDoc)}
+        onClose={() => setActiveViewingDoc(null)}
+        document={activeViewingDoc}
+        onOpenReviewModal={(doc) => setActiveAiReviewDoc(doc)}
+        onDocumentUpdated={() => loadClientDetails()}
+        currentUser={currentUser?.name || 'Staff Underwriter'}
+      />
 
-              <div>
-                <label className="block text-slate-300 font-semibold mb-1">Document Title</label>
-                <input
-                  type="text"
-                  required
-                  value={docUploadForm.title}
-                  onChange={(e) => setDocUploadForm({ ...docUploadForm, title: e.target.value })}
-                  className="w-full bg-[#070d18] border border-blue-900/70 rounded-xl p-2.5 text-slate-100 focus:outline-none"
-                  placeholder="e.g. 4 Months Chase Business Checking"
-                />
-              </div>
+      {/* Document AI Extraction Review & Field Application Modal */}
+      {activeAiReviewDoc && (
+        <DocumentAiReviewModal
+          isOpen={Boolean(activeAiReviewDoc)}
+          onClose={() => setActiveAiReviewDoc(null)}
+          document={activeAiReviewDoc}
+          clientId={clientId}
+          clientName={client ? `${client.firstName} ${client.lastName}` : 'Client'}
+          businessName={client?.businessName || ''}
+          currentVerification={masterVerification}
+          onVerificationUpdated={() => loadClientDetails()}
+          currentUser={currentUser?.name || 'Staff Underwriter'}
+        />
+      )}
 
-              <div className="pt-3 border-t border-blue-900 flex justify-end space-x-2">
-                <button
-                  type="button"
-                  onClick={() => setShowUploadDocModal(false)}
-                  className="px-3 py-2 bg-slate-800 text-slate-300 rounded-xl"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  className="px-4 py-2 bg-amber-500 hover:bg-amber-400 text-slate-950 rounded-xl font-bold"
-                >
-                  Save Document
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
+      {/* Delete Document Confirm Modal */}
+      {docToDelete && (
+        <ConfirmModal
+          isOpen={Boolean(docToDelete)}
+          onClose={() => setDocToDelete(null)}
+          onConfirm={() => handleDeleteDocument(docToDelete)}
+          title="Delete Document"
+          message={`Are you sure you want to permanently delete "${docToDelete.title || docToDelete.fileName}" from the vault? This action cannot be undone.`}
+          confirmText="Delete Document"
+          cancelText="Cancel"
+          type="danger"
+        />
       )}
       {/* Client File PDF Download Modal */}
       <ClientDownloadModal

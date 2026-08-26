@@ -50,9 +50,13 @@ export const DocumentViewerModal: React.FC<DocumentViewerModalProps> = ({
   const isSpreadsheet = ['xls', 'xlsx', 'csv'].includes(ext) || doc.fileMimeType?.includes('spreadsheet') || doc.fileMimeType?.includes('csv');
   const isText = ['txt', 'rtf', 'xml', 'json'].includes(ext) || doc.fileMimeType?.startsWith('text/');
 
-  const fileDataSrc = doc.fileBase64 || doc.fileUrl || '';
+  const fileDataSrc = doc.fileBase64 || doc.fileUrl || (doc.driveFileId ? `/api/drive/file/${doc.driveFileId}/view` : '');
 
   const handleDownload = () => {
+    if (doc.driveFileId) {
+      window.open(`/api/drive/file/${doc.driveFileId}/download`, '_blank');
+      return;
+    }
     if (doc.fileBase64 && doc.fileBase64.includes('base64,')) {
       const link = window.document.createElement('a');
       link.href = doc.fileBase64;
@@ -127,6 +131,19 @@ export const DocumentViewerModal: React.FC<DocumentViewerModalProps> = ({
           </div>
 
           <div className="flex items-center gap-2 shrink-0">
+            {(doc.driveWebViewLink || doc.driveFileId) && (
+              <a
+                id="open-drive-modal-btn"
+                href={doc.driveWebViewLink || `https://drive.google.com/file/d/${doc.driveFileId}/view`}
+                target="_blank"
+                rel="noreferrer"
+                className="px-3.5 py-2 rounded-xl bg-blue-950/80 hover:bg-blue-900 text-blue-300 text-xs font-semibold flex items-center gap-1.5 border border-blue-800 transition-colors"
+                title="Open in Google Drive"
+              >
+                <ExternalLink className="w-4 h-4 text-blue-400" />
+                Google Drive
+              </a>
+            )}
             <button
               id="download-doc-btn"
               onClick={handleDownload}

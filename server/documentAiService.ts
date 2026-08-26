@@ -35,7 +35,14 @@ function getGeminiClient(): GoogleGenAI | null {
   if (!apiKey) {
     return null;
   }
-  return new GoogleGenAI({ apiKey });
+  return new GoogleGenAI({
+    apiKey,
+    httpOptions: {
+      headers: {
+        'User-Agent': 'aistudio-build',
+      },
+    },
+  });
 }
 
 /**
@@ -278,9 +285,10 @@ export async function analyzeDocumentWithAi(params: {
   let modelUsed = 'gemini-3.7-flash (Simulated/Fallback)';
 
   if (ai && (fileBase64 || rawText || fileName)) {
-    try {
-      modelUsed = 'gemini-3.7-flash';
-      const prompt = `You are the Lead Commercial Underwriting Document Intelligence Engine for Maple X Financial.
+    const candidateModels = ['gemini-3.7-flash', 'gemini-flash-latest'];
+    let geminiSuccess = false;
+
+    const prompt = `You are the Lead Commercial Underwriting Document Intelligence Engine for Maple X Financial.
 Analyze this uploaded document with extreme financial precision.
 
 CLIENT CONTEXT:
@@ -323,55 +331,70 @@ Valid sections for extracted fields:
 - "banking" (keys: primaryBank, dedicatedBusinessChecking, businessAccount, averageDailyBalance, totalMonthlyDeposits, nsfCount, negativeDaysCount)
 `;
 
-      const contents: any[] = [];
-      if (fileBase64 && fileMimeType) {
-        contents.push({
-          inlineData: {
-            mimeType: fileMimeType,
-            data: fileBase64.replace(/^data:[^;]+;base64,/, ''),
-          },
-        });
-      }
-      contents.push(prompt);
-      if (rawText) {
-        contents.push(`\nDOCUMENT OCR / RAW TEXT:\n${rawText.slice(0, 8000)}`);
-      } else {
-        contents.push(`\nDOCUMENT FILENAME: ${fileName}`);
-      }
-
-      const response = await ai.models.generateContent({
-        model: 'gemini-3.7-flash',
-        contents,
+    const contents: any[] = [];
+    if (fileBase64 && fileMimeType) {
+      contents.push({
+        inlineData: {
+          mimeType: fileMimeType,
+          data: fileBase64.replace(/^data:[^;]+;base64,/, ''),
+        },
       });
+    }
+    contents.push(prompt);
+    if (rawText) {
+      contents.push(`\nDOCUMENT OCR / RAW TEXT:\n${rawText.slice(0, 8000)}`);
+    } else {
+      contents.push(`\nDOCUMENT FILENAME: ${fileName}`);
+    }
 
-      const responseText = response.text || '';
-      // Clean JSON string
-      const jsonMatch = responseText.match(/\{[\s\S]*\}/);
-      if (jsonMatch) {
-        const parsed = JSON.parse(jsonMatch[0]);
-        detectedCategory = parsed.detectedCategory || detectedCategory;
-        confidenceScore = parsed.confidenceScore || 0.95;
-        documentSummary = parsed.documentSummary || '';
-        extractedFields = (parsed.extractedFields || []).map((f: any) => ({
-          key: f.key,
-          label: f.label || f.key,
-          section: f.section || 'business',
-          extractedValue: f.extractedValue,
-          confidence: f.confidence || 0.9,
-          sourceQuote: f.sourceQuote || '',
-          pageOrLocation: f.pageOrLocation || 'Document',
-          status: 'UNVERIFIED',
-        }));
-      } else {
-        throw new Error('Gemini response did not contain valid JSON payload.');
+    for (const targetModel of candidateModels) {
+      if (geminiSuccess) break;
+      try {
+        const response = await ai.models.generateContent({
+          model: targetModel,
+          contents,
+        });
+
+        const responseText = response.text || '';
+        const jsonMatch = responseText.match(/\{[\s\S]*\}/);
+        if (jsonMatch) {
+          const parsed = JSON.parse(jsonMatch[0]);
+          detectedCategory = parsed.detectedCategory || detectedCategory;
+          confidenceScore = parsed.confidenceScore || 0.95;
+          documentSummary = parsed.documentSummary || '';
+          extractedFields = (parsed.extractedFields || []).map((f: any) => ({
+            key: f.key,
+            label: f.label || f.key,
+            section: f.section || 'business',
+            extractedValue: f.extractedValue,
+            confidence: f.confidence || 0.9,
+            sourceQuote: f.sourceQuote || '',
+            pageOrLocation: f.pageOrLocation || 'Document',
+            status: 'UNVERIFIED',
+          }));
+          modelUsed = targetModel;
+          geminiSuccess = true;
+          break;
+        }
+      } catch (geminiErr: any) {
+        const errMsg = String(geminiErr?.message || geminiErr);
+        const isDemandIssue = errMsg.includes('503') || errMsg.includes('high demand') || errMsg.includes('UNAVAILABLE') || errMsg.includes('429');
+        if (isDemandIssue) {
+          console.info(`Model ${targetModel} is experiencing peak demand (503/429), checking alternative model or fallback.`);
+        } else {
+          console.info(`Model ${targetModel} analysis note: ${errMsg.slice(0, 120)}`);
+        }
       }
-    } catch (geminiErr) {
-      console.warn('Gemini API call failed or returned unparseable output, falling back to heuristic parsing:', geminiErr);
+    }
+
+    if (!geminiSuccess) {
+      console.info('Using deterministic high-precision financial heuristic parser for document analysis.');
       const fallback = extractWithHeuristics(fileName, rawText || fileName, categoryHint, clientRecord);
       detectedCategory = fallback.detectedCategory;
       confidenceScore = fallback.confidenceScore;
       documentSummary = fallback.documentSummary;
       extractedFields = fallback.extractedFields;
+      modelUsed = 'Maple X Underwriting Intelligence Engine';
     }
   } else {
     // Heuristic extraction

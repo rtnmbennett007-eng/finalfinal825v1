@@ -35,6 +35,7 @@ import { UserProfileModal } from '../auth/UserProfileModal';
 import { DiscordConfig } from '../../types';
 import { GhlIntegrationSettings } from './GhlIntegrationSettings';
 import { FirebaseIntegrationSettings } from './FirebaseIntegrationSettings';
+import { GoogleDriveIntegrationSettings } from './GoogleDriveIntegrationSettings';
 
 export const SettingsView: React.FC = () => {
   const { currentUser, staffList } = useAuth();
@@ -49,7 +50,7 @@ export const SettingsView: React.FC = () => {
     refreshAll,
   } = useData();
 
-  const [activeTab, setActiveTab] = useState<'integrations' | 'firebase' | 'discord' | 'team' | 'leads-partners' | 'all'>('integrations');
+  const [activeTab, setActiveTab] = useState<'google-drive' | 'integrations' | 'firebase' | 'discord' | 'team' | 'leads-partners' | 'all'>('google-drive');
   const [isProfileModalOpen, setIsProfileModalOpen] = useState(false);
   const [newSourceName, setNewSourceName] = useState('');
   const [newPartnerForm, setNewPartnerForm] = useState({
@@ -235,6 +236,20 @@ export const SettingsView: React.FC = () => {
       {/* Settings Navigation Tabs */}
       <div className="flex items-center gap-2 overflow-x-auto pb-1 border-b border-blue-900/40 text-xs font-semibold">
         <button
+          id="settings-tab-google-drive"
+          type="button"
+          onClick={() => setActiveTab('google-drive')}
+          className={`px-4 py-2 rounded-xl flex items-center gap-2 transition-all shrink-0 ${
+            activeTab === 'google-drive'
+              ? 'bg-amber-500 text-slate-950 font-bold shadow-md shadow-amber-500/20'
+              : 'text-slate-300 hover:text-white hover:bg-blue-950/60 bg-[#081226] border border-blue-900/50'
+          }`}
+        >
+          <Cloud className="w-4 h-4 text-blue-400" />
+          <span>Google Drive Cloud Storage</span>
+        </button>
+
+        <button
           id="settings-tab-firebase"
           type="button"
           onClick={() => setActiveTab('firebase')}
@@ -319,6 +334,13 @@ export const SettingsView: React.FC = () => {
         </button>
       </div>
 
+      {/* 0. GOOGLE DRIVE CLOUD STORAGE SECTION */}
+      {(activeTab === 'google-drive' || activeTab === 'all') && (
+        <div className="space-y-6" id="settings-section-google-drive">
+          <GoogleDriveIntegrationSettings />
+        </div>
+      )}
+
       {/* 1. FIREBASE & CLOUD DATABASE SECTION */}
       {(activeTab === 'firebase' || activeTab === 'all') && (
         <div className="space-y-6" id="settings-section-firebase">
@@ -332,12 +354,18 @@ export const SettingsView: React.FC = () => {
           {/* Main GHL Integration Setup Card */}
           <GhlIntegrationSettings />
 
+          {/* Google Drive in Integrations tab if not in dedicated tab */}
+          {activeTab === 'integrations' && (
+            <GoogleDriveIntegrationSettings />
+          )}
+
           {/* Firebase Settings in Integrations tab if not in dedicated tab */}
           {activeTab === 'integrations' && (
             <FirebaseIntegrationSettings />
           )}
         </div>
       )}
+
 
       {/* 2. DISCORD NOTIFICATIONS SECTION */}
       {(activeTab === 'discord' || activeTab === 'all') && (

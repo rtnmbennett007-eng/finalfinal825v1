@@ -16,6 +16,8 @@ import {
 import { DocumentCategoryType, DocumentItem, MasterVerificationData } from '../../../types';
 import { api } from '../../../services/api';
 import { DocumentAiReviewModal } from '../../documents/DocumentAiReviewModal';
+import { DocumentUploadModal } from '../../documents/DocumentUploadModal';
+import { DocumentViewerModal } from '../../documents/DocumentViewerModal';
 
 interface MasterDocumentsSectionProps {
   clientId: string;
@@ -51,6 +53,8 @@ export const MasterDocumentsSection: React.FC<MasterDocumentsSectionProps> = ({
   const [autoExtractAi, setAutoExtractAi] = useState(true);
   const [isProcessing, setIsProcessing] = useState(false);
   const [activeReviewDoc, setActiveReviewDoc] = useState<DocumentItem | null>(null);
+  const [showUploadModal, setShowUploadModal] = useState(false);
+  const [activeViewingDoc, setActiveViewingDoc] = useState<DocumentItem | null>(null);
 
   const handleAddDocument = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -167,7 +171,15 @@ export const MasterDocumentsSection: React.FC<MasterDocumentsSectionProps> = ({
               Upload Document with AI Underwriting Reader
             </h3>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-3">
+            <button
+              type="button"
+              onClick={() => setShowUploadModal(true)}
+              className="px-3 py-1.5 bg-amber-500 hover:bg-amber-400 text-slate-950 rounded-xl text-xs font-bold transition-all shadow-md shadow-amber-500/20 flex items-center gap-1.5"
+            >
+              <Upload className="w-3.5 h-3.5" />
+              <span>Browse & Upload File</span>
+            </button>
             <label className="flex items-center gap-1.5 text-xs text-indigo-300 font-medium cursor-pointer">
               <input
                 type="checkbox"
@@ -176,7 +188,7 @@ export const MasterDocumentsSection: React.FC<MasterDocumentsSectionProps> = ({
                 className="w-3.5 h-3.5 rounded border-indigo-700 text-indigo-600 focus:ring-indigo-500 bg-slate-900"
               />
               <Sparkles className="w-3.5 h-3.5 text-indigo-400 animate-pulse" />
-              <span>Auto-extract with AI & Pre-Fill Worksheet</span>
+              <span>Auto-extract with AI</span>
             </label>
           </div>
         </div>
@@ -212,7 +224,7 @@ export const MasterDocumentsSection: React.FC<MasterDocumentsSectionProps> = ({
             <button
               type="submit"
               disabled={!newTitle.trim() || isProcessing}
-              className="w-full py-2.5 bg-amber-500 hover:bg-amber-400 disabled:opacity-50 text-slate-950 rounded-xl text-xs font-bold transition-all shadow-md shadow-amber-500/20 flex items-center justify-center space-x-1.5"
+              className="w-full py-2.5 bg-slate-800 hover:bg-slate-700 disabled:opacity-50 text-amber-400 border border-amber-500/30 rounded-xl text-xs font-bold transition-all flex items-center justify-center space-x-1.5"
             >
               {isProcessing ? (
                 <>
@@ -222,7 +234,7 @@ export const MasterDocumentsSection: React.FC<MasterDocumentsSectionProps> = ({
               ) : (
                 <>
                   <Upload className="w-3.5 h-3.5" />
-                  <span>+ Upload to Vault</span>
+                  <span>Quick Add Record</span>
                 </>
               )}
             </button>
@@ -239,6 +251,14 @@ export const MasterDocumentsSection: React.FC<MasterDocumentsSectionProps> = ({
               Client Document Vault ({documents.length} Files)
             </h4>
           </div>
+          <button
+            type="button"
+            onClick={() => setShowUploadModal(true)}
+            className="px-3 py-1.5 bg-amber-500 hover:bg-amber-400 text-slate-950 rounded-xl text-xs font-bold transition-all shadow-md shadow-amber-500/20 flex items-center gap-1.5"
+          >
+            <Upload className="w-3.5 h-3.5" />
+            <span>+ Upload File</span>
+          </button>
         </div>
 
         {documents.length === 0 ? (
@@ -275,13 +295,23 @@ export const MasterDocumentsSection: React.FC<MasterDocumentsSectionProps> = ({
                   </div>
 
                   <div className="flex items-center space-x-2 shrink-0 flex-wrap">
+                    <button
+                      type="button"
+                      onClick={() => setActiveViewingDoc(doc)}
+                      className="px-2.5 py-1.5 bg-blue-950/60 hover:bg-blue-900/60 text-slate-200 border border-blue-800/80 rounded-lg text-xs font-medium flex items-center gap-1 transition"
+                      title="Preview Document"
+                    >
+                      <Eye className="w-3.5 h-3.5 text-blue-400" />
+                      <span>Preview</span>
+                    </button>
+
                     {hasAi ? (
                       <button
                         type="button"
                         onClick={() => setActiveReviewDoc(doc)}
                         className="px-3 py-1.5 bg-indigo-600/20 hover:bg-indigo-600/30 text-indigo-300 border border-indigo-500/40 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition"
                       >
-                        <Eye className="w-3.5 h-3.5 text-indigo-400" />
+                        <Sparkles className="w-3.5 h-3.5 text-indigo-400" />
                         <span>Review AI Data</span>
                       </button>
                     ) : (
@@ -322,6 +352,33 @@ export const MasterDocumentsSection: React.FC<MasterDocumentsSectionProps> = ({
           </div>
         )}
       </div>
+
+      {/* Upload File Modal */}
+      <DocumentUploadModal
+        isOpen={showUploadModal}
+        onClose={() => setShowUploadModal(false)}
+        clientId={clientId}
+        clientName={clientName}
+        businessName={businessName}
+        onDocumentUploaded={(newDoc) => {
+          onChangeDocuments([...documents, newDoc]);
+          if (newDoc.aiExtraction) {
+            setActiveReviewDoc(newDoc);
+          }
+        }}
+        onOpenReviewModal={(doc) => setActiveReviewDoc(doc)}
+      />
+
+      {/* Document Viewer Modal */}
+      <DocumentViewerModal
+        isOpen={Boolean(activeViewingDoc)}
+        onClose={() => setActiveViewingDoc(null)}
+        document={activeViewingDoc}
+        onOpenReviewModal={(doc) => setActiveReviewDoc(doc)}
+        onDocumentUpdated={(updated) => {
+          onChangeDocuments(documents.map((d) => (d.id === updated.id ? updated : d)));
+        }}
+      />
 
       {/* AI Review Modal */}
       {activeReviewDoc && (

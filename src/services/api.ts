@@ -12,6 +12,7 @@ import {
   FundingDeal,
   FundingStrategyRecord,
   GhlConfig,
+  GoogleDriveConfig,
   InternalTask,
   Lead,
   LeadSourceOption,
@@ -489,6 +490,10 @@ export const api = {
     return null;
   },
 
+  updateDocument: async (docId: string, data: Partial<DocumentItem>): Promise<DocumentItem> => {
+    return firestoreService.updateDocument(docId, data);
+  },
+
   // Discord Integration - Real End-to-End Server Integration
   getDiscordConfig: async (): Promise<DiscordConfig> => {
     try {
@@ -647,6 +652,68 @@ export const api = {
       dueDate,
       priority: 'High',
     }, { force: true });
+  },
+
+  // Google Drive & Cloud Storage Integration
+  getGoogleDriveUrl: async (returnUrl = '/?tab=settings'): Promise<{ success: boolean; url: string; state: string }> => {
+    const res = await fetch(`/api/auth/google/url?returnUrl=${encodeURIComponent(returnUrl)}`);
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ error: 'Failed to generate Google Drive OAuth URL' }));
+      throw new Error(err.error || 'Failed to get OAuth URL');
+    }
+    return res.json();
+  },
+
+  getGoogleDriveConfig: async (): Promise<GoogleDriveConfig> => {
+    const res = await fetch('/api/drive/config');
+    if (!res.ok) {
+      throw new Error('Failed to fetch Google Drive status');
+    }
+    return res.json();
+  },
+
+  updateGoogleDriveConfig: async (config: Partial<GoogleDriveConfig> & { clientSecret?: string }) => {
+    const res = await fetch('/api/drive/config', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(config),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ error: 'Failed to update Google Drive config' }));
+      throw new Error(err.error || 'Failed to update Google Drive config');
+    }
+    return res.json();
+  },
+
+  disconnectGoogleDrive: async () => {
+    const res = await fetch('/api/drive/disconnect', {
+      method: 'POST',
+    });
+    if (!res.ok) {
+      throw new Error('Failed to disconnect Google Drive');
+    }
+    return res.json();
+  },
+
+  uploadDocumentMultipart: async (formData: FormData) => {
+    try {
+      const res = await fetch('/api/documents/upload-file', {
+        method: 'POST',
+        body: formData,
+      });
+      if (res.ok) {
+        const result = await res.json();
+        if (result.document) {
+          firestoreService.updateLocalDocument(result.document);
+        }
+        return result;
+      }
+      const errData = await res.json().catch(() => ({ error: 'Upload failed' }));
+      throw new Error(errData.error || 'Upload failed');
+    } catch (err: any) {
+      console.warn('Multipart upload error:', err);
+      throw err;
+    }
   },
 
   // Firebase Config

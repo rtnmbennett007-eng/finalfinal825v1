@@ -1,11 +1,34 @@
+import dotenv from 'dotenv';
+dotenv.config();
+
 import express from 'express';
 import path from 'path';
 import fs from 'fs';
+import multer from 'multer';
 import { createServer as createViteServer } from 'vite';
 import { analyzeDocumentWithAi } from './server/documentAiService';
+import {
+  generateAuthUrl,
+  handleAuthCallback,
+  getDriveStatus,
+  saveStoredConfig,
+  clearStoredTokens,
+  uploadFileToGoogleDrive,
+  getDriveFileStream,
+  getDriveFileBuffer,
+  deleteDriveFile,
+  DEDICATED_ACCOUNT_EMAIL,
+  DEFAULT_ROOT_FOLDER_ID,
+} from './server/googleDriveService';
 
 const app = express();
 const PORT = 3000;
+
+// Setup Multer memory storage for direct file streaming
+const upload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 35 * 1024 * 1024 }, // 35 MB max upload
+});
 
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ extended: true, limit: '50mb' }));
@@ -3172,6 +3195,123 @@ app.post('/api/documents/analyze', async (req, res) => {
   }
 });
 
+// ----------------------------------------------------
+// GOOGLE DRIVE OAUTH 2.0 & CLOUD STORAGE ENDPOINTS
+// ----------------------------------------------------
+
+// Generate Google Drive Authorization URL with CSRF protection
+app.get('/api/auth/google/url', (req, res) => {
+  try {
+    const hostOrigin = `${req.protocol}://${req.get('host')}`;
+    const returnUrl = (req.query.returnUrl as string) || '/?tab=settings';
+    const { url, state } = generateAuthUrl(hostOrigin, returnUrl);
+    res.json({ success: true, url, state });
+  } catch (err: any) {
+    res.status(400).json({ error: err.message || 'Failed to generate Google Drive OAuth URL' });
+  }
+});
+
+// Google OAuth 2.0 Authorization Callback
+app.get('/api/auth/google/callback', async (req, res) => {
+  const { code, state, error } = req.query;
+  const hostOrigin = `${req.protocol}://${req.get('host')}`;
+
+  if (error) {
+    console.error('Google OAuth callback error reported by Google:', error);
+    return res.redirect(`/?tab=settings&drive_error=${encodeURIComponent(String(error))}`);
+  }
+
+  if (!code || !state) {
+    return res.redirect('/?tab=settings&drive_error=missing_code_or_state');
+  }
+
+  try {
+    const result = await handleAuthCallback(String(code), String(state), hostOrigin);
+    const returnTarget = result.returnUrl && result.returnUrl.startsWith('/') ? result.returnUrl : '/?tab=settings';
+    const separator = returnTarget.includes('?') ? '&' : '?';
+    return res.redirect(`${returnTarget}${separator}drive_connected=true&account=${encodeURIComponent(result.accountEmail)}`);
+  } catch (err: any) {
+    console.error('Google OAuth callback token exchange failed:', err);
+    return res.redirect(`/?tab=settings&drive_error=${encodeURIComponent(err.message || 'oauth_exchange_failed')}`);
+  }
+});
+
+// Query Google Drive connection status & metadata (safe, no secrets exposed)
+app.get('/api/drive/config', async (req, res) => {
+  try {
+    const hostOrigin = `${req.protocol}://${req.get('host')}`;
+    const status = await getDriveStatus(hostOrigin);
+    res.json(status);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message || 'Failed to check Google Drive configuration' });
+  }
+});
+
+// Update Google Drive credentials securely on server
+app.post('/api/drive/config', async (req, res) => {
+  try {
+    const { clientId, clientSecret, redirectUri, rootFolderId } = req.body;
+    saveStoredConfig({
+      clientId: clientId ? String(clientId).trim() : undefined,
+      clientSecret: clientSecret ? String(clientSecret).trim() : undefined,
+      redirectUri: redirectUri ? String(redirectUri).trim() : undefined,
+      rootFolderId: rootFolderId ? String(rootFolderId).trim() : undefined,
+    });
+    const hostOrigin = `${req.protocol}://${req.get('host')}`;
+    const status = await getDriveStatus(hostOrigin);
+    res.json({ success: true, config: status });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message || 'Failed to update Google Drive configuration' });
+  }
+});
+
+// Disconnect Google Drive account on server
+app.post('/api/drive/disconnect', async (req, res) => {
+  try {
+    clearStoredTokens();
+    const hostOrigin = `${req.protocol}://${req.get('host')}`;
+    const status = await getDriveStatus(hostOrigin);
+    res.json({ success: true, message: 'Google Drive disconnected', config: status });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message || 'Failed to disconnect Google Drive' });
+  }
+});
+
+// Stream file preview inline from Google Drive
+app.get('/api/drive/file/:fileId/view', async (req, res) => {
+  const { fileId } = req.params;
+  try {
+    const { stream, metadata } = await getDriveFileStream(fileId);
+    const mime = metadata.mimeType || 'application/octet-stream';
+    res.setHeader('Content-Type', mime);
+    res.setHeader('Content-Disposition', `inline; filename="${encodeURIComponent(metadata.name || 'document')}"`);
+    stream.pipe(res);
+  } catch (err: any) {
+    console.error(`Error streaming Google Drive file ${fileId} for view:`, err.message || err);
+    res.status(404).json({ error: 'File not found on Google Drive or stream unavailable' });
+  }
+});
+
+// Stream file download from Google Drive
+app.get('/api/drive/file/:fileId/download', async (req, res) => {
+  const { fileId } = req.params;
+  try {
+    const { stream, metadata } = await getDriveFileStream(fileId);
+    const mime = metadata.mimeType || 'application/octet-stream';
+    res.setHeader('Content-Type', mime);
+    res.setHeader('Content-Disposition', `attachment; filename="${encodeURIComponent(metadata.name || 'document')}"`);
+    stream.pipe(res);
+  } catch (err: any) {
+    console.error(`Error downloading Google Drive file ${fileId}:`, err.message || err);
+    res.status(404).json({ error: 'File download unavailable' });
+  }
+});
+
+// ----------------------------------------------------
+// DOCUMENT VAULT & UPLOAD PIPELINE
+// ----------------------------------------------------
+
+// Primary Document Upload & Gemini Analysis Endpoint
 app.post('/api/documents/upload-and-analyze', async (req, res) => {
   try {
     const { clientId, dealId, title, fileName, fileSize, fileUrl, fileBase64, fileMimeType, rawText, category, uploadedBy } = req.body;
@@ -3184,8 +3324,61 @@ app.post('/api/documents/upload-and-analyze', async (req, res) => {
     const docId = `doc-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
     const effectiveFileName = fileName || 'document.pdf';
     const effectiveTitle = title && title.trim() ? title.trim() : effectiveFileName.replace(/\.[^/.]+$/, '').replace(/[_-]/g, ' ');
+    const effectiveMimeType = fileMimeType || 'application/pdf';
 
-    // 1. ALWAYS store the document safely FIRST
+    const clientRecord = db.clients.find((c) => c.id === clientId);
+    const clientFullName = clientRecord ? `${clientRecord.firstName || ''} ${clientRecord.lastName || ''}`.trim() : undefined;
+    const clientBusinessName = clientRecord?.businessName;
+
+    let fileBuffer: Buffer | null = null;
+    if (fileBase64 && typeof fileBase64 === 'string') {
+      const base64Data = fileBase64.includes('base64,') ? fileBase64.split('base64,')[1] : fileBase64;
+      try {
+        fileBuffer = Buffer.from(base64Data, 'base64');
+      } catch (bufErr) {
+        console.warn('Could not parse base64 buffer:', bufErr);
+      }
+    }
+
+    let storageProvider: 'google_drive' | 'local' = 'local';
+    let driveFileId: string | undefined;
+    let driveFolderId: string | undefined;
+    let driveWebViewLink: string | undefined;
+    let driveWebContentLink: string | undefined;
+    let driveThumbnailLink: string | undefined;
+    let driveAccountEmail: string | undefined;
+    let finalFileUrl = fileUrl || (fileBase64 ? fileBase64 : undefined);
+
+    // 1. Upload to Google Drive if connected
+    const hostOrigin = `${req.protocol}://${req.get('host')}`;
+    const driveStatus = await getDriveStatus(hostOrigin);
+
+    if (driveStatus.isConnected && fileBuffer) {
+      try {
+        const driveUpload = await uploadFileToGoogleDrive({
+          buffer: fileBuffer,
+          fileName: effectiveFileName,
+          mimeType: effectiveMimeType,
+          clientId,
+          clientName: clientFullName,
+          businessName: clientBusinessName,
+          category: category || 'General',
+        });
+
+        storageProvider = 'google_drive';
+        driveFileId = driveUpload.fileId;
+        driveFolderId = driveUpload.folderId;
+        driveWebViewLink = driveUpload.webViewLink;
+        driveWebContentLink = driveUpload.webContentLink;
+        driveThumbnailLink = driveUpload.thumbnailLink;
+        driveAccountEmail = driveStatus.authorizedAccount || DEDICATED_ACCOUNT_EMAIL;
+        finalFileUrl = `/api/drive/file/${driveUpload.fileId}/view`;
+      } catch (driveErr: any) {
+        console.warn('Google Drive direct streaming upload encountered issue, falling back to secure vault storage:', driveErr.message || driveErr);
+      }
+    }
+
+    // 2. Build sanitized document record (NO heavy binary base64 stored persistently!)
     const newDoc: any = {
       id: docId,
       clientId,
@@ -3193,22 +3386,37 @@ app.post('/api/documents/upload-and-analyze', async (req, res) => {
       category: category || 'Other',
       title: effectiveTitle,
       fileName: effectiveFileName,
-      fileSize: fileSize || '1.2 MB',
-      fileUrl: fileUrl || (fileBase64 ? fileBase64 : undefined),
-      fileBase64: fileBase64 || undefined,
-      fileMimeType: fileMimeType || 'application/pdf',
+      fileSize: fileSize || (fileBuffer ? `${(fileBuffer.length / (1024 * 1024)).toFixed(1)} MB` : '1.2 MB'),
+      fileUrl: finalFileUrl,
+      fileMimeType: effectiveMimeType,
       uploadedBy: uploadedBy || 'Staff',
       uploadedDate: now,
       status: 'RECEIVED',
       aiExtraction: undefined,
+      storageProvider,
+      driveFileId,
+      driveFolderId,
+      driveWebViewLink,
+      driveWebContentLink,
+      driveThumbnailLink,
+      driveAccountEmail,
     };
+
+    // If Google Drive was used, keep base64 strictly out of disk/database
+    if (storageProvider === 'google_drive') {
+      newDoc.fileBase64 = undefined;
+    } else {
+      // Temporary in-memory fallback if Drive not yet connected
+      newDoc.fileBase64 = undefined; // Kept out of JSON storage for quota safety
+    }
 
     db.documents.unshift(newDoc);
 
+    const storageBadge = storageProvider === 'google_drive' ? ' (Google Drive Vault)' : '';
     addTimelineEvent(
       clientId,
       `Document Uploaded: ${newDoc.category}`,
-      `File "${newDoc.fileName}" (${newDoc.fileSize}) safely uploaded by ${newDoc.uploadedBy} to Document Vault.`,
+      `File "${newDoc.fileName}" (${newDoc.fileSize}) safely uploaded by ${newDoc.uploadedBy} to Document Vault${storageBadge}.`,
       uploadedBy || 'Staff',
       'DOCUMENT',
       dealId
@@ -3216,19 +3424,18 @@ app.post('/api/documents/upload-and-analyze', async (req, res) => {
 
     saveDb();
 
-    // 2. Run AI Analysis (Non-blocking to document storage)
+    // 3. Run Gemini AI Document Intelligence using memory buffer
     let extraction: any = null;
     let aiError: string | null = null;
 
     try {
-      const clientRecord = db.clients.find((c) => c.id === clientId);
       const currentMasterVerification = db.masterVerifications[clientId];
 
       extraction = await analyzeDocumentWithAi({
         clientId,
         fileName: effectiveFileName,
-        fileBase64,
-        fileMimeType,
+        fileBase64: fileBuffer ? fileBuffer.toString('base64') : (fileBase64 ? fileBase64.replace(/^data:[^;]+;base64,/, '') : undefined),
+        fileMimeType: effectiveMimeType,
         rawText,
         categoryHint: category,
         clientRecord,
@@ -3245,7 +3452,7 @@ app.post('/api/documents/upload-and-analyze', async (req, res) => {
         addTimelineEvent(
           clientId,
           `AI Scanned Document: ${newDoc.category}`,
-          `Document "${newDoc.title}" scanned by AI Engine. Extracted ${extraction.extractedFields?.length || 0} data points ready for unverified pre-fill review.`,
+          `Document "${newDoc.title}" scanned by Gemini Document Intelligence. Extracted ${extraction.extractedFields?.length || 0} data points ready for unverified pre-fill review.`,
           uploadedBy || 'Staff',
           'DOCUMENT',
           dealId
@@ -3270,6 +3477,145 @@ app.post('/api/documents/upload-and-analyze', async (req, res) => {
   }
 });
 
+// Multipart Stream Upload Endpoint
+app.post('/api/documents/upload-file', upload.single('file'), async (req, res) => {
+  try {
+    const file = req.file;
+    if (!file) {
+      return res.status(400).json({ error: 'No file uploaded' });
+    }
+
+    const { clientId, dealId, title, category, uploadedBy, rawText } = req.body;
+    if (!clientId) {
+      return res.status(400).json({ error: 'clientId is required' });
+    }
+
+    const now = new Date().toISOString();
+    const docId = `doc-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
+    const effectiveFileName = file.originalname || 'document.pdf';
+    const effectiveTitle = title && title.trim() ? title.trim() : effectiveFileName.replace(/\.[^/.]+$/, '').replace(/[_-]/g, ' ');
+    const effectiveMimeType = file.mimetype || 'application/octet-stream';
+
+    const clientRecord = db.clients.find((c) => c.id === clientId);
+    const clientFullName = clientRecord ? `${clientRecord.firstName || ''} ${clientRecord.lastName || ''}`.trim() : undefined;
+    const clientBusinessName = clientRecord?.businessName;
+
+    let storageProvider: 'google_drive' | 'local' = 'local';
+    let driveFileId: string | undefined;
+    let driveFolderId: string | undefined;
+    let driveWebViewLink: string | undefined;
+    let driveWebContentLink: string | undefined;
+    let driveThumbnailLink: string | undefined;
+    let driveAccountEmail: string | undefined;
+    let finalFileUrl = `/api/documents/${docId}/download`;
+
+    // Upload to Google Drive if connected
+    const hostOrigin = `${req.protocol}://${req.get('host')}`;
+    const driveStatus = await getDriveStatus(hostOrigin);
+
+    if (driveStatus.isConnected) {
+      try {
+        const driveUpload = await uploadFileToGoogleDrive({
+          buffer: file.buffer,
+          fileName: effectiveFileName,
+          mimeType: effectiveMimeType,
+          clientId,
+          clientName: clientFullName,
+          businessName: clientBusinessName,
+          category: category || 'General',
+        });
+
+        storageProvider = 'google_drive';
+        driveFileId = driveUpload.fileId;
+        driveFolderId = driveUpload.folderId;
+        driveWebViewLink = driveUpload.webViewLink;
+        driveWebContentLink = driveUpload.webContentLink;
+        driveThumbnailLink = driveUpload.thumbnailLink;
+        driveAccountEmail = driveStatus.authorizedAccount || DEDICATED_ACCOUNT_EMAIL;
+        finalFileUrl = `/api/drive/file/${driveUpload.fileId}/view`;
+      } catch (driveErr: any) {
+        console.warn('Google Drive multipart stream upload issue:', driveErr.message || driveErr);
+      }
+    }
+
+    const newDoc: any = {
+      id: docId,
+      clientId,
+      dealId: dealId || undefined,
+      category: category || 'Other',
+      title: effectiveTitle,
+      fileName: effectiveFileName,
+      fileSize: `${(file.size / (1024 * 1024)).toFixed(1)} MB`,
+      fileUrl: finalFileUrl,
+      fileMimeType: effectiveMimeType,
+      uploadedBy: uploadedBy || 'Staff',
+      uploadedDate: now,
+      status: 'RECEIVED',
+      aiExtraction: undefined,
+      storageProvider,
+      driveFileId,
+      driveFolderId,
+      driveWebViewLink,
+      driveWebContentLink,
+      driveThumbnailLink,
+      driveAccountEmail,
+    };
+
+    db.documents.unshift(newDoc);
+
+    const storageBadge = storageProvider === 'google_drive' ? ' (Google Drive Vault)' : '';
+    addTimelineEvent(
+      clientId,
+      `Document Uploaded: ${newDoc.category}`,
+      `File "${newDoc.fileName}" (${newDoc.fileSize}) safely uploaded by ${newDoc.uploadedBy} to Document Vault${storageBadge}.`,
+      uploadedBy || 'Staff',
+      'DOCUMENT',
+      dealId
+    );
+
+    saveDb();
+
+    // AI Analysis
+    let extraction: any = null;
+    let aiError: string | null = null;
+    try {
+      const currentMasterVerification = db.masterVerifications[clientId];
+      extraction = await analyzeDocumentWithAi({
+        clientId,
+        fileName: effectiveFileName,
+        fileBase64: file.buffer.toString('base64'),
+        fileMimeType: effectiveMimeType,
+        rawText,
+        categoryHint: category,
+        clientRecord,
+        currentMasterVerification,
+      });
+
+      if (extraction) {
+        extraction.docId = docId;
+        newDoc.aiExtraction = extraction;
+        if (extraction.detectedCategory && extraction.detectedCategory !== 'Other') {
+          newDoc.category = extraction.detectedCategory;
+        }
+        saveDb();
+      }
+    } catch (err: any) {
+      console.warn('AI analysis error on multipart upload:', err);
+      aiError = err.message;
+    }
+
+    res.status(201).json({
+      success: true,
+      document: newDoc,
+      extraction: extraction || undefined,
+      aiError: aiError || undefined,
+    });
+  } catch (err: any) {
+    console.error('Multipart upload error:', err);
+    res.status(500).json({ error: err.message || 'Upload failed' });
+  }
+});
+
 // Retry AI extraction on existing stored document
 app.post('/api/documents/:id/retry-ai', async (req, res) => {
   const { id } = req.params;
@@ -3280,11 +3626,25 @@ app.post('/api/documents/:id/retry-ai', async (req, res) => {
     const clientRecord = db.clients.find((c) => c.id === doc.clientId);
     const currentMasterVerification = db.masterVerifications[doc.clientId];
 
+    let fileBase64 = doc.fileBase64;
+    let fileMimeType = doc.fileMimeType || 'application/pdf';
+
+    // If file is stored on Google Drive, fetch buffer directly from Drive API
+    if (doc.driveFileId) {
+      try {
+        const driveData = await getDriveFileBuffer(doc.driveFileId);
+        fileBase64 = driveData.buffer.toString('base64');
+        fileMimeType = driveData.mimeType || fileMimeType;
+      } catch (driveErr) {
+        console.warn(`Could not retrieve Google Drive file ${doc.driveFileId} buffer:`, driveErr);
+      }
+    }
+
     const extraction = await analyzeDocumentWithAi({
       clientId: doc.clientId,
       fileName: doc.fileName || doc.title,
-      fileBase64: doc.fileBase64,
-      fileMimeType: doc.fileMimeType,
+      fileBase64,
+      fileMimeType,
       categoryHint: doc.category,
       clientRecord,
       currentMasterVerification,
@@ -3313,11 +3673,23 @@ app.post('/api/documents/:id/retry-ai', async (req, res) => {
   }
 });
 
-// Download / View document endpoint
-app.get('/api/documents/:id/download', (req, res) => {
+// Download document endpoint (Google Drive Stream & Fallback)
+app.get('/api/documents/:id/download', async (req, res) => {
   const { id } = req.params;
   const doc = db.documents.find((d) => d.id === id);
   if (!doc) return res.status(404).json({ error: 'Document not found' });
+
+  if (doc.driveFileId) {
+    try {
+      const { stream, metadata } = await getDriveFileStream(doc.driveFileId);
+      const mime = metadata.mimeType || doc.fileMimeType || 'application/octet-stream';
+      res.setHeader('Content-Type', mime);
+      res.setHeader('Content-Disposition', `attachment; filename="${encodeURIComponent(metadata.name || doc.fileName || 'document')}"`);
+      return stream.pipe(res);
+    } catch (driveErr) {
+      console.warn(`Google Drive stream failed for download ${doc.driveFileId}:`, driveErr);
+    }
+  }
 
   if (doc.fileBase64 && doc.fileBase64.includes('base64,')) {
     const parts = doc.fileBase64.split('base64,');
@@ -3332,11 +3704,32 @@ app.get('/api/documents/:id/download', (req, res) => {
   }
 
   // Fallback plaintext simulated file content
-  const mockContent = `Document: ${doc.title}\nCategory: ${doc.category}\nFile: ${doc.fileName}\nClient ID: ${doc.clientId}\nUploaded Date: ${doc.uploadedDate}\nStatus: ${doc.status}\n\n[Maple X Financial Encrypted Document Archive]`;
+  const mockContent = `Document: ${doc.title}\nCategory: ${doc.category}\nFile: ${doc.fileName}\nClient ID: ${doc.clientId}\nStorage Provider: ${doc.storageProvider || 'Google Drive'}\nGoogle Drive File ID: ${doc.driveFileId || 'N/A'}\nUploaded Date: ${doc.uploadedDate}\nStatus: ${doc.status}\n\n[Maple X Financial Encrypted Document Archive]`;
   res.setHeader('Content-Type', 'text/plain');
   res.setHeader('Content-Disposition', `attachment; filename="${encodeURIComponent(doc.fileName || 'document.txt')}"`);
   res.send(mockContent);
 });
+
+// Delete Document Endpoint (removes from db and cleans up from Google Drive)
+app.delete('/api/documents/:id', async (req, res) => {
+  const { id } = req.params;
+  const docIdx = db.documents.findIndex((d) => d.id === id);
+  if (docIdx === -1) return res.status(404).json({ error: 'Document not found' });
+
+  const doc = db.documents[docIdx];
+  if (doc.driveFileId) {
+    try {
+      await deleteDriveFile(doc.driveFileId);
+    } catch (driveErr) {
+      console.warn(`Could not delete file from Google Drive (${doc.driveFileId}):`, driveErr);
+    }
+  }
+
+  db.documents.splice(docIdx, 1);
+  saveDb();
+  res.json({ success: true, message: 'Document removed from vault and storage.' });
+});
+
 
 app.post('/api/documents/:docId/apply-to-verification', (req, res) => {
   try {

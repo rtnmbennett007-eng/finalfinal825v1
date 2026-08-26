@@ -1490,6 +1490,36 @@ export interface DocumentItem {
   status: 'PENDING' | 'RECEIVED' | 'REVIEWED' | 'REJECTED';
   notes?: string;
   aiExtraction?: DocumentAiExtractionResult;
+  // Google Drive Cloud Storage Metadata
+  storageProvider?: 'google_drive' | 'local' | 'firestore';
+  driveFileId?: string;
+  driveFolderId?: string;
+  driveParentPath?: string;
+  driveWebViewLink?: string;
+  driveWebContentLink?: string;
+  driveThumbnailLink?: string;
+  driveAccountEmail?: string;
+}
+
+export interface GoogleDriveConfig {
+  clientId?: string;
+  hasClientSecret?: boolean;
+  clientIdConfigured?: boolean;
+  clientSecretConfigured?: boolean;
+  isConfigured: boolean;
+  isConnected: boolean;
+  authorizedAccount?: string; // maplexfinancialadmin@gmail.com
+  dedicatedAccountEmail?: string;
+  rootFolderId: string; // 1qTQe0N8Wb_5MTDrp_BmOrdSjI5QWGqVm
+  rootFolderName?: string;
+  lastConnectedAt?: string;
+  tokenExpiresAt?: string;
+  statusMessage?: string;
+  redirectUri?: string;
+  storageUsage?: {
+    usedBytes?: number;
+    totalBytes?: number;
+  };
 }
 
 export interface CommunicationLogItem {

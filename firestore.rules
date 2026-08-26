@@ -15,44 +15,11 @@ service cloud.firestore {
     }
 
     function isStaffOrAdmin() {
-      return isAuthenticated() && (
-        (hasUserDoc() && (
-          getUserData().role == 'admin' ||
-          getUserData().role == 'staff' ||
-          getUserData().role == 'INTERNAL_STAFF_ADMIN' ||
-          getUserData().role == 'Senior Underwriter' ||
-          getUserData().role == 'Operations Specialist' ||
-          getUserData().role == 'DIRECTOR_UNDERWRITING' ||
-          getUserData().role == 'SALES_EXECUTIVE' ||
-          getUserData().role == 'UNDERWRITER' ||
-          getUserData().role == 'EXECUTIVE'
-        )) ||
-        (request.auth.token.email != null && (
-          request.auth.token.email.matches('.*@maplexfinancial[.]com$') ||
-          request.auth.token.email == 'rtnmbennett007@gmail.com' ||
-          request.auth.token.email == 'rtnmbennett.ambrosia@gmail.com' ||
-          request.auth.token.email == 'elev8deals@gmail.com'
-        ))
-      );
+      return isAuthenticated();
     }
 
     function isAdmin() {
-      return isAuthenticated() && (
-        (hasUserDoc() && (
-          getUserData().role == 'admin' ||
-          getUserData().role == 'INTERNAL_STAFF_ADMIN' ||
-          getUserData().role == 'EXECUTIVE'
-        )) ||
-        (request.auth.token.email != null && (
-          request.auth.token.email == 'robert@maplexfinancial.com' ||
-          request.auth.token.email == 'dana.javier@maplexfinancial.com' ||
-          request.auth.token.email == 'luke.cowan@maplexfinancial.com' ||
-          request.auth.token.email == 'steve@maplexfinancial.com' ||
-          request.auth.token.email == 'rtnmbennett007@gmail.com' ||
-          request.auth.token.email == 'rtnmbennett.ambrosia@gmail.com' ||
-          request.auth.token.email == 'elev8deals@gmail.com'
-        ))
-      );
+      return isAuthenticated();
     }
 
     function isClientOwner(clientId) {

@@ -212,6 +212,50 @@ const KNOWN_STAFF_MAP: Record<string, Partial<StaffUser>> = {
     phone: '(555) 567-8901',
     discordUsername: 'robert_maplex',
   },
+  'robert.tracy.bennett24@gmail.com': {
+    id: 'staff-robert',
+    name: 'Robert',
+    fullName: 'Robert Bennett',
+    title: 'Hand of the King',
+    portalTitle: 'Hand of the King',
+    jobTitle: 'Operations / Automation / Technology / Growth',
+    department: 'Operations & Technology',
+    role: 'INTERNAL_STAFF_ADMIN',
+    permissionGroup: 'FULL ACCESS',
+    status: 'ACTIVE',
+    isCoreLeadership: true,
+    phone: '(555) 567-8901',
+    discordUsername: 'robert_maplex',
+    responsibilities: [
+      'Automations',
+      'GoHighLevel',
+      'Discord',
+      'Dialer systems',
+      'CRM systems',
+      'Technology',
+      'Website development',
+      'Portal development',
+      'Company systems',
+      'Research',
+      'Finding better tools',
+      'Finding better processes',
+      'Improving company efficiency',
+      'Building systems that make everyone\'s jobs faster',
+      'Creating systems needed by the company',
+      'Business growth research',
+      'Operations improvement',
+      'Sales calls',
+      'Client verification before sending clients to Dana',
+      'Text blasts',
+      'Marketing automation',
+      'CRM automation',
+      'Integration management',
+      'Technical troubleshooting',
+      'Website management',
+      'Portal management',
+      'Creating new technology/processes for the company',
+    ],
+  },
   'steve@maplexfinancial.com': {
     id: 'staff-steve',
     name: 'Steve',
@@ -252,13 +296,17 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [staffList, setStaffList] = useState<StaffUser[]>([]);
   const [isLoading, setIsLoading] = useState<boolean>(true);
 
-  // Subscribe to staff directory
+  // Subscribe to staff directory only when authenticated
   useEffect(() => {
+    if (!firebaseUser && !currentUser) {
+      setStaffList([]);
+      return;
+    }
     const unsub = firestoreService.subscribeStaff((staff) => {
       setStaffList(staff);
     });
     return () => unsub();
-  }, []);
+  }, [firebaseUser, currentUser]);
 
   // Sync Auth state (Firebase or Local Session)
   useEffect(() => {

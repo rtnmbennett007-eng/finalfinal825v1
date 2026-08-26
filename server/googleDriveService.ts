@@ -1,5 +1,8 @@
 import dotenv from 'dotenv';
+// Load environment variables from default and common paths
 dotenv.config();
+dotenv.config({ path: path.join(process.cwd(), '.env.local') });
+dotenv.config({ path: path.join(process.cwd(), '.env.production') });
 
 import fs from 'fs';
 import path from 'path';
@@ -7,13 +10,14 @@ import { google } from 'googleapis';
 import { Readable } from 'stream';
 import crypto from 'crypto';
 
-const DATA_DIR = path.join(process.cwd(), 'data');
-const TOKEN_FILE_PATH = path.join(DATA_DIR, 'google-drive-tokens.json');
-const CONFIG_FILE_PATH = path.join(DATA_DIR, 'google-drive-config.json');
+// Multi-tier storage locations (Primary: ./data, Fallback: /tmp/maplex-drive-data)
+const PRIMARY_DATA_DIR = path.join(process.cwd(), 'data');
+const FALLBACK_DATA_DIR = path.join('/tmp', 'maplex-drive-data');
 
 // Default target root folder specified by Maple X Financial
 export const DEFAULT_ROOT_FOLDER_ID = '1qTQe0N8Wb_5MTDrp_BmOrdSjI5QWGqVm';
 export const DEDICATED_ACCOUNT_EMAIL = 'maplexfinancialadmin@gmail.com';
+export const DEFAULT_REDIRECT_URI = 'https://portal.maplexfinancial.com/api/auth/google/callback';
 export const DRIVE_SCOPE = 'https://www.googleapis.com/auth/drive.file';
 
 interface StoredTokens {
@@ -36,6 +40,10 @@ interface StoredConfig {
   accountEmail?: string;
 }
 
+// In-memory runtime cache ensures continuous operation even if filesystem is read-only
+let inMemoryConfig: StoredConfig = {};
+let inMemoryTokens: StoredTokens | null = null;
+
 // In-memory CSRF state cache with 15-minute TTL
 const oauthStates = new Map<string, { createdAt: number; redirectUrl?: string }>();
 
@@ -49,68 +57,105 @@ setInterval(() => {
   }
 }, 10 * 60 * 1000);
 
-function ensureDataDir() {
-  if (!fs.existsSync(DATA_DIR)) {
-    fs.mkdirSync(DATA_DIR, { recursive: true });
+function getWritableDataDir(): string {
+  try {
+    if (!fs.existsSync(PRIMARY_DATA_DIR)) {
+      fs.mkdirSync(PRIMARY_DATA_DIR, { recursive: true });
+    }
+    // Test write permission
+    const testFile = path.join(PRIMARY_DATA_DIR, '.write-test');
+    fs.writeFileSync(testFile, 'ok', 'utf-8');
+    fs.unlinkSync(testFile);
+    return PRIMARY_DATA_DIR;
+  } catch {
+    try {
+      if (!fs.existsSync(FALLBACK_DATA_DIR)) {
+        fs.mkdirSync(FALLBACK_DATA_DIR, { recursive: true });
+      }
+      return FALLBACK_DATA_DIR;
+    } catch {
+      return '';
+    }
   }
 }
 
 export function loadStoredTokens(): StoredTokens | null {
-  try {
-    ensureDataDir();
-    if (fs.existsSync(TOKEN_FILE_PATH)) {
-      const raw = fs.readFileSync(TOKEN_FILE_PATH, 'utf-8');
-      return JSON.parse(raw);
+  if (inMemoryTokens) {
+    return inMemoryTokens;
+  }
+  const dirs = [PRIMARY_DATA_DIR, FALLBACK_DATA_DIR];
+  for (const dir of dirs) {
+    try {
+      const filePath = path.join(dir, 'google-drive-tokens.json');
+      if (fs.existsSync(filePath)) {
+        const raw = fs.readFileSync(filePath, 'utf-8');
+        const parsed = JSON.parse(raw);
+        inMemoryTokens = parsed;
+        return parsed;
+      }
+    } catch {
+      // Continue to next directory
     }
-  } catch (err) {
-    console.error('Error reading Google Drive token storage:', err);
   }
   return null;
 }
 
 export function saveStoredTokens(tokens: StoredTokens): void {
-  try {
-    ensureDataDir();
-    const existing = loadStoredTokens() || {};
-    const merged = {
-      ...existing,
-      ...tokens,
-      // If new tokens don't include refresh token (common on renewal), preserve existing
-      refresh_token: tokens.refresh_token || existing.refresh_token,
-    };
-    fs.writeFileSync(TOKEN_FILE_PATH, JSON.stringify(merged, null, 2), 'utf-8');
-  } catch (err) {
-    console.error('Error persisting Google Drive tokens:', err);
+  const existing = loadStoredTokens() || {};
+  const merged: StoredTokens = {
+    ...existing,
+    ...tokens,
+    // Preserve existing refresh token if new payload is only access token renewal
+    refresh_token: tokens.refresh_token || existing.refresh_token,
+  };
+  inMemoryTokens = merged;
+
+  const targetDir = getWritableDataDir();
+  if (targetDir) {
+    try {
+      const filePath = path.join(targetDir, 'google-drive-tokens.json');
+      fs.writeFileSync(filePath, JSON.stringify(merged, null, 2), 'utf-8');
+    } catch (err: any) {
+      console.warn('Could not write tokens to disk, stored in memory cache:', err?.message);
+    }
   }
 }
 
 export function clearStoredTokens(): void {
-  try {
-    ensureDataDir();
-    if (fs.existsSync(TOKEN_FILE_PATH)) {
-      fs.unlinkSync(TOKEN_FILE_PATH);
+  inMemoryTokens = null;
+  const dirs = [PRIMARY_DATA_DIR, FALLBACK_DATA_DIR];
+  for (const dir of dirs) {
+    try {
+      const filePath = path.join(dir, 'google-drive-tokens.json');
+      if (fs.existsSync(filePath)) {
+        fs.unlinkSync(filePath);
+      }
+    } catch {
+      // Ignore
     }
-  } catch (err) {
-    console.error('Error removing Google Drive tokens:', err);
   }
 }
 
 export function loadStoredConfig(): StoredConfig {
-  try {
-    ensureDataDir();
-    if (fs.existsSync(CONFIG_FILE_PATH)) {
-      const raw = fs.readFileSync(CONFIG_FILE_PATH, 'utf-8');
-      return JSON.parse(raw);
+  const dirs = [PRIMARY_DATA_DIR, FALLBACK_DATA_DIR];
+  for (const dir of dirs) {
+    try {
+      const filePath = path.join(dir, 'google-drive-config.json');
+      if (fs.existsSync(filePath)) {
+        const raw = fs.readFileSync(filePath, 'utf-8');
+        const parsed = JSON.parse(raw);
+        inMemoryConfig = { ...parsed, ...inMemoryConfig };
+        return inMemoryConfig;
+      }
+    } catch {
+      // Continue to next directory
     }
-  } catch (err) {
-    console.error('Error loading Google Drive config:', err);
   }
-  return {};
+  return inMemoryConfig;
 }
 
-export function saveStoredConfig(config: Partial<StoredConfig>): { success: boolean; error?: string } {
+export function saveStoredConfig(config: Partial<StoredConfig>): { success: boolean; error?: string; storageMode?: string } {
   try {
-    ensureDataDir();
     const existing = loadStoredConfig();
     const merged: StoredConfig = { ...existing };
     if (config.clientId !== undefined && config.clientId.trim() !== '') {
@@ -128,8 +173,17 @@ export function saveStoredConfig(config: Partial<StoredConfig>): { success: bool
     if (config.accountEmail !== undefined && config.accountEmail.trim() !== '') {
       merged.accountEmail = config.accountEmail.trim();
     }
-    fs.writeFileSync(CONFIG_FILE_PATH, JSON.stringify(merged, null, 2), 'utf-8');
-    return { success: true };
+
+    inMemoryConfig = merged;
+
+    const targetDir = getWritableDataDir();
+    if (targetDir) {
+      const filePath = path.join(targetDir, 'google-drive-config.json');
+      fs.writeFileSync(filePath, JSON.stringify(merged, null, 2), 'utf-8');
+      return { success: true, storageMode: 'persistent_filesystem' };
+    }
+
+    return { success: true, storageMode: 'runtime_memory_fallback' };
   } catch (err: any) {
     const errMsg = err?.message || 'Unknown write error';
     console.error('Error saving Google Drive config:', errMsg);
@@ -139,17 +193,59 @@ export function saveStoredConfig(config: Partial<StoredConfig>): { success: bool
 
 export function getEffectiveCredentials(reqHostOrigin?: string) {
   const storedConfig = loadStoredConfig();
-  const clientId = (process.env.GOOGLE_DRIVE_CLIENT_ID || storedConfig.clientId || '').trim();
-  const clientSecret = (process.env.GOOGLE_DRIVE_CLIENT_SECRET || storedConfig.clientSecret || '').trim();
-  const rootFolderId = (process.env.GOOGLE_DRIVE_ROOT_FOLDER_ID || storedConfig.rootFolderId || DEFAULT_ROOT_FOLDER_ID).trim();
-  const accountEmail = (process.env.GOOGLE_DRIVE_ACCOUNT_EMAIL || storedConfig.accountEmail || DEDICATED_ACCOUNT_EMAIL).trim();
+
+  // Check standard and alias environment variables
+  const clientId = (
+    process.env.GOOGLE_DRIVE_CLIENT_ID ||
+    process.env.GOOGLE_CLIENT_ID ||
+    process.env.DRIVE_CLIENT_ID ||
+    process.env.VITE_GOOGLE_DRIVE_CLIENT_ID ||
+    storedConfig.clientId ||
+    inMemoryConfig.clientId ||
+    ''
+  ).trim();
+
+  const clientSecret = (
+    process.env.GOOGLE_DRIVE_CLIENT_SECRET ||
+    process.env.GOOGLE_CLIENT_SECRET ||
+    process.env.DRIVE_CLIENT_SECRET ||
+    storedConfig.clientSecret ||
+    inMemoryConfig.clientSecret ||
+    ''
+  ).trim();
+
+  const rootFolderId = (
+    process.env.GOOGLE_DRIVE_ROOT_FOLDER_ID ||
+    process.env.GOOGLE_ROOT_FOLDER_ID ||
+    process.env.DRIVE_ROOT_FOLDER_ID ||
+    storedConfig.rootFolderId ||
+    inMemoryConfig.rootFolderId ||
+    DEFAULT_ROOT_FOLDER_ID
+  ).trim();
+
+  const accountEmail = (
+    process.env.GOOGLE_DRIVE_ACCOUNT_EMAIL ||
+    process.env.GOOGLE_ACCOUNT_EMAIL ||
+    process.env.DRIVE_ACCOUNT_EMAIL ||
+    storedConfig.accountEmail ||
+    inMemoryConfig.accountEmail ||
+    DEDICATED_ACCOUNT_EMAIL
+  ).trim();
 
   // Compute dynamic or configured redirect URI
-  let redirectUri = (process.env.GOOGLE_DRIVE_REDIRECT_URI || storedConfig.redirectUri || '').trim();
+  let redirectUri = (
+    process.env.GOOGLE_DRIVE_REDIRECT_URI ||
+    process.env.GOOGLE_REDIRECT_URI ||
+    process.env.DRIVE_REDIRECT_URI ||
+    storedConfig.redirectUri ||
+    inMemoryConfig.redirectUri ||
+    ''
+  ).trim();
+
   if (!redirectUri && reqHostOrigin) {
     redirectUri = `${reqHostOrigin.replace(/\/$/, '')}/api/auth/google/callback`;
   } else if (!redirectUri) {
-    redirectUri = 'https://portal.maplexfinancial.com/api/auth/google/callback';
+    redirectUri = DEFAULT_REDIRECT_URI;
   }
 
   const clientIdConfigured = Boolean(clientId && clientId.length > 3);

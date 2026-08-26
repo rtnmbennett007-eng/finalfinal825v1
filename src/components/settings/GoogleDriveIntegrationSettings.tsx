@@ -401,6 +401,13 @@ export const GoogleDriveIntegrationSettings: React.FC = () => {
         {/* Collapsible Form to Update Server Credentials */}
         {showConfigForm && (
           <form onSubmit={handleSaveConfig} className="p-5 border-t border-blue-900/40 bg-[#081226]/80 space-y-4">
+            <div className="p-3 bg-blue-950/40 border border-blue-900/40 rounded-xl text-xs text-slate-300 flex items-center gap-2">
+              <ShieldCheck className="w-4 h-4 text-emerald-400 shrink-0" />
+              <span>
+                <strong>Environment Note:</strong> Credentials in production are automatically supplied by secure server environment variables (<code className="text-amber-300 font-mono">GOOGLE_DRIVE_CLIENT_ID</code>, <code className="text-amber-300 font-mono">GOOGLE_DRIVE_CLIENT_SECRET</code>). Manual updates below update server memory/configuration securely.
+              </span>
+            </div>
+
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
                 <label className="block text-xs font-semibold text-slate-300 mb-1.5">

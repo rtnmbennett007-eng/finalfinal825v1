@@ -3483,7 +3483,7 @@ app.post('/api/documents/upload-and-analyze', async (req, res) => {
 });
 
 // Multipart Stream Upload Endpoint
-app.post('/api/documents/upload-file', upload.single('file'), async (req, res) => {
+app.post('/api/documents/upload-file', upload.single('file') as any, async (req: any, res: any) => {
   try {
     const file = req.file;
     if (!file) {

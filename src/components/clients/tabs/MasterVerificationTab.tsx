@@ -24,6 +24,7 @@ import {
   Check,
   ExternalLink,
   ChevronRight,
+  ArrowRight,
 } from 'lucide-react';
 import {
   Client,
@@ -592,9 +593,12 @@ export const MasterVerificationTab: React.FC<MasterVerificationTabProps> = ({
   };
 
   const [formData, setFormData] = useState<MasterVerificationData>(initMasterData);
+  const [isDirty, setIsDirty] = useState<boolean>(false);
+  const [saveSuccess, setSaveSuccess] = useState<boolean>(false);
 
   useEffect(() => {
     setFormData(initMasterData());
+    setIsDirty(false);
   }, [client.id, masterVerification]);
 
   // Handle Save
@@ -602,6 +606,9 @@ export const MasterVerificationTab: React.FC<MasterVerificationTabProps> = ({
     setIsSaving(true);
     try {
       await api.saveMasterVerification(client.id, formData);
+      setIsDirty(false);
+      setSaveSuccess(true);
+      setTimeout(() => setSaveSuccess(false), 3000);
       addToast(
         'success',
         'Verification File Saved',
@@ -636,6 +643,8 @@ export const MasterVerificationTab: React.FC<MasterVerificationTabProps> = ({
       ...prev,
       existingDebts: [...(prev.existingDebts || []), newDebt],
     }));
+    setIsDirty(true);
+    setSaveSuccess(false);
     setShowAddDebtModal(false);
     setNewDebtForm({
       lender: '',
@@ -653,6 +662,8 @@ export const MasterVerificationTab: React.FC<MasterVerificationTabProps> = ({
       ...prev,
       existingDebts: (prev.existingDebts || []).filter((d) => d.id !== id),
     }));
+    setIsDirty(true);
+    setSaveSuccess(false);
     addToast('info', 'Record Removed', 'Debt record removed from worksheet.');
   };
 
@@ -682,6 +693,8 @@ export const MasterVerificationTab: React.FC<MasterVerificationTabProps> = ({
       ...prev,
       creditCards: [...(prev.creditCards || []), newCard],
     }));
+    setIsDirty(true);
+    setSaveSuccess(false);
     setShowAddCardModal(false);
     setNewCardForm({
       cardCategory: 'BUSINESS',
@@ -702,6 +715,8 @@ export const MasterVerificationTab: React.FC<MasterVerificationTabProps> = ({
       ...prev,
       creditCards: (prev.creditCards || []).filter((c) => c.id !== id),
     }));
+    setIsDirty(true);
+    setSaveSuccess(false);
     addToast('info', 'Card Removed', 'Credit card record removed.');
   };
 
@@ -712,6 +727,8 @@ export const MasterVerificationTab: React.FC<MasterVerificationTabProps> = ({
     key: keyof MasterVerificationField,
     val: string
   ) => {
+    setIsDirty(true);
+    setSaveSuccess(false);
     setFormData((prev: any) => ({
       ...prev,
       [section]: {
@@ -730,6 +747,8 @@ export const MasterVerificationTab: React.FC<MasterVerificationTabProps> = ({
     key: keyof MasterVerificationField,
     val: string
   ) => {
+    setIsDirty(true);
+    setSaveSuccess(false);
     setFormData((prev: any) => {
       const existingSection = prev.employmentVerification || {};
       const existingField = existingSection[field] || {
@@ -756,6 +775,8 @@ export const MasterVerificationTab: React.FC<MasterVerificationTabProps> = ({
     property: 'sectionStatus' | 'employmentIncomeNotes' | 'redFlags',
     val: any
   ) => {
+    setIsDirty(true);
+    setSaveSuccess(false);
     setFormData((prev: any) => {
       const existingSection = prev.employmentVerification || {};
       return {
@@ -1207,8 +1228,61 @@ export const MasterVerificationTab: React.FC<MasterVerificationTabProps> = ({
     );
   };
 
+  const renderSectionSaveBar = (sectionName: string, nextSectionId?: string, nextSectionLabel?: string) => (
+    <div className="pt-4 border-t border-blue-900/60 flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-[#070d18] p-4 rounded-xl border border-blue-900/40 mt-4">
+      <div className="flex items-center space-x-2 text-xs">
+        <span
+          className={`w-2.5 h-2.5 rounded-full ${
+            isDirty
+              ? 'bg-amber-400 animate-pulse'
+              : saveSuccess
+              ? 'bg-emerald-400'
+              : 'bg-blue-400'
+          }`}
+        />
+        <span className="text-slate-300 font-medium">
+          {isDirty ? (
+            <span className="text-amber-300 font-semibold">Unsaved edits in {sectionName}</span>
+          ) : saveSuccess ? (
+            <span className="text-emerald-300 font-semibold">All changes in {sectionName} saved & synced ✓</span>
+          ) : (
+            <span>{sectionName} synchronized with Underwriting & 360 view</span>
+          )}
+        </span>
+      </div>
+      <div className="flex items-center space-x-2 shrink-0">
+        <button
+          type="button"
+          onClick={handleSave}
+          disabled={isSaving}
+          className={`flex items-center space-x-1.5 px-4 py-2 rounded-xl text-xs font-bold transition-all shadow-md ${
+            isDirty
+              ? 'bg-amber-500 hover:bg-amber-400 text-slate-950 shadow-amber-500/25 ring-2 ring-amber-400/40'
+              : 'bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700'
+          }`}
+        >
+          <Save className={`w-3.5 h-3.5 ${isSaving ? 'animate-spin' : isDirty ? 'text-slate-950' : 'text-amber-400'}`} />
+          <span>{isSaving ? 'Saving...' : `Save ${sectionName}`}</span>
+        </button>
+        {nextSectionId && nextSectionLabel && (
+          <button
+            type="button"
+            onClick={async () => {
+              if (isDirty) await handleSave();
+              setActiveSection(nextSectionId);
+            }}
+            className="flex items-center space-x-1.5 px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-xl text-xs font-bold transition-all shadow-md shadow-blue-600/20"
+          >
+            <span>{nextSectionLabel}</span>
+            <ArrowRight className="w-3.5 h-3.5" />
+          </button>
+        )}
+      </div>
+    </div>
+  );
+
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 relative">
       {/* Top Banner */}
       <div className="bg-[#0b1528] border border-blue-900/60 p-6 rounded-2xl shadow-xl space-y-4">
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
@@ -1228,6 +1302,16 @@ export const MasterVerificationTab: React.FC<MasterVerificationTabProps> = ({
                 }`}>
                   Status: {formData.status || 'IN_PROGRESS'}
                 </span>
+                {isDirty && (
+                  <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded bg-amber-500/20 text-amber-300 border border-amber-500/40 animate-pulse">
+                    ● Unsaved Changes
+                  </span>
+                )}
+                {saveSuccess && (
+                  <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-300 border border-emerald-500/40">
+                    ✓ Saved & Synced
+                  </span>
+                )}
                 <span className="text-xs text-slate-400">
                   Specialist: <strong className="text-slate-200">{formData.verificationSpecialist}</strong>
                 </span>
@@ -1247,10 +1331,14 @@ export const MasterVerificationTab: React.FC<MasterVerificationTabProps> = ({
             <button
               onClick={handleSave}
               disabled={isSaving || isCompleting}
-              className="flex items-center space-x-1.5 px-4 py-2.5 bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 rounded-xl text-xs font-bold transition-all disabled:opacity-50"
+              className={`flex items-center space-x-2 px-5 py-2.5 rounded-xl text-xs font-bold transition-all disabled:opacity-50 shadow-lg ${
+                isDirty
+                  ? 'bg-amber-500 hover:bg-amber-400 text-slate-950 shadow-amber-500/30 ring-2 ring-amber-400/50'
+                  : 'bg-blue-600 hover:bg-blue-500 text-white shadow-blue-600/20'
+              }`}
             >
-              <Save className="w-4 h-4 text-amber-400" />
-              <span>{isSaving ? 'Saving...' : 'Save Draft'}</span>
+              <Save className={`w-4 h-4 ${isSaving ? 'animate-spin' : isDirty ? 'text-slate-950' : 'text-white'}`} />
+              <span>{isSaving ? 'Saving...' : isDirty ? 'Save Verification Changes' : 'Save Draft'}</span>
             </button>
           </div>
         </div>
@@ -1380,7 +1468,18 @@ export const MasterVerificationTab: React.FC<MasterVerificationTabProps> = ({
               <User className="w-4 h-4" />
               Identity & Contact Information
             </h3>
-            <span className="text-[10px] text-slate-400 font-mono">5 Verification Fields</span>
+            <div className="flex items-center space-x-2">
+              <span className="text-[10px] text-slate-400 font-mono">5 Verification Fields</span>
+              <button
+                type="button"
+                onClick={handleSave}
+                disabled={isSaving}
+                className="flex items-center space-x-1 px-3 py-1 bg-slate-800 hover:bg-slate-700 text-slate-200 border border-blue-900/60 rounded-lg text-xs font-semibold"
+              >
+                <Save className="w-3 h-3 text-amber-400" />
+                <span>Save Section</span>
+              </button>
+            </div>
           </div>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             {renderFieldRow(
@@ -1420,6 +1519,7 @@ export const MasterVerificationTab: React.FC<MasterVerificationTabProps> = ({
               formData.identity.ssnLast4
             )}
           </div>
+          {renderSectionSaveBar('Identity & Contact', 'business', 'Next: Business Profile')}
         </div>
       )}
 
@@ -1431,7 +1531,18 @@ export const MasterVerificationTab: React.FC<MasterVerificationTabProps> = ({
               <Building2 className="w-4 h-4" />
               Business Organization & Entity Details
             </h3>
-            <span className="text-[10px] text-slate-400 font-mono">10 Verification Fields</span>
+            <div className="flex items-center space-x-2">
+              <span className="text-[10px] text-slate-400 font-mono">10 Verification Fields</span>
+              <button
+                type="button"
+                onClick={handleSave}
+                disabled={isSaving}
+                className="flex items-center space-x-1 px-3 py-1 bg-slate-800 hover:bg-slate-700 text-slate-200 border border-blue-900/60 rounded-lg text-xs font-semibold"
+              >
+                <Save className="w-3 h-3 text-amber-400" />
+                <span>Save Section</span>
+              </button>
+            </div>
           </div>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             {renderFieldRow(
@@ -1507,6 +1618,7 @@ export const MasterVerificationTab: React.FC<MasterVerificationTabProps> = ({
               'textarea'
             )}
           </div>
+          {renderSectionSaveBar('Business Organization', 'income', 'Next: Income & Payroll')}
         </div>
       )}
 
@@ -2131,6 +2243,7 @@ export const MasterVerificationTab: React.FC<MasterVerificationTabProps> = ({
               </label>
             </div>
           </div>
+          {renderSectionSaveBar('Banking & Cashflow', 'debts', 'Next: Debts & Cards')}
         </div>
       )}
 
@@ -2143,13 +2256,24 @@ export const MasterVerificationTab: React.FC<MasterVerificationTabProps> = ({
                 <Briefcase className="w-4 h-4" />
                 Existing Loans, Lines of Credit & MCAs ({(formData.existingDebts || []).length} Records)
               </h3>
-              <button
-                onClick={() => setShowAddDebtModal(true)}
-                className="px-3 py-1.5 bg-amber-500 hover:bg-amber-400 text-slate-950 rounded-xl text-xs font-bold transition-all flex items-center gap-1 shadow-xs"
-              >
-                <Plus className="w-3.5 h-3.5" />
-                <span>Add Existing Debt</span>
-              </button>
+              <div className="flex items-center space-x-2">
+                <button
+                  type="button"
+                  onClick={handleSave}
+                  disabled={isSaving}
+                  className="flex items-center space-x-1 px-3 py-1 bg-slate-800 hover:bg-slate-700 text-slate-200 border border-blue-900/60 rounded-lg text-xs font-semibold"
+                >
+                  <Save className="w-3 h-3 text-amber-400" />
+                  <span>Save</span>
+                </button>
+                <button
+                  onClick={() => setShowAddDebtModal(true)}
+                  className="px-3 py-1.5 bg-amber-500 hover:bg-amber-400 text-slate-950 rounded-xl text-xs font-bold transition-all flex items-center gap-1 shadow-xs"
+                >
+                  <Plus className="w-3.5 h-3.5" />
+                  <span>Add Debt</span>
+                </button>
+              </div>
             </div>
 
             {/* Script Callout for Existing Loans */}
@@ -2288,6 +2412,7 @@ export const MasterVerificationTab: React.FC<MasterVerificationTabProps> = ({
               )}
             </div>
           </div>
+          {renderSectionSaveBar('Debts & Credit Profile', 'housing', 'Next: Housing & Request')}
         </div>
       )}
 
@@ -2299,7 +2424,18 @@ export const MasterVerificationTab: React.FC<MasterVerificationTabProps> = ({
               <Home className="w-4 h-4" />
               Housing & Funding Request Verification
             </h3>
-            <span className="text-[10px] text-slate-400 font-mono">Living Status & Capital Timeline</span>
+            <div className="flex items-center space-x-2">
+              <span className="text-[10px] text-slate-400 font-mono">Living Status & Capital Timeline</span>
+              <button
+                type="button"
+                onClick={handleSave}
+                disabled={isSaving}
+                className="flex items-center space-x-1 px-3 py-1 bg-slate-800 hover:bg-slate-700 text-slate-200 border border-blue-900/60 rounded-lg text-xs font-semibold"
+              >
+                <Save className="w-3 h-3 text-amber-400" />
+                <span>Save Section</span>
+              </button>
+            </div>
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -2373,6 +2509,7 @@ export const MasterVerificationTab: React.FC<MasterVerificationTabProps> = ({
               </select>
             </div>
           </div>
+          {renderSectionSaveBar('Housing & Funding Request', 'checklist', 'Next: Final Checklist')}
         </div>
       )}
 
@@ -2385,7 +2522,18 @@ export const MasterVerificationTab: React.FC<MasterVerificationTabProps> = ({
                 <ShieldCheck className="w-4 h-4" />
                 Final 11-Point Verification Audit Checklist
               </h3>
-              <span className="text-[10px] text-slate-400 font-mono">11 Quality Gate Milestones</span>
+              <div className="flex items-center space-x-2">
+                <span className="text-[10px] text-slate-400 font-mono">11 Quality Gate Milestones</span>
+                <button
+                  type="button"
+                  onClick={handleSave}
+                  disabled={isSaving}
+                  className="flex items-center space-x-1 px-3 py-1 bg-slate-800 hover:bg-slate-700 text-slate-200 border border-blue-900/60 rounded-lg text-xs font-semibold"
+                >
+                  <Save className="w-3 h-3 text-amber-400" />
+                  <span>Save</span>
+                </button>
+              </div>
             </div>
             <p className="text-xs text-slate-400 mt-2">
               All 11 verification milestones must be confirmed prior to submitting the deal file to institutional lenders.
@@ -2755,6 +2903,33 @@ export const MasterVerificationTab: React.FC<MasterVerificationTabProps> = ({
                 Add Credit Card
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Floating Sticky Quick-Save Bar when edits are present */}
+      {isDirty && (
+        <div className="sticky bottom-4 z-40 bg-[#070d18]/95 backdrop-blur-md border border-amber-500/50 p-3 rounded-2xl shadow-2xl flex items-center justify-between gap-4 animate-in slide-in-from-bottom-3 duration-300">
+          <div className="flex items-center space-x-3">
+            <div className="p-2 bg-amber-500/20 text-amber-400 rounded-xl border border-amber-500/30 animate-pulse">
+              <AlertCircle className="w-5 h-5" />
+            </div>
+            <div>
+              <p className="text-xs font-bold text-slate-100">You have unsaved verification edits</p>
+              <p className="text-[11px] text-slate-400">Save now to persist and synchronize across all tabs & underwriters</p>
+            </div>
+          </div>
+
+          <div className="flex items-center space-x-2">
+            <button
+              type="button"
+              onClick={handleSave}
+              disabled={isSaving}
+              className="flex items-center space-x-2 px-5 py-2.5 bg-amber-500 hover:bg-amber-400 text-slate-950 rounded-xl text-xs font-bold transition-all shadow-lg shadow-amber-500/30 ring-2 ring-amber-400/50"
+            >
+              <Save className={`w-4 h-4 ${isSaving ? 'animate-spin' : ''}`} />
+              <span>{isSaving ? 'Saving Changes...' : 'Save All Verification Changes'}</span>
+            </button>
           </div>
         </div>
       )}

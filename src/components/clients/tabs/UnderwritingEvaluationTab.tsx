@@ -330,9 +330,16 @@ export const UnderwritingEvaluationTab: React.FC<UnderwritingEvaluationTabProps>
 
   const [activeSection, setActiveSection] = useState<string>('overview');
   const [isSaving, setIsSaving] = useState(false);
+  const [isDirty, setIsDirty] = useState(false);
   const [saveSuccess, setSaveSuccess] = useState(false);
   const [newStrength, setNewStrength] = useState('');
   const [newWeakness, setNewWeakness] = useState('');
+
+  const mutateEval = (updater: (prev: UnderwritingEvaluationRecord) => UnderwritingEvaluationRecord) => {
+    setIsDirty(true);
+    setSaveSuccess(false);
+    setEvalRecord(updater);
+  };
 
   // Synchronize document vault items with checklist
   useEffect(() => {
@@ -419,6 +426,7 @@ export const UnderwritingEvaluationTab: React.FC<UnderwritingEvaluationTabProps>
       };
 
       await onSaveEvaluation(recordToSave);
+      setIsDirty(false);
       setSaveSuccess(true);
       setTimeout(() => setSaveSuccess(false), 3000);
       onRefreshClient();
@@ -444,7 +452,7 @@ export const UnderwritingEvaluationTab: React.FC<UnderwritingEvaluationTabProps>
         ? Math.round(updated.reduce((acc, m) => acc + (Number(m.endingBalance) || 0), 0) / updated.length)
         : 0;
 
-    setEvalRecord((prev) => ({
+    mutateEval((prev) => ({
       ...prev,
       monthlyBreakdowns: updated,
       totalDeposits: totalDeps,
@@ -469,14 +477,14 @@ export const UnderwritingEvaluationTab: React.FC<UnderwritingEvaluationTabProps>
       dueDate: new Date(Date.now() + 86400000 * 3).toISOString().split('T')[0],
       status: 'Open',
     };
-    setEvalRecord((prev) => ({
+    mutateEval((prev) => ({
       ...prev,
       conditions: [...prev.conditions, newCond],
     }));
   };
 
   const handleRemoveCondition = (id: string) => {
-    setEvalRecord((prev) => ({
+    mutateEval((prev) => ({
       ...prev,
       conditions: prev.conditions.filter((c) => c.id !== id),
     }));
@@ -484,7 +492,7 @@ export const UnderwritingEvaluationTab: React.FC<UnderwritingEvaluationTabProps>
 
   const handleAddStrength = () => {
     if (!newStrength.trim()) return;
-    setEvalRecord((prev) => ({
+    mutateEval((prev) => ({
       ...prev,
       strengths: [...prev.strengths, newStrength.trim()],
     }));
@@ -492,7 +500,7 @@ export const UnderwritingEvaluationTab: React.FC<UnderwritingEvaluationTabProps>
   };
 
   const handleRemoveStrength = (idx: number) => {
-    setEvalRecord((prev) => ({
+    mutateEval((prev) => ({
       ...prev,
       strengths: prev.strengths.filter((_, i) => i !== idx),
     }));
@@ -500,7 +508,7 @@ export const UnderwritingEvaluationTab: React.FC<UnderwritingEvaluationTabProps>
 
   const handleAddWeakness = () => {
     if (!newWeakness.trim()) return;
-    setEvalRecord((prev) => ({
+    mutateEval((prev) => ({
       ...prev,
       weaknesses: [...prev.weaknesses, newWeakness.trim()],
     }));
@@ -508,10 +516,96 @@ export const UnderwritingEvaluationTab: React.FC<UnderwritingEvaluationTabProps>
   };
 
   const handleRemoveWeakness = (idx: number) => {
-    setEvalRecord((prev) => ({
+    mutateEval((prev) => ({
       ...prev,
       weaknesses: prev.weaknesses.filter((_, i) => i !== idx),
     }));
+  };
+
+  const renderSectionSaveBar = (
+    currentSecName: string,
+    prevSecId?: string,
+    nextSecId?: string
+  ) => {
+    return (
+      <div
+        id={`underwriting-savebar-${currentSecName.toLowerCase().replace(/\s+/g, '-')}`}
+        className="mt-6 p-4 rounded-xl bg-[#070d18] border border-blue-900/60 flex flex-col sm:flex-row items-center justify-between gap-4 shadow-lg"
+      >
+        <div className="flex items-center space-x-3">
+          <div
+            className={`w-3 h-3 rounded-full ${
+              isDirty ? 'bg-amber-400 animate-pulse' : saveSuccess ? 'bg-emerald-400' : 'bg-emerald-500'
+            }`}
+          />
+          <div>
+            <div className="text-xs font-bold text-slate-200 flex items-center gap-1.5">
+              <span>Section: {currentSecName}</span>
+              {isDirty && (
+                <span className="text-[10px] bg-amber-500/20 text-amber-300 px-1.5 py-0.5 rounded border border-amber-500/30">
+                  Unsaved Edits
+                </span>
+              )}
+              {saveSuccess && (
+                <span className="text-[10px] bg-emerald-500/20 text-emerald-300 px-1.5 py-0.5 rounded border border-emerald-500/30">
+                  Saved ✓
+                </span>
+              )}
+            </div>
+            <p className="text-[11px] text-slate-400">
+              Save your changes to persist underwriting evaluation metrics.
+            </p>
+          </div>
+        </div>
+
+        <div className="flex items-center space-x-2 shrink-0">
+          {prevSecId && (
+            <button
+              type="button"
+              onClick={() => setActiveSection(prevSecId)}
+              className="px-3 py-1.5 bg-slate-900 hover:bg-slate-800 text-slate-300 border border-blue-900/60 rounded-xl text-xs font-medium transition-all"
+            >
+              ← Previous
+            </button>
+          )}
+
+          <button
+            type="button"
+            onClick={handleSave}
+            disabled={isSaving}
+            className={`flex items-center space-x-1.5 px-4 py-2 rounded-xl text-xs font-bold transition-all shadow-md ${
+              isDirty
+                ? 'bg-amber-500 hover:bg-amber-400 text-slate-950 shadow-amber-500/20'
+                : saveSuccess
+                ? 'bg-emerald-500 text-slate-950 shadow-emerald-500/20'
+                : 'bg-blue-600 hover:bg-blue-500 text-white shadow-blue-600/20'
+            } disabled:opacity-50`}
+          >
+            {saveSuccess ? (
+              <>
+                <Check className="w-3.5 h-3.5" />
+                <span>Saved Successfully!</span>
+              </>
+            ) : (
+              <>
+                <Save className="w-3.5 h-3.5" />
+                <span>{isSaving ? 'Saving...' : 'Save Evaluation'}</span>
+              </>
+            )}
+          </button>
+
+          {nextSecId && (
+            <button
+              type="button"
+              onClick={() => setActiveSection(nextSecId)}
+              className="px-3 py-1.5 bg-slate-900 hover:bg-slate-800 text-slate-300 border border-blue-900/60 rounded-xl text-xs font-medium transition-all"
+            >
+              Next →
+            </button>
+          )}
+        </div>
+      </div>
+    );
   };
 
   return (
@@ -713,10 +807,21 @@ export const UnderwritingEvaluationTab: React.FC<UnderwritingEvaluationTabProps>
         <div className="space-y-6">
           {/* Executive Underwriting Summary Card */}
           <div className="bg-[#0b1528] border border-blue-900/60 p-6 rounded-2xl shadow-xl space-y-4">
-            <h3 className="text-sm font-bold text-amber-400 uppercase tracking-wider flex items-center gap-2">
-              <Sparkles className="w-4 h-4" />
-              Executive Underwriter Submission Memorandum
-            </h3>
+            <div className="flex items-center justify-between">
+              <h3 className="text-sm font-bold text-amber-400 uppercase tracking-wider flex items-center gap-2">
+                <Sparkles className="w-4 h-4" />
+                Executive Underwriter Submission Memorandum
+              </h3>
+              <button
+                type="button"
+                onClick={handleSave}
+                disabled={isSaving}
+                className="flex items-center space-x-1.5 px-3 py-1.5 bg-amber-500 hover:bg-amber-400 text-slate-950 rounded-xl text-xs font-bold transition-all shadow-xs"
+              >
+                <Save className="w-3.5 h-3.5" />
+                <span>{isSaving ? 'Saving...' : saveSuccess ? 'Saved ✓' : 'Save Section'}</span>
+              </button>
+            </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs">
               <div className="space-y-3 bg-[#070d18] p-4 rounded-xl border border-blue-900/40">
@@ -857,758 +962,1019 @@ export const UnderwritingEvaluationTab: React.FC<UnderwritingEvaluationTabProps>
               <textarea
                 rows={4}
                 value={evalRecord.underwriterComments}
-                onChange={(e) => setEvalRecord({ ...evalRecord, underwriterComments: e.target.value })}
+                onChange={(e) =>
+                  mutateEval((prev) => ({ ...prev, underwriterComments: e.target.value }))
+                }
                 className="w-full bg-[#070d18] border border-blue-900/70 rounded-xl p-3 text-xs text-slate-100 focus:outline-none focus:border-amber-500 leading-relaxed font-sans"
               />
             </div>
           </div>
+
+          {renderSectionSaveBar('1. Executive Briefing', undefined, 'business')}
         </div>
       )}
 
       {/* --- SUB-VIEW 2: BUSINESS PROFILE --- */}
       {activeSection === 'business' && (
-        <div className="bg-[#0b1528] border border-blue-900/60 p-6 rounded-2xl shadow-xl space-y-4">
-          <h3 className="text-sm font-bold text-amber-400 uppercase tracking-wider flex items-center gap-2">
-            <Building2 className="w-4 h-4" />
-            Commercial Entity Profile & Operating History
-          </h3>
+        <div className="space-y-6">
+          <div className="bg-[#0b1528] border border-blue-900/60 p-6 rounded-2xl shadow-xl space-y-4">
+            <div className="flex items-center justify-between">
+              <h3 className="text-sm font-bold text-amber-400 uppercase tracking-wider flex items-center gap-2">
+                <Building2 className="w-4 h-4" />
+                Commercial Entity Profile & Operating History
+              </h3>
+              <button
+                type="button"
+                onClick={handleSave}
+                disabled={isSaving}
+                className="flex items-center space-x-1.5 px-3 py-1.5 bg-amber-500 hover:bg-amber-400 text-slate-950 rounded-xl text-xs font-bold transition-all shadow-xs"
+              >
+                <Save className="w-3.5 h-3.5" />
+                <span>{isSaving ? 'Saving...' : saveSuccess ? 'Saved ✓' : 'Save Section'}</span>
+              </button>
+            </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-xs">
-            <div>
-              <label className="block text-slate-400 mb-1">Entity Structure</label>
-              <input
-                type="text"
-                value={evalRecord.businessType}
-                onChange={(e) => setEvalRecord({ ...evalRecord, businessType: e.target.value })}
-                className="w-full bg-[#070d18] border border-blue-900/70 rounded-xl p-2.5 text-slate-100 focus:outline-none"
-              />
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-xs">
+              <div>
+                <label className="block text-slate-400 mb-1">Entity Structure</label>
+                <input
+                  type="text"
+                  value={evalRecord.businessType}
+                  onChange={(e) =>
+                    mutateEval((prev) => ({ ...prev, businessType: e.target.value }))
+                  }
+                  className="w-full bg-[#070d18] border border-blue-900/70 rounded-xl p-2.5 text-slate-100 focus:outline-none"
+                />
+              </div>
+
+              <div>
+                <label className="block text-slate-400 mb-1">Industry Classification</label>
+                <input
+                  type="text"
+                  value={evalRecord.industry}
+                  onChange={(e) =>
+                    mutateEval((prev) => ({ ...prev, industry: e.target.value }))
+                  }
+                  className="w-full bg-[#070d18] border border-blue-900/70 rounded-xl p-2.5 text-slate-100 focus:outline-none"
+                />
+              </div>
+
+              <div>
+                <label className="block text-slate-400 mb-1">Years in Business</label>
+                <input
+                  type="text"
+                  value={evalRecord.yearsInBusiness}
+                  onChange={(e) =>
+                    mutateEval((prev) => ({ ...prev, yearsInBusiness: e.target.value }))
+                  }
+                  className="w-full bg-[#070d18] border border-blue-900/70 rounded-xl p-2.5 text-slate-100 focus:outline-none"
+                />
+              </div>
+
+              <div>
+                <label className="block text-slate-400 mb-1">Principal Ownership (%)</label>
+                <input
+                  type="number"
+                  value={evalRecord.ownershipPercentage}
+                  onChange={(e) =>
+                    mutateEval((prev) => ({
+                      ...prev,
+                      ownershipPercentage: parseFloat(e.target.value) || 0,
+                    }))
+                  }
+                  className="w-full bg-[#070d18] border border-blue-900/70 rounded-xl p-2.5 text-emerald-400 font-mono font-bold focus:outline-none"
+                />
+              </div>
+
+              <div>
+                <label className="block text-slate-400 mb-1">Number of Employees</label>
+                <input
+                  type="number"
+                  value={evalRecord.numberOfEmployees}
+                  onChange={(e) =>
+                    mutateEval((prev) => ({
+                      ...prev,
+                      numberOfEmployees: parseInt(e.target.value) || 0,
+                    }))
+                  }
+                  className="w-full bg-[#070d18] border border-blue-900/70 rounded-xl p-2.5 text-slate-100 focus:outline-none"
+                />
+              </div>
+
+              <div>
+                <label className="block text-slate-400 mb-1">Geographic Location</label>
+                <input
+                  type="text"
+                  value={evalRecord.geographicLocation}
+                  onChange={(e) =>
+                    mutateEval((prev) => ({ ...prev, geographicLocation: e.target.value }))
+                  }
+                  className="w-full bg-[#070d18] border border-blue-900/70 rounded-xl p-2.5 text-slate-100 focus:outline-none"
+                />
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs pt-2">
+              <div>
+                <label className="block text-slate-400 mb-1">Business Model Description</label>
+                <textarea
+                  rows={3}
+                  value={evalRecord.businessModel}
+                  onChange={(e) =>
+                    mutateEval((prev) => ({ ...prev, businessModel: e.target.value }))
+                  }
+                  className="w-full bg-[#070d18] border border-blue-900/70 rounded-xl p-2.5 text-slate-100 focus:outline-none font-sans"
+                />
+              </div>
+
+              <div>
+                <label className="block text-slate-400 mb-1">Purpose of Capital / Growth Objective</label>
+                <textarea
+                  rows={3}
+                  value={evalRecord.businessPurpose}
+                  onChange={(e) =>
+                    mutateEval((prev) => ({ ...prev, businessPurpose: e.target.value }))
+                  }
+                  className="w-full bg-[#070d18] border border-blue-900/70 rounded-xl p-2.5 text-slate-100 focus:outline-none font-sans"
+                />
+              </div>
             </div>
 
             <div>
-              <label className="block text-slate-400 mb-1">Industry Classification</label>
-              <input
-                type="text"
-                value={evalRecord.industry}
-                onChange={(e) => setEvalRecord({ ...evalRecord, industry: e.target.value })}
-                className="w-full bg-[#070d18] border border-blue-900/70 rounded-xl p-2.5 text-slate-100 focus:outline-none"
-              />
-            </div>
-
-            <div>
-              <label className="block text-slate-400 mb-1">Years in Business</label>
-              <input
-                type="text"
-                value={evalRecord.yearsInBusiness}
-                onChange={(e) => setEvalRecord({ ...evalRecord, yearsInBusiness: e.target.value })}
-                className="w-full bg-[#070d18] border border-blue-900/70 rounded-xl p-2.5 text-slate-100 focus:outline-none"
-              />
-            </div>
-
-            <div>
-              <label className="block text-slate-400 mb-1">Principal Ownership (%)</label>
-              <input
-                type="number"
-                value={evalRecord.ownershipPercentage}
-                onChange={(e) => setEvalRecord({ ...evalRecord, ownershipPercentage: parseFloat(e.target.value) || 0 })}
-                className="w-full bg-[#070d18] border border-blue-900/70 rounded-xl p-2.5 text-emerald-400 font-mono font-bold focus:outline-none"
-              />
-            </div>
-
-            <div>
-              <label className="block text-slate-400 mb-1">Number of Employees</label>
-              <input
-                type="number"
-                value={evalRecord.numberOfEmployees}
-                onChange={(e) => setEvalRecord({ ...evalRecord, numberOfEmployees: parseInt(e.target.value) || 0 })}
-                className="w-full bg-[#070d18] border border-blue-900/70 rounded-xl p-2.5 text-slate-100 focus:outline-none"
-              />
-            </div>
-
-            <div>
-              <label className="block text-slate-400 mb-1">Geographic Location</label>
-              <input
-                type="text"
-                value={evalRecord.geographicLocation}
-                onChange={(e) => setEvalRecord({ ...evalRecord, geographicLocation: e.target.value })}
-                className="w-full bg-[#070d18] border border-blue-900/70 rounded-xl p-2.5 text-slate-100 focus:outline-none"
-              />
-            </div>
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs pt-2">
-            <div>
-              <label className="block text-slate-400 mb-1">Business Model Description</label>
+              <label className="block text-slate-400 mb-1">Underwriter Comments on Business Stability</label>
               <textarea
                 rows={3}
-                value={evalRecord.businessModel}
-                onChange={(e) => setEvalRecord({ ...evalRecord, businessModel: e.target.value })}
+                value={evalRecord.businessProfileComments}
+                onChange={(e) =>
+                  mutateEval((prev) => ({ ...prev, businessProfileComments: e.target.value }))
+                }
                 className="w-full bg-[#070d18] border border-blue-900/70 rounded-xl p-2.5 text-slate-100 focus:outline-none font-sans"
               />
             </div>
-
-            <div>
-              <label className="block text-slate-400 mb-1">Purpose of Capital / Growth Objective</label>
-              <textarea
-                rows={3}
-                value={evalRecord.businessPurpose}
-                onChange={(e) => setEvalRecord({ ...evalRecord, businessPurpose: e.target.value })}
-                className="w-full bg-[#070d18] border border-blue-900/70 rounded-xl p-2.5 text-slate-100 focus:outline-none font-sans"
-              />
-            </div>
           </div>
 
-          <div>
-            <label className="block text-slate-400 mb-1">Underwriter Comments on Business Stability</label>
-            <textarea
-              rows={3}
-              value={evalRecord.businessProfileComments}
-              onChange={(e) => setEvalRecord({ ...evalRecord, businessProfileComments: e.target.value })}
-              className="w-full bg-[#070d18] border border-blue-900/70 rounded-xl p-2.5 text-slate-100 focus:outline-none font-sans"
-            />
-          </div>
+          {renderSectionSaveBar('2. Business Profile', 'overview', 'credit')}
         </div>
       )}
 
       {/* --- SUB-VIEW 3: CREDIT BUREAU ANALYSIS --- */}
       {activeSection === 'credit' && (
-        <div className="bg-[#0b1528] border border-blue-900/60 p-6 rounded-2xl shadow-xl space-y-4">
-          <h3 className="text-sm font-bold text-cyan-400 uppercase tracking-wider flex items-center gap-2">
-            <CreditCard className="w-4 h-4" />
-            Credit Analysis & Bureau Evaluation
-          </h3>
+        <div className="space-y-6">
+          <div className="bg-[#0b1528] border border-blue-900/60 p-6 rounded-2xl shadow-xl space-y-4">
+            <div className="flex items-center justify-between">
+              <h3 className="text-sm font-bold text-cyan-400 uppercase tracking-wider flex items-center gap-2">
+                <CreditCard className="w-4 h-4" />
+                Credit Analysis & Bureau Evaluation
+              </h3>
+              <button
+                type="button"
+                onClick={handleSave}
+                disabled={isSaving}
+                className="flex items-center space-x-1.5 px-3 py-1.5 bg-amber-500 hover:bg-amber-400 text-slate-950 rounded-xl text-xs font-bold transition-all shadow-xs"
+              >
+                <Save className="w-3.5 h-3.5" />
+                <span>{isSaving ? 'Saving...' : saveSuccess ? 'Saved ✓' : 'Save Section'}</span>
+              </button>
+            </div>
 
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-xs">
-            <div>
-              <label className="block text-slate-400 mb-1">Primary FICO Score</label>
-              <input
-                type="number"
-                value={evalRecord.ficoScore}
-                onChange={(e) => setEvalRecord({ ...evalRecord, ficoScore: parseInt(e.target.value) || 0 })}
-                className="w-full bg-[#070d18] border border-blue-900/70 rounded-xl p-2.5 text-amber-300 font-mono font-bold text-sm focus:outline-none"
-              />
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-xs">
+              <div>
+                <label className="block text-slate-400 mb-1">Primary FICO Score</label>
+                <input
+                  type="number"
+                  value={evalRecord.ficoScore}
+                  onChange={(e) =>
+                    mutateEval((prev) => ({
+                      ...prev,
+                      ficoScore: parseInt(e.target.value) || 0,
+                    }))
+                  }
+                  className="w-full bg-[#070d18] border border-blue-900/70 rounded-xl p-2.5 text-amber-300 font-mono font-bold text-sm focus:outline-none"
+                />
+              </div>
+
+              <div>
+                <label className="block text-slate-400 mb-1">Experian Score</label>
+                <input
+                  type="number"
+                  value={evalRecord.experianScore || 715}
+                  onChange={(e) =>
+                    mutateEval((prev) => ({
+                      ...prev,
+                      experianScore: parseInt(e.target.value) || 0,
+                    }))
+                  }
+                  className="w-full bg-[#070d18] border border-blue-900/70 rounded-xl p-2.5 text-slate-100 font-mono focus:outline-none"
+                />
+              </div>
+
+              <div>
+                <label className="block text-slate-400 mb-1">Equifax Score</label>
+                <input
+                  type="number"
+                  value={evalRecord.equifaxScore || 710}
+                  onChange={(e) =>
+                    mutateEval((prev) => ({
+                      ...prev,
+                      equifaxScore: parseInt(e.target.value) || 0,
+                    }))
+                  }
+                  className="w-full bg-[#070d18] border border-blue-900/70 rounded-xl p-2.5 text-slate-100 font-mono focus:outline-none"
+                />
+              </div>
+
+              <div>
+                <label className="block text-slate-400 mb-1">TransUnion Score</label>
+                <input
+                  type="number"
+                  value={evalRecord.transunionScore || 708}
+                  onChange={(e) =>
+                    mutateEval((prev) => ({
+                      ...prev,
+                      transunionScore: parseInt(e.target.value) || 0,
+                    }))
+                  }
+                  className="w-full bg-[#070d18] border border-blue-900/70 rounded-xl p-2.5 text-slate-100 font-mono focus:outline-none"
+                />
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-xs pt-2">
+              <div>
+                <label className="block text-slate-400 mb-1">Bankruptcy Status</label>
+                <input
+                  type="text"
+                  value={evalRecord.bankruptcy}
+                  onChange={(e) =>
+                    mutateEval((prev) => ({ ...prev, bankruptcy: e.target.value }))
+                  }
+                  className="w-full bg-[#070d18] border border-blue-900/70 rounded-xl p-2.5 text-slate-100 focus:outline-none"
+                />
+              </div>
+
+              <div>
+                <label className="block text-slate-400 mb-1">Open Collections / Charge-Offs</label>
+                <input
+                  type="text"
+                  value={evalRecord.openCollections}
+                  onChange={(e) =>
+                    mutateEval((prev) => ({ ...prev, openCollections: e.target.value }))
+                  }
+                  className="w-full bg-[#070d18] border border-blue-900/70 rounded-xl p-2.5 text-slate-100 focus:outline-none"
+                />
+              </div>
+
+              <div>
+                <label className="block text-slate-400 mb-1">Revolving Utilization (%)</label>
+                <input
+                  type="number"
+                  value={evalRecord.creditUtilization}
+                  onChange={(e) =>
+                    mutateEval((prev) => ({
+                      ...prev,
+                      creditUtilization: parseFloat(e.target.value) || 0,
+                    }))
+                  }
+                  className="w-full bg-[#070d18] border border-blue-900/70 rounded-xl p-2.5 text-emerald-400 font-mono font-bold focus:outline-none"
+                />
+              </div>
             </div>
 
             <div>
-              <label className="block text-slate-400 mb-1">Experian Score</label>
-              <input
-                type="number"
-                value={evalRecord.experianScore || 715}
-                onChange={(e) => setEvalRecord({ ...evalRecord, experianScore: parseInt(e.target.value) || 0 })}
-                className="w-full bg-[#070d18] border border-blue-900/70 rounded-xl p-2.5 text-slate-100 font-mono focus:outline-none"
-              />
-            </div>
-
-            <div>
-              <label className="block text-slate-400 mb-1">Equifax Score</label>
-              <input
-                type="number"
-                value={evalRecord.equifaxScore || 710}
-                onChange={(e) => setEvalRecord({ ...evalRecord, equifaxScore: parseInt(e.target.value) || 0 })}
-                className="w-full bg-[#070d18] border border-blue-900/70 rounded-xl p-2.5 text-slate-100 font-mono focus:outline-none"
-              />
-            </div>
-
-            <div>
-              <label className="block text-slate-400 mb-1">TransUnion Score</label>
-              <input
-                type="number"
-                value={evalRecord.transunionScore || 708}
-                onChange={(e) => setEvalRecord({ ...evalRecord, transunionScore: parseInt(e.target.value) || 0 })}
-                className="w-full bg-[#070d18] border border-blue-900/70 rounded-xl p-2.5 text-slate-100 font-mono focus:outline-none"
+              <label className="block text-slate-400 mb-1">Credit Analysis & Bureau Notes</label>
+              <textarea
+                rows={3}
+                value={evalRecord.creditAnalysisNotes}
+                onChange={(e) =>
+                  mutateEval((prev) => ({ ...prev, creditAnalysisNotes: e.target.value }))
+                }
+                className="w-full bg-[#070d18] border border-blue-900/70 rounded-xl p-2.5 text-xs text-slate-100 focus:outline-none font-sans"
               />
             </div>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-xs pt-2">
-            <div>
-              <label className="block text-slate-400 mb-1">Bankruptcy Status</label>
-              <input
-                type="text"
-                value={evalRecord.bankruptcy}
-                onChange={(e) => setEvalRecord({ ...evalRecord, bankruptcy: e.target.value })}
-                className="w-full bg-[#070d18] border border-blue-900/70 rounded-xl p-2.5 text-slate-100 focus:outline-none"
-              />
-            </div>
-
-            <div>
-              <label className="block text-slate-400 mb-1">Open Collections / Charge-Offs</label>
-              <input
-                type="text"
-                value={evalRecord.openCollections}
-                onChange={(e) => setEvalRecord({ ...evalRecord, openCollections: e.target.value })}
-                className="w-full bg-[#070d18] border border-blue-900/70 rounded-xl p-2.5 text-slate-100 focus:outline-none"
-              />
-            </div>
-
-            <div>
-              <label className="block text-slate-400 mb-1">Revolving Utilization (%)</label>
-              <input
-                type="number"
-                value={evalRecord.creditUtilization}
-                onChange={(e) => setEvalRecord({ ...evalRecord, creditUtilization: parseFloat(e.target.value) || 0 })}
-                className="w-full bg-[#070d18] border border-blue-900/70 rounded-xl p-2.5 text-emerald-400 font-mono font-bold focus:outline-none"
-              />
-            </div>
-          </div>
-
-          <div>
-            <label className="block text-slate-400 mb-1">Credit Analysis & Bureau Notes</label>
-            <textarea
-              rows={3}
-              value={evalRecord.creditAnalysisNotes}
-              onChange={(e) => setEvalRecord({ ...evalRecord, creditAnalysisNotes: e.target.value })}
-              className="w-full bg-[#070d18] border border-blue-900/70 rounded-xl p-2.5 text-xs text-slate-100 focus:outline-none font-sans"
-            />
-          </div>
+          {renderSectionSaveBar('3. Credit Bureau Analysis', 'business', 'banking')}
         </div>
       )}
 
       {/* --- SUB-VIEW 4: BANK STATEMENT ANALYSIS --- */}
       {activeSection === 'banking' && (
-        <div className="bg-[#0b1528] border border-blue-900/60 p-6 rounded-2xl shadow-xl space-y-4">
-          <div className="flex items-center justify-between">
-            <h3 className="text-sm font-bold text-emerald-400 uppercase tracking-wider flex items-center gap-2">
-              <DollarSign className="w-4 h-4" />
-              Four-Month Bank Statement Cash Flow Audit
-            </h3>
-            <span className="text-xs text-slate-400 font-mono">
-              Total 4-Mo Deposits: ${evalRecord.totalDeposits?.toLocaleString()}
-            </span>
-          </div>
+        <div className="space-y-6">
+          <div className="bg-[#0b1528] border border-blue-900/60 p-6 rounded-2xl shadow-xl space-y-4">
+            <div className="flex items-center justify-between">
+              <h3 className="text-sm font-bold text-emerald-400 uppercase tracking-wider flex items-center gap-2">
+                <DollarSign className="w-4 h-4" />
+                Four-Month Bank Statement Cash Flow Audit
+              </h3>
+              <div className="flex items-center space-x-3">
+                <span className="text-xs text-slate-400 font-mono hidden sm:inline">
+                  Total Deposits: ${evalRecord.totalDeposits?.toLocaleString()}
+                </span>
+                <button
+                  type="button"
+                  onClick={handleSave}
+                  disabled={isSaving}
+                  className="flex items-center space-x-1.5 px-3 py-1.5 bg-amber-500 hover:bg-amber-400 text-slate-950 rounded-xl text-xs font-bold transition-all shadow-xs"
+                >
+                  <Save className="w-3.5 h-3.5" />
+                  <span>{isSaving ? 'Saving...' : saveSuccess ? 'Saved ✓' : 'Save Section'}</span>
+                </button>
+              </div>
+            </div>
 
-          {/* Bank Summary Cards */}
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-xs">
-            <div className="p-3 bg-[#070d18] rounded-xl border border-blue-900/40">
-              <span className="text-[10px] text-slate-400 block">Bank Name</span>
-              <input
-                type="text"
-                value={evalRecord.bankName}
-                onChange={(e) => setEvalRecord({ ...evalRecord, bankName: e.target.value })}
-                className="w-full bg-transparent font-bold text-slate-100 focus:outline-none mt-0.5"
+            {/* Bank Summary Cards */}
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-xs">
+              <div className="p-3 bg-[#070d18] rounded-xl border border-blue-900/40">
+                <span className="text-[10px] text-slate-400 block">Bank Name</span>
+                <input
+                  type="text"
+                  value={evalRecord.bankName}
+                  onChange={(e) =>
+                    mutateEval((prev) => ({ ...prev, bankName: e.target.value }))
+                  }
+                  className="w-full bg-transparent font-bold text-slate-100 focus:outline-none mt-0.5"
+                />
+              </div>
+
+              <div className="p-3 bg-[#070d18] rounded-xl border border-blue-900/40">
+                <span className="text-[10px] text-slate-400 block">Avg Monthly Deposits</span>
+                <span className="font-bold text-emerald-400 font-mono text-sm block mt-0.5">
+                  ${evalRecord.avgMonthlyDeposits?.toLocaleString()}
+                </span>
+              </div>
+
+              <div className="p-3 bg-[#070d18] rounded-xl border border-blue-900/40">
+                <span className="text-[10px] text-slate-400 block">Avg Ending Balance</span>
+                <span className="font-bold text-cyan-400 font-mono text-sm block mt-0.5">
+                  ${evalRecord.avgEndingBalance?.toLocaleString()}
+                </span>
+              </div>
+
+              <div className="p-3 bg-[#070d18] rounded-xl border border-blue-900/40">
+                <span className="text-[10px] text-slate-400 block">Negative Days / NSFs</span>
+                <span className="font-bold text-amber-300 font-mono text-sm block mt-0.5">
+                  {evalRecord.negativeDaysTotal} Days / {evalRecord.nsfsTotal} NSFs
+                </span>
+              </div>
+            </div>
+
+            {/* Interactive Multi-Month Breakdown Table */}
+            <div className="border border-blue-900/60 rounded-xl overflow-hidden mt-4">
+              <table className="w-full text-left text-xs text-slate-200">
+                <thead className="bg-[#070d18] text-slate-400 uppercase text-[10px] tracking-wider border-b border-blue-900/60">
+                  <tr>
+                    <th className="py-2.5 px-3">Statement Month</th>
+                    <th className="py-2.5 px-3">Total Deposits ($)</th>
+                    <th className="py-2.5 px-3">Ending Balance ($)</th>
+                    <th className="py-2.5 px-2 text-center">Neg Days</th>
+                    <th className="py-2.5 px-2 text-center">NSFs</th>
+                    <th className="py-2.5 px-3">ACH Debits ($)</th>
+                    <th className="py-2.5 px-3">Audit Notes</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-blue-900/40 bg-[#091222]">
+                  {evalRecord.monthlyBreakdowns.map((m, idx) => (
+                    <tr key={idx} className="hover:bg-blue-950/20">
+                      <td className="py-2 px-3">
+                        <input
+                          type="text"
+                          value={m.month}
+                          onChange={(e) => handleBankBreakdownChange(idx, 'month', e.target.value)}
+                          className="bg-transparent font-semibold text-slate-200 focus:outline-none w-full"
+                        />
+                      </td>
+                      <td className="py-2 px-3">
+                        <input
+                          type="number"
+                          value={m.totalDeposits}
+                          onChange={(e) =>
+                            handleBankBreakdownChange(idx, 'totalDeposits', parseFloat(e.target.value) || 0)
+                          }
+                          className="bg-[#070d18] border border-blue-900 rounded px-2 py-1 font-mono font-bold text-emerald-400 w-28 focus:outline-none"
+                        />
+                      </td>
+                      <td className="py-2 px-3">
+                        <input
+                          type="number"
+                          value={m.endingBalance}
+                          onChange={(e) =>
+                            handleBankBreakdownChange(idx, 'endingBalance', parseFloat(e.target.value) || 0)
+                          }
+                          className="bg-[#070d18] border border-blue-900 rounded px-2 py-1 font-mono font-bold text-cyan-400 w-28 focus:outline-none"
+                        />
+                      </td>
+                      <td className="py-2 px-2 text-center">
+                        <input
+                          type="number"
+                          value={m.negativeDays}
+                          onChange={(e) =>
+                            handleBankBreakdownChange(idx, 'negativeDays', parseInt(e.target.value) || 0)
+                          }
+                          className="bg-[#070d18] border border-blue-900 rounded px-1.5 py-1 font-mono text-center text-slate-200 w-14 focus:outline-none"
+                        />
+                      </td>
+                      <td className="py-2 px-2 text-center">
+                        <input
+                          type="number"
+                          value={m.nsfs}
+                          onChange={(e) =>
+                            handleBankBreakdownChange(idx, 'nsfs', parseInt(e.target.value) || 0)
+                          }
+                          className="bg-[#070d18] border border-blue-900 rounded px-1.5 py-1 font-mono text-center text-slate-200 w-14 focus:outline-none"
+                        />
+                      </td>
+                      <td className="py-2 px-3">
+                        <input
+                          type="number"
+                          value={m.achDebits}
+                          onChange={(e) =>
+                            handleBankBreakdownChange(idx, 'achDebits', parseFloat(e.target.value) || 0)
+                          }
+                          className="bg-[#070d18] border border-blue-900 rounded px-2 py-1 font-mono text-amber-300 w-24 focus:outline-none"
+                        />
+                      </td>
+                      <td className="py-2 px-3">
+                        <input
+                          type="text"
+                          value={m.notes}
+                          onChange={(e) => handleBankBreakdownChange(idx, 'notes', e.target.value)}
+                          className="bg-transparent text-slate-300 focus:outline-none w-full"
+                        />
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+
+            <div className="pt-2">
+              <label className="block text-slate-400 mb-1 text-xs">Bank Statement Analysis Commentary</label>
+              <textarea
+                rows={3}
+                value={evalRecord.bankAnalysisNotes}
+                onChange={(e) =>
+                  mutateEval((prev) => ({ ...prev, bankAnalysisNotes: e.target.value }))
+                }
+                className="w-full bg-[#070d18] border border-blue-900/70 rounded-xl p-2.5 text-xs text-slate-100 focus:outline-none font-sans"
               />
             </div>
-
-            <div className="p-3 bg-[#070d18] rounded-xl border border-blue-900/40">
-              <span className="text-[10px] text-slate-400 block">Avg Monthly Deposits</span>
-              <span className="font-bold text-emerald-400 font-mono text-sm block mt-0.5">
-                ${evalRecord.avgMonthlyDeposits?.toLocaleString()}
-              </span>
-            </div>
-
-            <div className="p-3 bg-[#070d18] rounded-xl border border-blue-900/40">
-              <span className="text-[10px] text-slate-400 block">Avg Ending Balance</span>
-              <span className="font-bold text-cyan-400 font-mono text-sm block mt-0.5">
-                ${evalRecord.avgEndingBalance?.toLocaleString()}
-              </span>
-            </div>
-
-            <div className="p-3 bg-[#070d18] rounded-xl border border-blue-900/40">
-              <span className="text-[10px] text-slate-400 block">Negative Days / NSFs</span>
-              <span className="font-bold text-amber-300 font-mono text-sm block mt-0.5">
-                {evalRecord.negativeDaysTotal} Days / {evalRecord.nsfsTotal} NSFs
-              </span>
-            </div>
           </div>
 
-          {/* Interactive Multi-Month Breakdown Table */}
-          <div className="border border-blue-900/60 rounded-xl overflow-hidden mt-4">
-            <table className="w-full text-left text-xs text-slate-200">
-              <thead className="bg-[#070d18] text-slate-400 uppercase text-[10px] tracking-wider border-b border-blue-900/60">
-                <tr>
-                  <th className="py-2.5 px-3">Statement Month</th>
-                  <th className="py-2.5 px-3">Total Deposits ($)</th>
-                  <th className="py-2.5 px-3">Ending Balance ($)</th>
-                  <th className="py-2.5 px-2 text-center">Neg Days</th>
-                  <th className="py-2.5 px-2 text-center">NSFs</th>
-                  <th className="py-2.5 px-3">ACH Debits ($)</th>
-                  <th className="py-2.5 px-3">Audit Notes</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-blue-900/40 bg-[#091222]">
-                {evalRecord.monthlyBreakdowns.map((m, idx) => (
-                  <tr key={idx} className="hover:bg-blue-950/20">
-                    <td className="py-2 px-3">
-                      <input
-                        type="text"
-                        value={m.month}
-                        onChange={(e) => handleBankBreakdownChange(idx, 'month', e.target.value)}
-                        className="bg-transparent font-semibold text-slate-200 focus:outline-none w-full"
-                      />
-                    </td>
-                    <td className="py-2 px-3">
-                      <input
-                        type="number"
-                        value={m.totalDeposits}
-                        onChange={(e) => handleBankBreakdownChange(idx, 'totalDeposits', parseFloat(e.target.value) || 0)}
-                        className="bg-[#070d18] border border-blue-900 rounded px-2 py-1 font-mono font-bold text-emerald-400 w-28 focus:outline-none"
-                      />
-                    </td>
-                    <td className="py-2 px-3">
-                      <input
-                        type="number"
-                        value={m.endingBalance}
-                        onChange={(e) => handleBankBreakdownChange(idx, 'endingBalance', parseFloat(e.target.value) || 0)}
-                        className="bg-[#070d18] border border-blue-900 rounded px-2 py-1 font-mono font-bold text-cyan-400 w-28 focus:outline-none"
-                      />
-                    </td>
-                    <td className="py-2 px-2 text-center">
-                      <input
-                        type="number"
-                        value={m.negativeDays}
-                        onChange={(e) => handleBankBreakdownChange(idx, 'negativeDays', parseInt(e.target.value) || 0)}
-                        className="bg-[#070d18] border border-blue-900 rounded px-1.5 py-1 font-mono text-center text-slate-200 w-14 focus:outline-none"
-                      />
-                    </td>
-                    <td className="py-2 px-2 text-center">
-                      <input
-                        type="number"
-                        value={m.nsfs}
-                        onChange={(e) => handleBankBreakdownChange(idx, 'nsfs', parseInt(e.target.value) || 0)}
-                        className="bg-[#070d18] border border-blue-900 rounded px-1.5 py-1 font-mono text-center text-slate-200 w-14 focus:outline-none"
-                      />
-                    </td>
-                    <td className="py-2 px-3">
-                      <input
-                        type="number"
-                        value={m.achDebits}
-                        onChange={(e) => handleBankBreakdownChange(idx, 'achDebits', parseFloat(e.target.value) || 0)}
-                        className="bg-[#070d18] border border-blue-900 rounded px-2 py-1 font-mono text-amber-300 w-24 focus:outline-none"
-                      />
-                    </td>
-                    <td className="py-2 px-3">
-                      <input
-                        type="text"
-                        value={m.notes}
-                        onChange={(e) => handleBankBreakdownChange(idx, 'notes', e.target.value)}
-                        className="bg-transparent text-slate-300 focus:outline-none w-full"
-                      />
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-
-          <div className="pt-2">
-            <label className="block text-slate-400 mb-1 text-xs">Bank Statement Analysis Commentary</label>
-            <textarea
-              rows={3}
-              value={evalRecord.bankAnalysisNotes}
-              onChange={(e) => setEvalRecord({ ...evalRecord, bankAnalysisNotes: e.target.value })}
-              className="w-full bg-[#070d18] border border-blue-900/70 rounded-xl p-2.5 text-xs text-slate-100 focus:outline-none font-sans"
-            />
-          </div>
+          {renderSectionSaveBar('4. Bank Statement Audit', 'credit', 'redflags')}
         </div>
       )}
 
       {/* --- SUB-VIEW 5: RED FLAGS CHECKLIST --- */}
       {activeSection === 'redflags' && (
-        <div className="bg-[#0b1528] border border-blue-900/60 p-6 rounded-2xl shadow-xl space-y-4">
-          <h3 className="text-sm font-bold text-rose-400 uppercase tracking-wider flex items-center gap-2">
-            <AlertTriangle className="w-4 h-4" />
-            Underwriting Red Flags & Risk Matrix
-          </h3>
+        <div className="space-y-6">
+          <div className="bg-[#0b1528] border border-blue-900/60 p-6 rounded-2xl shadow-xl space-y-4">
+            <div className="flex items-center justify-between">
+              <h3 className="text-sm font-bold text-rose-400 uppercase tracking-wider flex items-center gap-2">
+                <AlertTriangle className="w-4 h-4" />
+                Underwriting Red Flags & Risk Matrix
+              </h3>
+              <button
+                type="button"
+                onClick={handleSave}
+                disabled={isSaving}
+                className="flex items-center space-x-1.5 px-3 py-1.5 bg-amber-500 hover:bg-amber-400 text-slate-950 rounded-xl text-xs font-bold transition-all shadow-xs"
+              >
+                <Save className="w-3.5 h-3.5" />
+                <span>{isSaving ? 'Saving...' : saveSuccess ? 'Saved ✓' : 'Save Section'}</span>
+              </button>
+            </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-            {Object.entries({
-              negativeDays: 'Negative Bank Balance Days',
-              nsfs: 'Non-Sufficient Funds (NSFs)',
-              returnedPayments: 'Bounced / Returned Payments',
-              decliningRevenue: 'Significant Declining Revenue Trend',
-              largeUnexplainedDeposits: 'Large Unexplained Singular Deposits',
-              irregularCashFlow: 'Extreme Irregular Cash Flow Gaps',
-              heavyExistingDebt: 'Heavy Existing Debt Stack',
-              multipleRecentFundingPositions: 'Multiple Recent MCA Inquiries',
-              frequentOverdrafts: 'Frequent Account Overdrafts',
-              excessiveAchObligations: 'Excessive Daily/Weekly ACH Debits',
-              taxIssues: 'Open Federal or State Tax Liens',
-              creditIssues: 'Derogatory Bureau Filings / Collections',
-            }).map(([key, label]) => {
-              const isFlagged = (evalRecord.redFlags as any)[key] || false;
-              return (
-                <button
-                  key={key}
-                  type="button"
-                  onClick={() =>
-                    setEvalRecord({
-                      ...evalRecord,
-                      redFlags: { ...evalRecord.redFlags, [key]: !isFlagged },
-                    })
-                  }
-                  className={`flex items-center space-x-2.5 p-3 rounded-xl border text-left transition-all ${
-                    isFlagged
-                      ? 'bg-rose-950/30 border-rose-500/50 text-rose-300 font-bold'
-                      : 'bg-[#070d18] border-blue-900/40 text-slate-300 hover:border-blue-700'
-                  }`}
-                >
-                  <div
-                    className={`w-4 h-4 rounded flex items-center justify-center text-xs shrink-0 ${
-                      isFlagged ? 'bg-rose-500 text-white font-bold' : 'border border-slate-600'
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+              {Object.entries({
+                negativeDays: 'Negative Bank Balance Days',
+                nsfs: 'Non-Sufficient Funds (NSFs)',
+                returnedPayments: 'Bounced / Returned Payments',
+                decliningRevenue: 'Significant Declining Revenue Trend',
+                largeUnexplainedDeposits: 'Large Unexplained Singular Deposits',
+                irregularCashFlow: 'Extreme Irregular Cash Flow Gaps',
+                heavyExistingDebt: 'Heavy Existing Debt Stack',
+                multipleRecentFundingPositions: 'Multiple Recent MCA Inquiries',
+                frequentOverdrafts: 'Frequent Account Overdrafts',
+                excessiveAchObligations: 'Excessive Daily/Weekly ACH Debits',
+                taxIssues: 'Open Federal or State Tax Liens',
+                creditIssues: 'Derogatory Bureau Filings / Collections',
+              }).map(([key, label]) => {
+                const isFlagged = (evalRecord.redFlags as any)[key] || false;
+                return (
+                  <button
+                    key={key}
+                    type="button"
+                    onClick={() =>
+                      mutateEval((prev) => ({
+                        ...prev,
+                        redFlags: { ...prev.redFlags, [key]: !isFlagged },
+                      }))
+                    }
+                    className={`flex items-center space-x-2.5 p-3 rounded-xl border text-left transition-all ${
+                      isFlagged
+                        ? 'bg-rose-950/30 border-rose-500/50 text-rose-300 font-bold'
+                        : 'bg-[#070d18] border-blue-900/40 text-slate-300 hover:border-blue-700'
                     }`}
                   >
-                    {isFlagged ? '✕' : ''}
-                  </div>
-                  <span className="text-xs">{label}</span>
-                </button>
-              );
-            })}
+                    <div
+                      className={`w-4 h-4 rounded flex items-center justify-center text-xs shrink-0 ${
+                        isFlagged ? 'bg-rose-500 text-white font-bold' : 'border border-slate-600'
+                      }`}
+                    >
+                      {isFlagged ? '✕' : ''}
+                    </div>
+                    <span className="text-xs">{label}</span>
+                  </button>
+                );
+              })}
+            </div>
+
+            <div className="pt-2">
+              <label className="block text-slate-400 mb-1 text-xs">Red Flags & Mitigating Factors Narrative</label>
+              <textarea
+                rows={3}
+                value={evalRecord.redFlagNotes}
+                onChange={(e) =>
+                  mutateEval((prev) => ({ ...prev, redFlagNotes: e.target.value }))
+                }
+                className="w-full bg-[#070d18] border border-blue-900/70 rounded-xl p-2.5 text-xs text-slate-100 focus:outline-none font-sans"
+              />
+            </div>
           </div>
 
-          <div className="pt-2">
-            <label className="block text-slate-400 mb-1 text-xs">Red Flags & Mitigating Factors Narrative</label>
-            <textarea
-              rows={3}
-              value={evalRecord.redFlagNotes}
-              onChange={(e) => setEvalRecord({ ...evalRecord, redFlagNotes: e.target.value })}
-              className="w-full bg-[#070d18] border border-blue-900/70 rounded-xl p-2.5 text-xs text-slate-100 focus:outline-none font-sans"
-            />
-          </div>
+          {renderSectionSaveBar('5. Red Flags Matrix', 'banking', 'positions')}
         </div>
       )}
 
       {/* --- SUB-VIEW 6: EXISTING DEBT & POSITIONS --- */}
       {activeSection === 'positions' && (
-        <div className="bg-[#0b1528] border border-blue-900/60 p-6 rounded-2xl shadow-xl space-y-4">
-          <div className="flex items-center justify-between">
-            <h3 className="text-sm font-bold text-amber-400 uppercase tracking-wider flex items-center gap-2">
-              <ListFilter className="w-4 h-4" />
-              Existing Debt & Capital Positions
-            </h3>
-            <button
-              onClick={() => {
-                const newPos: ExistingPositionItem = {
-                  id: `pos-${Date.now()}`,
-                  lender: 'New Capital Partner',
-                  product: 'Commercial Term Loan',
-                  originalFunding: 25000,
-                  currentBalance: 15000,
-                  payment: 600,
-                  paymentFrequency: 'Monthly',
-                  remainingTerm: '24 Months',
-                  startDate: '2024-01-01',
-                  estimatedPayoff: '2026-01-01',
-                  position: '2nd Position',
-                  source: 'MANUAL',
-                };
-                setEvalRecord({
-                  ...evalRecord,
-                  existingPositions: [...evalRecord.existingPositions, newPos],
-                });
-              }}
-              className="px-3 py-1.5 bg-amber-500 hover:bg-amber-400 text-slate-950 rounded-xl text-xs font-bold transition-all shadow-sm"
-            >
-              + Add Position
-            </button>
-          </div>
-
-          <div className="space-y-3">
-            {evalRecord.existingPositions.map((pos, idx) => (
-              <div
-                key={pos.id}
-                className="p-4 rounded-xl bg-[#070d18] border border-blue-900/50 space-y-3 text-xs"
-              >
-                <div className="flex items-center justify-between border-b border-blue-900/40 pb-2">
-                  <div className="flex items-center space-x-2">
-                    <span className="font-bold text-amber-300 font-mono px-2 py-0.5 rounded bg-blue-950 border border-blue-800">
-                      {pos.position || `#${idx + 1}`}
-                    </span>
-                    <span className="font-semibold text-slate-100">{pos.lender}</span>
-                    <span className="text-slate-400 font-mono">({pos.product})</span>
-                  </div>
-                  <button
-                    onClick={() =>
-                      setEvalRecord({
-                        ...evalRecord,
-                        existingPositions: evalRecord.existingPositions.filter((p) => p.id !== pos.id),
-                      })
-                    }
-                    className="text-slate-400 hover:text-rose-400"
-                  >
-                    <Trash2 className="w-3.5 h-3.5" />
-                  </button>
-                </div>
-
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-                  <div>
-                    <span className="text-[10px] text-slate-400 block">Original Funding</span>
-                    <span className="font-mono font-bold text-slate-200">${pos.originalFunding?.toLocaleString()}</span>
-                  </div>
-                  <div>
-                    <span className="text-[10px] text-slate-400 block">Current Balance</span>
-                    <span className="font-mono font-bold text-rose-400">${pos.currentBalance?.toLocaleString()}</span>
-                  </div>
-                  <div>
-                    <span className="text-[10px] text-slate-400 block">Payment / Frequency</span>
-                    <span className="font-mono font-bold text-amber-300">
-                      ${pos.payment?.toLocaleString()} / {pos.paymentFrequency}
-                    </span>
-                  </div>
-                  <div>
-                    <span className="text-[10px] text-slate-400 block">Remaining Term</span>
-                    <span className="text-slate-200">{pos.remainingTerm}</span>
-                  </div>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {/* --- SUB-VIEW 7: DEBT SERVICE & DSCR --- */}
-      {activeSection === 'debtservice' && (
-        <div className="bg-[#0b1528] border border-blue-900/60 p-6 rounded-2xl shadow-xl space-y-4">
-          <h3 className="text-sm font-bold text-purple-400 uppercase tracking-wider flex items-center gap-2">
-            <TrendingUp className="w-4 h-4" />
-            Debt Service Coverage Ratio (DSCR) & Capacity Analysis
-          </h3>
-
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-xs">
-            <div className="p-4 bg-[#070d18] rounded-xl border border-blue-900/40 space-y-2">
-              <span className="text-[10px] text-slate-400 uppercase font-bold block">
-                Monthly Business Flow
-              </span>
-              <div className="text-xl font-bold text-emerald-400 font-mono">
-                ${Number(evalRecord.debtService?.monthlyBusinessRevenue || client.monthlyRevenue || 0).toLocaleString()}
-              </div>
-              <span className="text-[10px] text-slate-400">
-                Avg Bank Inflow: ${evalRecord.avgMonthlyDeposits?.toLocaleString()}
-              </span>
-            </div>
-
-            <div className="p-4 bg-[#070d18] rounded-xl border border-blue-900/40 space-y-2">
-              <span className="text-[10px] text-slate-400 uppercase font-bold block">
-                Total Projected Obligations
-              </span>
-              <div className="text-xl font-bold text-amber-400 font-mono">
-                ${Number(evalRecord.debtService?.estimatedTotalObligations || 4040).toLocaleString()} /mo
-              </div>
-              <span className="text-[10px] text-slate-400">
-                Existing ($840) + Proposed ($3,200)
-              </span>
-            </div>
-
-            <div className="p-4 bg-[#070d18] rounded-xl border border-blue-900/40 space-y-2">
-              <span className="text-[10px] text-slate-400 uppercase font-bold block">
-                Debt Service Coverage Ratio (DSCR)
-              </span>
-              <div className="text-xl font-bold text-purple-400 font-mono">
-                {evalRecord.debtService?.estimatedDebtServiceRatio || 1.85}x
-              </div>
-              <span className="text-[10px] text-emerald-400 font-semibold">
-                Payment-to-Revenue: {evalRecord.debtService?.estimatedPaymentToRevenueRatio || 5.7}%
-              </span>
-            </div>
-          </div>
-
-          <div className="pt-2">
-            <label className="block text-slate-400 mb-1 text-xs">Debt Service & Capacity Notes</label>
-            <textarea
-              rows={3}
-              value={evalRecord.debtService?.obligationNotes}
-              onChange={(e) =>
-                setEvalRecord({
-                  ...evalRecord,
-                  debtService: { ...evalRecord.debtService, obligationNotes: e.target.value },
-                })
-              }
-              className="w-full bg-[#070d18] border border-blue-900/70 rounded-xl p-2.5 text-xs text-slate-100 focus:outline-none font-sans"
-            />
-          </div>
-        </div>
-      )}
-
-      {/* --- SUB-VIEW 8: UNDERWRITER RECOMMENDATION --- */}
-      {activeSection === 'recommendation' && (
-        <div className="bg-[#0b1528] border border-blue-900/60 p-6 rounded-2xl shadow-xl space-y-4">
-          <h3 className="text-sm font-bold text-amber-400 uppercase tracking-wider flex items-center gap-2">
-            <Scale className="w-4 h-4" />
-            Underwriter Final Recommendation & Capital Sizing
-          </h3>
-
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-xs">
-            <div>
-              <label className="block text-slate-400 mb-1">Underwriter Recommendation</label>
-              <select
-                value={evalRecord.recommendation}
-                onChange={(e) => setEvalRecord({ ...evalRecord, recommendation: e.target.value as any })}
-                className="w-full bg-[#070d18] border border-blue-900/70 rounded-xl p-2.5 text-amber-300 font-bold focus:outline-none"
-              >
-                <option value="RECOMMEND">RECOMMEND</option>
-                <option value="RECOMMEND_WITH_CONDITIONS">RECOMMEND WITH CONDITIONS</option>
-                <option value="HOLD_NEED_MORE_INFO">HOLD — NEED MORE INFORMATION</option>
-                <option value="NOT_RECOMMENDED">NOT RECOMMENDED</option>
-              </select>
-            </div>
-
-            <div>
-              <label className="block text-slate-400 mb-1">Recommended Funding Amount ($)</label>
-              <input
-                type="number"
-                value={evalRecord.recommendedFundingAmount}
-                onChange={(e) => setEvalRecord({ ...evalRecord, recommendedFundingAmount: parseFloat(e.target.value) || 0 })}
-                className="w-full bg-[#070d18] border border-blue-900/70 rounded-xl p-2.5 text-emerald-400 font-mono font-bold focus:outline-none"
-              />
-            </div>
-
-            <div>
-              <label className="block text-slate-400 mb-1">Recommended Product</label>
-              <input
-                type="text"
-                value={evalRecord.recommendedProduct}
-                onChange={(e) => setEvalRecord({ ...evalRecord, recommendedProduct: e.target.value })}
-                className="w-full bg-[#070d18] border border-blue-900/70 rounded-xl p-2.5 text-slate-100 focus:outline-none"
-              />
-            </div>
-          </div>
-
-          <div>
-            <label className="block text-slate-400 mb-1 text-xs">Required Conditions for Funding</label>
-            <textarea
-              rows={3}
-              value={evalRecord.conditionsText}
-              onChange={(e) => setEvalRecord({ ...evalRecord, conditionsText: e.target.value })}
-              className="w-full bg-[#070d18] border border-blue-900/70 rounded-xl p-2.5 text-xs text-slate-100 focus:outline-none font-sans"
-            />
-          </div>
-        </div>
-      )}
-
-      {/* --- SUB-VIEW 9: DOCUMENT CHECKLIST --- */}
-      {activeSection === 'documents' && (
-        <div className="bg-[#0b1528] border border-blue-900/60 p-6 rounded-2xl shadow-xl space-y-4">
-          <div className="flex items-center justify-between">
-            <h3 className="text-sm font-bold text-blue-400 uppercase tracking-wider flex items-center gap-2">
-              <FileCheck2 className="w-4 h-4" />
-              Required Underwriting Document Checklist & Vault Comparison
-            </h3>
-            <span className="text-xs text-slate-400">
-              {evalRecord.documentChecklist.filter((d) => d.status === 'Verified' || d.status === 'Received').length} / {evalRecord.documentChecklist.length} Verified
-            </span>
-          </div>
-
-          <div className="space-y-2">
-            {evalRecord.documentChecklist.map((item, idx) => (
-              <div
-                key={idx}
-                className="p-3 rounded-xl bg-[#070d18] border border-blue-900/40 flex items-center justify-between text-xs"
-              >
-                <div className="flex items-center space-x-3">
-                  <div
-                    className={`w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold ${
-                      item.status === 'Verified'
-                        ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
-                        : item.status === 'Received'
-                        ? 'bg-blue-500/20 text-blue-300 border border-blue-500/40'
-                        : 'bg-rose-500/20 text-rose-300 border border-rose-500/40'
-                    }`}
-                  >
-                    {item.status === 'Verified' ? '✓' : item.status === 'Received' ? '•' : '!'}
-                  </div>
-                  <div>
-                    <span className="font-semibold text-slate-100">{item.name}</span>
-                    <span className="text-[10px] text-slate-400 block">{item.notes}</span>
-                  </div>
-                </div>
-
-                <select
-                  value={item.status}
-                  onChange={(e) => {
-                    const updated = [...evalRecord.documentChecklist];
-                    updated[idx].status = e.target.value as any;
-                    setEvalRecord({ ...evalRecord, documentChecklist: updated });
-                  }}
-                  className="bg-[#0b1528] border border-blue-800 rounded px-2.5 py-1 text-xs text-amber-300 font-bold focus:outline-none"
+        <div className="space-y-6">
+          <div className="bg-[#0b1528] border border-blue-900/60 p-6 rounded-2xl shadow-xl space-y-4">
+            <div className="flex items-center justify-between">
+              <h3 className="text-sm font-bold text-amber-400 uppercase tracking-wider flex items-center gap-2">
+                <ListFilter className="w-4 h-4" />
+                Existing Debt & Capital Positions
+              </h3>
+              <div className="flex items-center space-x-2">
+                <button
+                  type="button"
+                  onClick={handleSave}
+                  disabled={isSaving}
+                  className="flex items-center space-x-1.5 px-3 py-1.5 bg-amber-500 hover:bg-amber-400 text-slate-950 rounded-xl text-xs font-bold transition-all shadow-xs"
                 >
-                  <option value="Verified">Verified</option>
-                  <option value="Received">Received</option>
-                  <option value="Needs Review">Needs Review</option>
-                  <option value="Missing">Missing</option>
-                  <option value="Expired">Expired</option>
-                </select>
+                  <Save className="w-3.5 h-3.5" />
+                  <span>{isSaving ? 'Saving...' : saveSuccess ? 'Saved ✓' : 'Save Section'}</span>
+                </button>
+                <button
+                  onClick={() => {
+                    const newPos: ExistingPositionItem = {
+                      id: `pos-${Date.now()}`,
+                      lender: 'New Capital Partner',
+                      product: 'Commercial Term Loan',
+                      originalFunding: 25000,
+                      currentBalance: 15000,
+                      payment: 600,
+                      paymentFrequency: 'Monthly',
+                      remainingTerm: '24 Months',
+                      startDate: '2024-01-01',
+                      estimatedPayoff: '2026-01-01',
+                      position: '2nd Position',
+                      source: 'MANUAL',
+                    };
+                    mutateEval((prev) => ({
+                      ...prev,
+                      existingPositions: [...prev.existingPositions, newPos],
+                    }));
+                  }}
+                  className="px-3 py-1.5 bg-blue-600 hover:bg-blue-500 text-white rounded-xl text-xs font-bold transition-all shadow-xs"
+                >
+                  + Add Position
+                </button>
               </div>
-            ))}
-          </div>
-        </div>
-      )}
+            </div>
 
-      {/* --- SUB-VIEW 10: CONDITIONS TO FUND --- */}
-      {activeSection === 'conditions' && (
-        <div className="bg-[#0b1528] border border-blue-900/60 p-6 rounded-2xl shadow-xl space-y-4">
-          <div className="flex items-center justify-between">
-            <h3 className="text-sm font-bold text-amber-400 uppercase tracking-wider flex items-center gap-2">
-              <ShieldCheck className="w-4 h-4" />
-              Underwriting Conditions to Fund
-            </h3>
-            <button
-              onClick={handleAddCondition}
-              className="px-3 py-1.5 bg-amber-500 hover:bg-amber-400 text-slate-950 rounded-xl text-xs font-bold transition-all shadow-sm"
-            >
-              + Add Condition
-            </button>
-          </div>
-
-          <div className="space-y-3">
-            {evalRecord.conditions.map((cond) => (
-              <div
-                key={cond.id}
-                className="p-4 rounded-xl bg-[#070d18] border border-blue-900/40 space-y-2 text-xs"
-              >
-                <div className="flex items-center justify-between">
-                  <input
-                    type="text"
-                    value={cond.title}
-                    onChange={(e) => {
-                      const updated = evalRecord.conditions.map((c) =>
-                        c.id === cond.id ? { ...c, title: e.target.value } : c
-                      );
-                      setEvalRecord({ ...evalRecord, conditions: updated });
-                    }}
-                    className="bg-transparent font-bold text-slate-100 text-xs focus:outline-none w-full"
-                  />
-                  <div className="flex items-center space-x-2 shrink-0">
-                    <select
-                      value={cond.status}
-                      onChange={(e) => {
-                        const updated = evalRecord.conditions.map((c) =>
-                          c.id === cond.id ? { ...c, status: e.target.value as any } : c
-                        );
-                        setEvalRecord({ ...evalRecord, conditions: updated });
-                      }}
-                      className="bg-[#0b1528] border border-blue-800 rounded px-2 py-1 text-xs text-amber-300 font-bold focus:outline-none"
-                    >
-                      <option value="Open">Open</option>
-                      <option value="Requested">Requested</option>
-                      <option value="Received">Received</option>
-                      <option value="Verified">Verified</option>
-                      <option value="Satisfied">Satisfied</option>
-                      <option value="Waived">Waived</option>
-                    </select>
-
+            <div className="space-y-3">
+              {evalRecord.existingPositions.map((pos, idx) => (
+                <div
+                  key={pos.id}
+                  className="p-4 rounded-xl bg-[#070d18] border border-blue-900/50 space-y-3 text-xs"
+                >
+                  <div className="flex items-center justify-between border-b border-blue-900/40 pb-2">
+                    <div className="flex items-center space-x-2">
+                      <span className="font-bold text-amber-300 font-mono px-2 py-0.5 rounded bg-blue-950 border border-blue-800">
+                        {pos.position || `#${idx + 1}`}
+                      </span>
+                      <span className="font-semibold text-slate-100">{pos.lender}</span>
+                      <span className="text-slate-400 font-mono">({pos.product})</span>
+                    </div>
                     <button
-                      onClick={() => handleRemoveCondition(cond.id)}
+                      onClick={() =>
+                        mutateEval((prev) => ({
+                          ...prev,
+                          existingPositions: prev.existingPositions.filter((p) => p.id !== pos.id),
+                        }))
+                      }
                       className="text-slate-400 hover:text-rose-400"
                     >
                       <Trash2 className="w-3.5 h-3.5" />
                     </button>
                   </div>
-                </div>
 
-                <input
-                  type="text"
-                  value={cond.description}
-                  onChange={(e) => {
-                    const updated = evalRecord.conditions.map((c) =>
-                      c.id === cond.id ? { ...c, description: e.target.value } : c
-                    );
-                    setEvalRecord({ ...evalRecord, conditions: updated });
-                  }}
-                  className="bg-transparent text-slate-300 text-xs focus:outline-none w-full"
-                />
-              </div>
-            ))}
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                    <div>
+                      <span className="text-[10px] text-slate-400 block">Original Funding</span>
+                      <span className="font-mono font-bold text-slate-200">${pos.originalFunding?.toLocaleString()}</span>
+                    </div>
+                    <div>
+                      <span className="text-[10px] text-slate-400 block">Current Balance</span>
+                      <span className="font-mono font-bold text-rose-400">${pos.currentBalance?.toLocaleString()}</span>
+                    </div>
+                    <div>
+                      <span className="text-[10px] text-slate-400 block">Payment / Frequency</span>
+                      <span className="font-mono font-bold text-amber-300">
+                        ${pos.payment?.toLocaleString()} / {pos.paymentFrequency}
+                      </span>
+                    </div>
+                    <div>
+                      <span className="text-[10px] text-slate-400 block">Remaining Term</span>
+                      <span className="text-slate-200">{pos.remainingTerm}</span>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
           </div>
+
+          {renderSectionSaveBar('6. Existing Debt & Positions', 'redflags', 'debtservice')}
         </div>
       )}
+
+      {/* --- SUB-VIEW 7: DEBT SERVICE & DSCR --- */}
+      {activeSection === 'debtservice' && (
+        <div className="space-y-6">
+          <div className="bg-[#0b1528] border border-blue-900/60 p-6 rounded-2xl shadow-xl space-y-4">
+            <div className="flex items-center justify-between">
+              <h3 className="text-sm font-bold text-purple-400 uppercase tracking-wider flex items-center gap-2">
+                <TrendingUp className="w-4 h-4" />
+                Debt Service Coverage Ratio (DSCR) & Capacity Analysis
+              </h3>
+              <button
+                type="button"
+                onClick={handleSave}
+                disabled={isSaving}
+                className="flex items-center space-x-1.5 px-3 py-1.5 bg-amber-500 hover:bg-amber-400 text-slate-950 rounded-xl text-xs font-bold transition-all shadow-xs"
+              >
+                <Save className="w-3.5 h-3.5" />
+                <span>{isSaving ? 'Saving...' : saveSuccess ? 'Saved ✓' : 'Save Section'}</span>
+              </button>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-xs">
+              <div className="p-4 bg-[#070d18] rounded-xl border border-blue-900/40 space-y-2">
+                <span className="text-[10px] text-slate-400 uppercase font-bold block">
+                  Monthly Business Flow
+                </span>
+                <div className="text-xl font-bold text-emerald-400 font-mono">
+                  ${Number(evalRecord.debtService?.monthlyBusinessRevenue || client.monthlyRevenue || 0).toLocaleString()}
+                </div>
+                <span className="text-[10px] text-slate-400">
+                  Avg Bank Inflow: ${evalRecord.avgMonthlyDeposits?.toLocaleString()}
+                </span>
+              </div>
+
+              <div className="p-4 bg-[#070d18] rounded-xl border border-blue-900/40 space-y-2">
+                <span className="text-[10px] text-slate-400 uppercase font-bold block">
+                  Total Projected Obligations
+                </span>
+                <div className="text-xl font-bold text-amber-400 font-mono">
+                  ${Number(evalRecord.debtService?.estimatedTotalObligations || 4040).toLocaleString()} /mo
+                </div>
+                <span className="text-[10px] text-slate-400">
+                  Existing ($840) + Proposed ($3,200)
+                </span>
+              </div>
+
+              <div className="p-4 bg-[#070d18] rounded-xl border border-blue-900/40 space-y-2">
+                <span className="text-[10px] text-slate-400 uppercase font-bold block">
+                  Debt Service Coverage Ratio (DSCR)
+                </span>
+                <div className="text-xl font-bold text-purple-400 font-mono">
+                  {evalRecord.debtService?.estimatedDebtServiceRatio || 1.85}x
+                </div>
+                <span className="text-[10px] text-emerald-400 font-semibold">
+                  Payment-to-Revenue: {evalRecord.debtService?.estimatedPaymentToRevenueRatio || 5.7}%
+                </span>
+              </div>
+            </div>
+
+            <div className="pt-2">
+              <label className="block text-slate-400 mb-1 text-xs">Debt Service & Capacity Notes</label>
+              <textarea
+                rows={3}
+                value={evalRecord.debtService?.obligationNotes}
+                onChange={(e) =>
+                  mutateEval((prev) => ({
+                    ...prev,
+                    debtService: { ...prev.debtService, obligationNotes: e.target.value },
+                  }))
+                }
+                className="w-full bg-[#070d18] border border-blue-900/70 rounded-xl p-2.5 text-xs text-slate-100 focus:outline-none font-sans"
+              />
+            </div>
+          </div>
+
+          {renderSectionSaveBar('7. Debt Service / DSCR', 'positions', 'recommendation')}
+        </div>
+      )}
+
+      {/* --- SUB-VIEW 8: UNDERWRITER RECOMMENDATION --- */}
+      {activeSection === 'recommendation' && (
+        <div className="space-y-6">
+          <div className="bg-[#0b1528] border border-blue-900/60 p-6 rounded-2xl shadow-xl space-y-4">
+            <div className="flex items-center justify-between">
+              <h3 className="text-sm font-bold text-amber-400 uppercase tracking-wider flex items-center gap-2">
+                <Scale className="w-4 h-4" />
+                Underwriter Final Recommendation & Capital Sizing
+              </h3>
+              <button
+                type="button"
+                onClick={handleSave}
+                disabled={isSaving}
+                className="flex items-center space-x-1.5 px-3 py-1.5 bg-amber-500 hover:bg-amber-400 text-slate-950 rounded-xl text-xs font-bold transition-all shadow-xs"
+              >
+                <Save className="w-3.5 h-3.5" />
+                <span>{isSaving ? 'Saving...' : saveSuccess ? 'Saved ✓' : 'Save Section'}</span>
+              </button>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-xs">
+              <div>
+                <label className="block text-slate-400 mb-1">Underwriter Recommendation</label>
+                <select
+                  value={evalRecord.recommendation}
+                  onChange={(e) =>
+                    mutateEval((prev) => ({
+                      ...prev,
+                      recommendation: e.target.value as any,
+                    }))
+                  }
+                  className="w-full bg-[#070d18] border border-blue-900/70 rounded-xl p-2.5 text-amber-300 font-bold focus:outline-none"
+                >
+                  <option value="RECOMMEND">RECOMMEND</option>
+                  <option value="RECOMMEND_WITH_CONDITIONS">RECOMMEND WITH CONDITIONS</option>
+                  <option value="HOLD_NEED_MORE_INFO">HOLD — NEED MORE INFORMATION</option>
+                  <option value="NOT_RECOMMENDED">NOT RECOMMENDED</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-slate-400 mb-1">Recommended Funding Amount ($)</label>
+                <input
+                  type="number"
+                  value={evalRecord.recommendedFundingAmount}
+                  onChange={(e) =>
+                    mutateEval((prev) => ({
+                      ...prev,
+                      recommendedFundingAmount: parseFloat(e.target.value) || 0,
+                    }))
+                  }
+                  className="w-full bg-[#070d18] border border-blue-900/70 rounded-xl p-2.5 text-emerald-400 font-mono font-bold focus:outline-none"
+                />
+              </div>
+
+              <div>
+                <label className="block text-slate-400 mb-1">Recommended Product</label>
+                <input
+                  type="text"
+                  value={evalRecord.recommendedProduct}
+                  onChange={(e) =>
+                    mutateEval((prev) => ({ ...prev, recommendedProduct: e.target.value }))
+                  }
+                  className="w-full bg-[#070d18] border border-blue-900/70 rounded-xl p-2.5 text-slate-100 focus:outline-none"
+                />
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-slate-400 mb-1 text-xs">Required Conditions for Funding</label>
+              <textarea
+                rows={3}
+                value={evalRecord.conditionsText}
+                onChange={(e) =>
+                  mutateEval((prev) => ({ ...prev, conditionsText: e.target.value }))
+                }
+                className="w-full bg-[#070d18] border border-blue-900/70 rounded-xl p-2.5 text-xs text-slate-100 focus:outline-none font-sans"
+              />
+            </div>
+          </div>
+
+          {renderSectionSaveBar('8. Underwriter Recommendation', 'debtservice', 'documents')}
+        </div>
+      )}
+
+      {/* --- SUB-VIEW 9: DOCUMENT CHECKLIST --- */}
+      {activeSection === 'documents' && (
+        <div className="space-y-6">
+          <div className="bg-[#0b1528] border border-blue-900/60 p-6 rounded-2xl shadow-xl space-y-4">
+            <div className="flex items-center justify-between">
+              <h3 className="text-sm font-bold text-blue-400 uppercase tracking-wider flex items-center gap-2">
+                <FileCheck2 className="w-4 h-4" />
+                Required Underwriting Document Checklist & Vault Comparison
+              </h3>
+              <div className="flex items-center space-x-3">
+                <span className="text-xs text-slate-400 hidden sm:inline">
+                  {evalRecord.documentChecklist.filter((d) => d.status === 'Verified' || d.status === 'Received').length} / {evalRecord.documentChecklist.length} Verified
+                </span>
+                <button
+                  type="button"
+                  onClick={handleSave}
+                  disabled={isSaving}
+                  className="flex items-center space-x-1.5 px-3 py-1.5 bg-amber-500 hover:bg-amber-400 text-slate-950 rounded-xl text-xs font-bold transition-all shadow-xs"
+                >
+                  <Save className="w-3.5 h-3.5" />
+                  <span>{isSaving ? 'Saving...' : saveSuccess ? 'Saved ✓' : 'Save Section'}</span>
+                </button>
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              {evalRecord.documentChecklist.map((item, idx) => (
+                <div
+                  key={idx}
+                  className="p-3 rounded-xl bg-[#070d18] border border-blue-900/40 flex items-center justify-between text-xs"
+                >
+                  <div className="flex items-center space-x-3">
+                    <div
+                      className={`w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold ${
+                        item.status === 'Verified'
+                          ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
+                          : item.status === 'Received'
+                          ? 'bg-blue-500/20 text-blue-300 border border-blue-500/40'
+                          : 'bg-rose-500/20 text-rose-300 border border-rose-500/40'
+                      }`}
+                    >
+                      {item.status === 'Verified' ? '✓' : item.status === 'Received' ? '•' : '!'}
+                    </div>
+                    <div>
+                      <span className="font-semibold text-slate-100">{item.name}</span>
+                      <span className="text-[10px] text-slate-400 block">{item.notes}</span>
+                    </div>
+                  </div>
+
+                  <select
+                    value={item.status}
+                    onChange={(e) => {
+                      const updated = [...evalRecord.documentChecklist];
+                      updated[idx].status = e.target.value as any;
+                      mutateEval((prev) => ({ ...prev, documentChecklist: updated }));
+                    }}
+                    className="bg-[#0b1528] border border-blue-800 rounded px-2.5 py-1 text-xs text-amber-300 font-bold focus:outline-none"
+                  >
+                    <option value="Verified">Verified</option>
+                    <option value="Received">Received</option>
+                    <option value="Needs Review">Needs Review</option>
+                    <option value="Missing">Missing</option>
+                    <option value="Expired">Expired</option>
+                  </select>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {renderSectionSaveBar('9. Document Checklist', 'recommendation', 'conditions')}
+        </div>
+      )}
+
+      {/* --- SUB-VIEW 10: CONDITIONS TO FUND --- */}
+      {activeSection === 'conditions' && (
+        <div className="space-y-6">
+          <div className="bg-[#0b1528] border border-blue-900/60 p-6 rounded-2xl shadow-xl space-y-4">
+            <div className="flex items-center justify-between">
+              <h3 className="text-sm font-bold text-amber-400 uppercase tracking-wider flex items-center gap-2">
+                <ShieldCheck className="w-4 h-4" />
+                Underwriting Conditions to Fund
+              </h3>
+              <div className="flex items-center space-x-2">
+                <button
+                  type="button"
+                  onClick={handleSave}
+                  disabled={isSaving}
+                  className="flex items-center space-x-1.5 px-3 py-1.5 bg-amber-500 hover:bg-amber-400 text-slate-950 rounded-xl text-xs font-bold transition-all shadow-xs"
+                >
+                  <Save className="w-3.5 h-3.5" />
+                  <span>{isSaving ? 'Saving...' : saveSuccess ? 'Saved ✓' : 'Save Section'}</span>
+                </button>
+                <button
+                  onClick={handleAddCondition}
+                  className="px-3 py-1.5 bg-blue-600 hover:bg-blue-500 text-white rounded-xl text-xs font-bold transition-all shadow-xs"
+                >
+                  + Add Condition
+                </button>
+              </div>
+            </div>
+
+            <div className="space-y-3">
+              {evalRecord.conditions.map((cond) => (
+                <div
+                  key={cond.id}
+                  className="p-4 rounded-xl bg-[#070d18] border border-blue-900/40 space-y-2 text-xs"
+                >
+                  <div className="flex items-center justify-between">
+                    <input
+                      type="text"
+                      value={cond.title}
+                      onChange={(e) => {
+                        const updated = evalRecord.conditions.map((c) =>
+                          c.id === cond.id ? { ...c, title: e.target.value } : c
+                        );
+                        mutateEval((prev) => ({ ...prev, conditions: updated }));
+                      }}
+                      className="bg-transparent font-bold text-slate-100 text-xs focus:outline-none w-full"
+                    />
+                    <div className="flex items-center space-x-2 shrink-0">
+                      <select
+                        value={cond.status}
+                        onChange={(e) => {
+                          const updated = evalRecord.conditions.map((c) =>
+                            c.id === cond.id ? { ...c, status: e.target.value as any } : c
+                          );
+                          mutateEval((prev) => ({ ...prev, conditions: updated }));
+                        }}
+                        className="bg-[#0b1528] border border-blue-800 rounded px-2 py-1 text-xs text-amber-300 font-bold focus:outline-none"
+                      >
+                        <option value="Open">Open</option>
+                        <option value="Requested">Requested</option>
+                        <option value="Received">Received</option>
+                        <option value="Verified">Verified</option>
+                        <option value="Satisfied">Satisfied</option>
+                        <option value="Waived">Waived</option>
+                      </select>
+
+                      <button
+                        onClick={() => handleRemoveCondition(cond.id)}
+                        className="text-slate-400 hover:text-rose-400"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  </div>
+
+                  <input
+                    type="text"
+                    value={cond.description}
+                    onChange={(e) => {
+                      const updated = evalRecord.conditions.map((c) =>
+                        c.id === cond.id ? { ...c, description: e.target.value } : c
+                      );
+                      mutateEval((prev) => ({ ...prev, conditions: updated }));
+                    }}
+                    className="bg-transparent text-slate-300 text-xs focus:outline-none w-full"
+                  />
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {renderSectionSaveBar('10. Conditions to Fund', 'documents', undefined)}
+        </div>
+      )}
+
+      {/* 3. STICKY FLOATING QUICK-SAVE BAR WHEN EDITED OR ALWAYS ACCESSIBLE */}
+      <div
+        id="floating-underwriting-savebar"
+        className={`fixed bottom-5 right-5 z-40 transition-all duration-300 transform ${
+          isDirty ? 'translate-y-0 opacity-100 scale-100' : 'translate-y-2 opacity-90 scale-95'
+        }`}
+      >
+        <div className="bg-[#0b1528]/95 backdrop-blur-md border border-blue-700/80 p-3.5 rounded-2xl shadow-2xl flex items-center space-x-3 text-xs">
+          <div className="flex items-center space-x-2">
+            <span
+              className={`w-2.5 h-2.5 rounded-full ${
+                isDirty ? 'bg-amber-400 animate-pulse' : saveSuccess ? 'bg-emerald-400' : 'bg-blue-400'
+              }`}
+            />
+            <span className="font-semibold text-slate-200">
+              {isDirty ? 'Unsaved Underwriting Edits' : saveSuccess ? 'All Changes Saved' : 'Underwriting Ready'}
+            </span>
+          </div>
+
+          <button
+            type="button"
+            onClick={handleSave}
+            disabled={isSaving}
+            className={`flex items-center space-x-1.5 px-4 py-2 rounded-xl font-bold transition-all shadow-md ${
+              isDirty
+                ? 'bg-amber-500 hover:bg-amber-400 text-slate-950 shadow-amber-500/30'
+                : saveSuccess
+                ? 'bg-emerald-500 text-slate-950'
+                : 'bg-blue-600 hover:bg-blue-500 text-white'
+            } disabled:opacity-50`}
+          >
+            <Save className="w-4 h-4" />
+            <span>{isSaving ? 'Saving...' : saveSuccess ? 'Saved ✓' : 'Save Changes'}</span>
+          </button>
+        </div>
+      </div>
     </div>
   );
 };

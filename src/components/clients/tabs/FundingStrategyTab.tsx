@@ -64,8 +64,10 @@ export const FundingStrategyTab: React.FC<FundingStrategyTabProps> = ({
   const safeStrategies = Array.isArray(strategies) ? strategies : [];
   const activeStrategy = safeStrategies.find((s) => s?.isActive) || safeStrategies[0] || null;
 
-  const [isEditing, setIsEditing] = useState(false);
+  const [isEditing, setIsEditing] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
+  const [isDirty, setIsDirty] = useState(false);
+  const [saveSuccess, setSaveSuccess] = useState(false);
   const [showHistoryModal, setShowHistoryModal] = useState(false);
   const [showNewStrategyModal, setShowNewStrategyModal] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
@@ -97,6 +99,14 @@ export const FundingStrategyTab: React.FC<FundingStrategyTabProps> = ({
     strategyNotes: activeStrategy?.strategyNotes || '',
   });
 
+  const mutateForm = (updater: (prev: Partial<FundingStrategyRecord>) => Partial<FundingStrategyRecord>) => {
+    setFormData((prev) => {
+      const next = updater(prev);
+      setIsDirty(true);
+      return next;
+    });
+  };
+
   // Sync state if activeStrategy changes
   useEffect(() => {
     if (activeStrategy) {
@@ -115,6 +125,7 @@ export const FundingStrategyTab: React.FC<FundingStrategyTabProps> = ({
         strategyNotes: activeStrategy.strategyNotes || '',
       });
       setNextStepsList(parseNextSteps(activeStrategy.nextSteps || ''));
+      setIsDirty(false);
     }
   }, [activeStrategy?.id, activeStrategy?.updatedAt]);
 
@@ -186,6 +197,7 @@ export const FundingStrategyTab: React.FC<FundingStrategyTabProps> = ({
     };
 
     setNextStepsList((prev) => [...prev, newStep]);
+    setIsDirty(true);
     setNewStepText('');
   };
 
@@ -207,6 +219,7 @@ export const FundingStrategyTab: React.FC<FundingStrategyTabProps> = ({
     });
 
     setNextStepsList(updated);
+    setIsDirty(true);
 
     // If active strategy exists, auto-persist Next Steps updates
     try {
@@ -223,6 +236,9 @@ export const FundingStrategyTab: React.FC<FundingStrategyTabProps> = ({
         });
       }
 
+      setIsDirty(false);
+      setSaveSuccess(true);
+      setTimeout(() => setSaveSuccess(false), 2500);
       await refreshAll();
       onStrategyUpdated();
     } catch (err) {
@@ -236,6 +252,7 @@ export const FundingStrategyTab: React.FC<FundingStrategyTabProps> = ({
       step.id === stepId ? { ...step, status } : step
     );
     setNextStepsList(updated);
+    setIsDirty(true);
 
     try {
       const targetStep = updated.find((s) => s.id === stepId);
@@ -250,6 +267,9 @@ export const FundingStrategyTab: React.FC<FundingStrategyTabProps> = ({
         });
       }
 
+      setIsDirty(false);
+      setSaveSuccess(true);
+      setTimeout(() => setSaveSuccess(false), 2500);
       await refreshAll();
       onStrategyUpdated();
     } catch (err) {
@@ -260,6 +280,7 @@ export const FundingStrategyTab: React.FC<FundingStrategyTabProps> = ({
   // Remove Step
   const handleRemoveStep = (stepId: string) => {
     setNextStepsList((prev) => prev.filter((s) => s.id !== stepId));
+    setIsDirty(true);
   };
 
   // Convert Next Step to Task
@@ -321,7 +342,9 @@ export const FundingStrategyTab: React.FC<FundingStrategyTabProps> = ({
         `Active strategy for ${client.firstName} ${client.lastName} saved and synced across all views.`
       );
 
-      setIsEditing(false);
+      setIsDirty(false);
+      setSaveSuccess(true);
+      setTimeout(() => setSaveSuccess(false), 3000);
       await refreshAll();
       onStrategyUpdated();
     } catch (err: any) {
@@ -512,7 +535,7 @@ export const FundingStrategyTab: React.FC<FundingStrategyTabProps> = ({
                   <textarea
                     rows={3}
                     value={formData.currentSituation}
-                    onChange={(e) => setFormData({ ...formData, currentSituation: e.target.value })}
+                    onChange={(e) => mutateForm((prev) => ({ ...prev, currentSituation: e.target.value }))}
                     className="w-full bg-[#070d18] border border-blue-900/70 rounded-xl p-3 text-xs text-slate-100 placeholder-slate-500 focus:outline-none focus:border-amber-400"
                     placeholder="Describe revenue stability, credit score, current debt service, and capital goals..."
                   />
@@ -531,7 +554,7 @@ export const FundingStrategyTab: React.FC<FundingStrategyTabProps> = ({
                   <textarea
                     rows={3}
                     value={formData.strategy}
-                    onChange={(e) => setFormData({ ...formData, strategy: e.target.value })}
+                    onChange={(e) => mutateForm((prev) => ({ ...prev, strategy: e.target.value }))}
                     className="w-full bg-[#070d18] border border-blue-900/70 rounded-xl p-3 text-xs text-slate-100 placeholder-slate-500 focus:outline-none focus:border-amber-400 font-sans"
                     placeholder="Describe the multi-step strategy, products to pursue, and staging order..."
                   />
@@ -553,7 +576,7 @@ export const FundingStrategyTab: React.FC<FundingStrategyTabProps> = ({
                   <input
                     type="text"
                     value={formData.productsToPursue}
-                    onChange={(e) => setFormData({ ...formData, productsToPursue: e.target.value })}
+                    onChange={(e) => mutateForm((prev) => ({ ...prev, productsToPursue: e.target.value }))}
                     className="w-full bg-[#070d18] border border-blue-900/70 rounded-xl p-2.5 text-xs text-slate-100 focus:outline-none focus:border-amber-400"
                     placeholder="e.g. Revenue Funding, Personal Term Loan, HELOC"
                   />
@@ -572,7 +595,7 @@ export const FundingStrategyTab: React.FC<FundingStrategyTabProps> = ({
                   <input
                     type="text"
                     value={formData.lenderStrategy}
-                    onChange={(e) => setFormData({ ...formData, lenderStrategy: e.target.value })}
+                    onChange={(e) => mutateForm((prev) => ({ ...prev, lenderStrategy: e.target.value }))}
                     className="w-full bg-[#070d18] border border-blue-900/70 rounded-xl p-2.5 text-xs text-slate-100 focus:outline-none focus:border-amber-400"
                     placeholder="e.g. Direct submission to Maple Direct Capital & Apex"
                   />
@@ -591,7 +614,7 @@ export const FundingStrategyTab: React.FC<FundingStrategyTabProps> = ({
                   <textarea
                     rows={2}
                     value={formData.problemsToSolve}
-                    onChange={(e) => setFormData({ ...formData, problemsToSolve: e.target.value })}
+                    onChange={(e) => mutateForm((prev) => ({ ...prev, problemsToSolve: e.target.value }))}
                     className="w-full bg-[#070d18] border border-blue-900/70 rounded-xl p-2.5 text-xs text-slate-100 focus:outline-none focus:border-amber-400"
                     placeholder="e.g. Existing SBA loan balance, debt coverage ratio..."
                   />
@@ -610,7 +633,7 @@ export const FundingStrategyTab: React.FC<FundingStrategyTabProps> = ({
                   <textarea
                     rows={2}
                     value={formData.creditIssues}
-                    onChange={(e) => setFormData({ ...formData, creditIssues: e.target.value })}
+                    onChange={(e) => mutateForm((prev) => ({ ...prev, creditIssues: e.target.value }))}
                     className="w-full bg-[#070d18] border border-blue-900/70 rounded-xl p-2.5 text-xs text-slate-100 focus:outline-none focus:border-amber-400"
                     placeholder="e.g. Credit bureau freeze, utilization optimization..."
                   />
@@ -631,7 +654,7 @@ export const FundingStrategyTab: React.FC<FundingStrategyTabProps> = ({
                 <input
                   type="text"
                   value={formData.missingDocuments}
-                  onChange={(e) => setFormData({ ...formData, missingDocuments: e.target.value })}
+                  onChange={(e) => mutateForm((prev) => ({ ...prev, missingDocuments: e.target.value }))}
                   className="w-full bg-[#070d18] border border-blue-900/70 rounded-xl p-2.5 text-xs text-slate-100 focus:outline-none focus:border-amber-400"
                   placeholder="e.g. 4 Months Chase Bank Statements, 2025 W2, Voided Check"
                 />
@@ -649,7 +672,7 @@ export const FundingStrategyTab: React.FC<FundingStrategyTabProps> = ({
                 {isEditing ? (
                   <select
                     value={formData.assignedTo}
-                    onChange={(e) => setFormData({ ...formData, assignedTo: e.target.value })}
+                    onChange={(e) => mutateForm((prev) => ({ ...prev, assignedTo: e.target.value }))}
                     className="w-full bg-[#070d18] border border-blue-900/70 rounded-xl p-2 text-xs text-slate-100 focus:outline-none"
                   >
                     {staffList.map((s) => (
@@ -670,7 +693,7 @@ export const FundingStrategyTab: React.FC<FundingStrategyTabProps> = ({
                 {isEditing ? (
                   <select
                     value={formData.priority}
-                    onChange={(e) => setFormData({ ...formData, priority: e.target.value as any })}
+                    onChange={(e) => mutateForm((prev) => ({ ...prev, priority: e.target.value as any }))}
                     className="w-full bg-[#070d18] border border-blue-900/70 rounded-xl p-2 text-xs text-slate-100 focus:outline-none"
                   >
                     <option value="High">High</option>
@@ -690,7 +713,7 @@ export const FundingStrategyTab: React.FC<FundingStrategyTabProps> = ({
                   <input
                     type="date"
                     value={formData.nextReviewDate}
-                    onChange={(e) => setFormData({ ...formData, nextReviewDate: e.target.value })}
+                    onChange={(e) => mutateForm((prev) => ({ ...prev, nextReviewDate: e.target.value }))}
                     className="w-full bg-[#070d18] border border-blue-900/70 rounded-xl p-2 text-xs text-slate-100 focus:outline-none font-mono"
                   />
                 ) : (
@@ -705,7 +728,7 @@ export const FundingStrategyTab: React.FC<FundingStrategyTabProps> = ({
                 {isEditing ? (
                   <select
                     value={formData.strategyStatus}
-                    onChange={(e) => setFormData({ ...formData, strategyStatus: e.target.value as any })}
+                    onChange={(e) => mutateForm((prev) => ({ ...prev, strategyStatus: e.target.value as any }))}
                     className="w-full bg-[#070d18] border border-blue-900/70 rounded-xl p-2 text-xs text-slate-100 focus:outline-none font-bold text-amber-300"
                   >
                     <option value="Active">Active</option>
@@ -728,7 +751,7 @@ export const FundingStrategyTab: React.FC<FundingStrategyTabProps> = ({
                 <textarea
                   rows={2}
                   value={formData.strategyNotes}
-                  onChange={(e) => setFormData({ ...formData, strategyNotes: e.target.value })}
+                  onChange={(e) => mutateForm((prev) => ({ ...prev, strategyNotes: e.target.value }))}
                   className="w-full bg-[#070d18] border border-blue-900/70 rounded-xl p-2.5 text-xs text-slate-100 focus:outline-none"
                   placeholder="Additional operational notes or underwriter instructions..."
                 />
@@ -737,6 +760,31 @@ export const FundingStrategyTab: React.FC<FundingStrategyTabProps> = ({
                   {formData.strategyNotes || 'No additional notes.'}
                 </div>
               )}
+            </div>
+
+            {/* Section Save Bar inside Strategy Blueprint */}
+            <div className="pt-4 border-t border-blue-900/40 flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                {isDirty && (
+                  <span className="text-[11px] text-amber-400 font-semibold flex items-center gap-1">
+                    <AlertCircle className="w-3.5 h-3.5 animate-pulse" /> Unsaved Strategy Changes
+                  </span>
+                )}
+                {saveSuccess && (
+                  <span className="text-[11px] text-emerald-400 font-semibold flex items-center gap-1">
+                    <CheckCircle2 className="w-3.5 h-3.5" /> Strategy Blueprint Saved
+                  </span>
+                )}
+              </div>
+
+              <button
+                onClick={handleSaveStrategy}
+                disabled={isSaving}
+                className="flex items-center space-x-1.5 px-4 py-2 bg-emerald-500 hover:bg-emerald-400 text-slate-950 rounded-xl text-xs font-bold transition-all shadow-md shadow-emerald-500/20 disabled:opacity-50"
+              >
+                <Save className="w-3.5 h-3.5" />
+                <span>{isSaving ? 'Saving...' : 'Save Strategy Blueprint'}</span>
+              </button>
             </div>
           </div>
         </div>
@@ -930,17 +978,62 @@ export const FundingStrategyTab: React.FC<FundingStrategyTabProps> = ({
                 </div>
               </div>
 
-              <button
-                type="submit"
-                className="w-full py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-xl text-xs font-bold transition-all shadow-md shadow-blue-600/20 flex items-center justify-center space-x-1"
-              >
-                <Plus className="w-3.5 h-3.5" />
-                <span>Add Step to Strategy</span>
-              </button>
+              <div className="pt-2 flex items-center gap-2">
+                <button
+                  type="submit"
+                  className="flex-1 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-xl text-xs font-bold transition-all shadow-md shadow-blue-600/20 flex items-center justify-center space-x-1"
+                >
+                  <Plus className="w-3.5 h-3.5" />
+                  <span>Add Step</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={handleSaveStrategy}
+                  disabled={isSaving}
+                  className="px-3.5 py-2 bg-emerald-500 hover:bg-emerald-400 text-slate-950 rounded-xl text-xs font-bold transition-all shadow-md shadow-emerald-500/20 flex items-center justify-center space-x-1 disabled:opacity-50"
+                  title="Save All Steps & Strategy"
+                >
+                  <Save className="w-3.5 h-3.5" />
+                  <span>Save</span>
+                </button>
+              </div>
             </form>
           </div>
         </div>
       </div>
+
+      {/* Floating Global Save Bar for Funding Strategy */}
+      {(isDirty || saveSuccess) && (
+        <div className="fixed bottom-6 right-6 z-40 bg-[#0f172a]/95 backdrop-blur-md border border-amber-500/40 p-4 rounded-2xl shadow-2xl shadow-black/80 flex items-center space-x-4 animate-in slide-in-from-bottom-5">
+          <div className="flex items-center space-x-2">
+            {isDirty ? (
+              <AlertTriangle className="w-5 h-5 text-amber-400 animate-bounce" />
+            ) : (
+              <CheckCircle2 className="w-5 h-5 text-emerald-400" />
+            )}
+            <div>
+              <p className="text-xs font-bold text-slate-100">
+                {isDirty ? 'Unsaved Funding Strategy Changes' : 'Funding Strategy Synced'}
+              </p>
+              <p className="text-[10px] text-slate-400">
+                {isDirty
+                  ? 'Modifications to blueprint and next steps are pending save'
+                  : 'All client strategic blueprint items are saved to database'}
+              </p>
+            </div>
+          </div>
+          {isDirty && (
+            <button
+              onClick={handleSaveStrategy}
+              disabled={isSaving}
+              className="flex items-center space-x-1.5 px-4 py-2 bg-emerald-500 hover:bg-emerald-400 text-slate-950 rounded-xl text-xs font-bold transition-all shadow-lg shadow-emerald-500/20 disabled:opacity-50"
+            >
+              <Save className="w-4 h-4" />
+              <span>{isSaving ? 'Saving...' : 'Save Strategy'}</span>
+            </button>
+          )}
+        </div>
+      )}
 
       {/* Delete Strategy Confirm Modal */}
       <ConfirmModal

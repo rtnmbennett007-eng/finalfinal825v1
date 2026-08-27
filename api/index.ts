@@ -1,5 +1,5 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
-import app from '../server.ts';
+import app from '../server/app.ts';
 
 export default function handler(req: VercelRequest, res: VercelResponse) {
   let url = req.url || '/api';

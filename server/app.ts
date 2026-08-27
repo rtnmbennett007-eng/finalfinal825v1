@@ -5,7 +5,7 @@ import express from 'express';
 import path from 'path';
 import fs from 'fs';
 import multer from 'multer';
-import { analyzeDocumentWithAi } from './documentAiService.ts';
+import { analyzeDocumentWithAi } from './documentAiService';
 import {
   getDriveStatus,
   getDriveDiagnostic,
@@ -20,7 +20,7 @@ import {
   getRequestOrigin,
   DEDICATED_ACCOUNT_EMAIL,
   DEFAULT_ROOT_FOLDER_ID,
-} from './googleDriveService.ts';
+} from './googleDriveService';
 
 const app = express();
 const PORT = 3000;
@@ -3126,6 +3126,14 @@ app.post('/api/underwriting/client/:clientId/save', (req, res) => {
 });
 
 // Documents APIs
+app.get('/api/documents', (req, res) => {
+  const { clientId } = req.query;
+  if (clientId) {
+    return res.json(db.documents.filter((d) => d.clientId === clientId));
+  }
+  res.json(db.documents);
+});
+
 app.get('/api/documents/client/:clientId', (req, res) => {
   const { clientId } = req.params;
   const docs = db.documents.filter((d) => d.clientId === clientId);
@@ -3268,13 +3276,18 @@ app.get([
   '/api/drive/diagnostics',
   '/drive/diagnostics',
   '/api/settings/google-drive/diagnostic'
-], (req, res) => {
+], async (req, res) => {
   try {
     const hostOrigin = `${req.protocol}://${req.get('host')}`;
-    const diagnostic = getDriveDiagnostic(hostOrigin);
+    const diagnostic = await getDriveDiagnostic(hostOrigin);
     res.json(diagnostic);
   } catch (err: any) {
-    res.status(500).json({ error: err?.message || 'Failed to generate Google Drive diagnostic' });
+    res.status(500).json({
+      success: false,
+      authenticated: false,
+      folderAccessible: false,
+      error: err?.message || 'Failed to generate Google Drive diagnostic',
+    });
   }
 });
 
@@ -3419,34 +3432,52 @@ app.post('/api/documents/upload-and-analyze', async (req, res) => {
     let driveAccountEmail: string | undefined;
     let finalFileUrl = fileUrl || (fileBase64 ? fileBase64 : undefined);
 
-    // 1. Upload to Google Drive if connected
+    // 1. Upload strictly to Google Drive Vault
+    if (!fileBuffer) {
+      return res.status(400).json({ error: 'File data is required for upload' });
+    }
+
     const hostOrigin = `${req.protocol}://${req.get('host')}`;
     const driveStatus = await getDriveStatus(hostOrigin);
 
-    if (driveStatus.isConnected && fileBuffer) {
-      try {
-        const driveUpload = await uploadFileToGoogleDrive({
-          buffer: fileBuffer,
-          fileName: effectiveFileName,
-          mimeType: effectiveMimeType,
-          clientId,
-          clientName: clientFullName,
-          businessName: clientBusinessName,
-          category: category || 'General',
-        });
-
-        storageProvider = 'google_drive';
-        driveFileId = driveUpload.fileId;
-        driveFolderId = driveUpload.folderId;
-        driveWebViewLink = driveUpload.webViewLink;
-        driveWebContentLink = driveUpload.webContentLink;
-        driveThumbnailLink = driveUpload.thumbnailLink;
-        driveAccountEmail = driveStatus.authorizedAccount || DEDICATED_ACCOUNT_EMAIL;
-        finalFileUrl = `/api/drive/file/${driveUpload.fileId}/view`;
-      } catch (driveErr: any) {
-        console.warn('Google Drive direct streaming upload encountered issue, falling back to secure vault storage:', driveErr.message || driveErr);
-      }
+    if (!driveStatus.isConnected) {
+      return res.status(500).json({
+        error: 'Google Drive is not connected. GOOGLE_SERVICE_ACCOUNT_JSON must be configured on the server to upload documents.',
+      });
     }
+
+    let driveUpload: any;
+    try {
+      driveUpload = await uploadFileToGoogleDrive({
+        buffer: fileBuffer,
+        fileName: effectiveFileName,
+        mimeType: effectiveMimeType,
+        clientId,
+        clientName: clientFullName,
+        businessName: clientBusinessName,
+        category: category || 'General',
+      });
+    } catch (driveErr: any) {
+      console.error('Google Drive direct upload failed:', driveErr);
+      return res.status(500).json({
+        error: `Google Drive upload failed: ${driveErr?.message || 'Unable to store file in Google Drive vault'}`,
+      });
+    }
+
+    if (!driveUpload || !driveUpload.fileId) {
+      return res.status(500).json({
+        error: 'Google Drive did not return a valid file ID. Document was not saved.',
+      });
+    }
+
+    storageProvider = 'google_drive';
+    driveFileId = driveUpload.fileId;
+    driveFolderId = driveUpload.folderId;
+    driveWebViewLink = driveUpload.webViewLink;
+    driveWebContentLink = driveUpload.webContentLink;
+    driveThumbnailLink = driveUpload.thumbnailLink;
+    driveAccountEmail = driveStatus.authorizedAccount || DEDICATED_ACCOUNT_EMAIL;
+    finalFileUrl = `/api/drive/file/${driveUpload.fileId}/view`;
 
     // 2. Build sanitized document record (NO heavy binary base64 stored persistently!)
     const newDoc: any = {
@@ -3471,14 +3502,6 @@ app.post('/api/documents/upload-and-analyze', async (req, res) => {
       driveThumbnailLink,
       driveAccountEmail,
     };
-
-    // If Google Drive was used, keep base64 strictly out of disk/database
-    if (storageProvider === 'google_drive') {
-      newDoc.fileBase64 = undefined;
-    } else {
-      // Temporary in-memory fallback if Drive not yet connected
-      newDoc.fileBase64 = undefined; // Kept out of JSON storage for quota safety
-    }
 
     db.documents.unshift(newDoc);
 
@@ -3579,34 +3602,48 @@ app.post('/api/documents/upload-file', upload.single('file') as any, async (req:
     let driveAccountEmail: string | undefined;
     let finalFileUrl = `/api/documents/${docId}/download`;
 
-    // Upload to Google Drive if connected
+    // Upload strictly to Google Drive Vault
     const hostOrigin = `${req.protocol}://${req.get('host')}`;
     const driveStatus = await getDriveStatus(hostOrigin);
 
-    if (driveStatus.isConnected) {
-      try {
-        const driveUpload = await uploadFileToGoogleDrive({
-          buffer: file.buffer,
-          fileName: effectiveFileName,
-          mimeType: effectiveMimeType,
-          clientId,
-          clientName: clientFullName,
-          businessName: clientBusinessName,
-          category: category || 'General',
-        });
-
-        storageProvider = 'google_drive';
-        driveFileId = driveUpload.fileId;
-        driveFolderId = driveUpload.folderId;
-        driveWebViewLink = driveUpload.webViewLink;
-        driveWebContentLink = driveUpload.webContentLink;
-        driveThumbnailLink = driveUpload.thumbnailLink;
-        driveAccountEmail = driveStatus.authorizedAccount || DEDICATED_ACCOUNT_EMAIL;
-        finalFileUrl = `/api/drive/file/${driveUpload.fileId}/view`;
-      } catch (driveErr: any) {
-        console.warn('Google Drive multipart stream upload issue:', driveErr.message || driveErr);
-      }
+    if (!driveStatus.isConnected) {
+      return res.status(500).json({
+        error: 'Google Drive is not connected. GOOGLE_SERVICE_ACCOUNT_JSON must be configured on the server to upload documents.',
+      });
     }
+
+    let driveUpload: any;
+    try {
+      driveUpload = await uploadFileToGoogleDrive({
+        buffer: file.buffer,
+        fileName: effectiveFileName,
+        mimeType: effectiveMimeType,
+        clientId,
+        clientName: clientFullName,
+        businessName: clientBusinessName,
+        category: category || 'General',
+      });
+    } catch (driveErr: any) {
+      console.error('Google Drive multipart stream upload failed:', driveErr);
+      return res.status(500).json({
+        error: `Google Drive upload failed: ${driveErr?.message || 'Unable to store file in Google Drive vault'}`,
+      });
+    }
+
+    if (!driveUpload || !driveUpload.fileId) {
+      return res.status(500).json({
+        error: 'Google Drive did not return a valid file ID. Document was not saved.',
+      });
+    }
+
+    storageProvider = 'google_drive';
+    driveFileId = driveUpload.fileId;
+    driveFolderId = driveUpload.folderId;
+    driveWebViewLink = driveUpload.webViewLink;
+    driveWebContentLink = driveUpload.webContentLink;
+    driveThumbnailLink = driveUpload.thumbnailLink;
+    driveAccountEmail = driveStatus.authorizedAccount || DEDICATED_ACCOUNT_EMAIL;
+    finalFileUrl = `/api/drive/file/${driveUpload.fileId}/view`;
 
     const newDoc: any = {
       id: docId,
@@ -4652,8 +4689,5 @@ async function startServer() {
   });
 }
 
+export { startServer };
 export default app;
-
-if (!process.env.VERCEL) {
-  startServer();
-}

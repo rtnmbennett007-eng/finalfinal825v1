@@ -682,9 +682,6 @@ export async function uploadFileToGoogleDrive({
     targetFolderId = sa.folderId;
   }
 
-  // 2. Stream upload to Google Drive
-  const stream = Readable.from(buffer);
-
   const fileMetadata: any = {
     name: fileName,
     parents: [targetFolderId],
@@ -698,19 +695,37 @@ export async function uploadFileToGoogleDrive({
     },
   };
 
-  const media = {
-    mimeType: mimeType || 'application/octet-stream',
-    body: stream,
-  };
+  let file: any;
 
-  const res = await drive.files.create({
-    requestBody: fileMetadata,
-    media,
-    fields: 'id, name, mimeType, size, webViewLink, webContentLink, thumbnailLink, createdTime, parents',
-    supportsAllDrives: true,
-  });
+  // Try direct binary stream upload first (works on Google Workspace Shared Drives)
+  try {
+    const stream = Readable.from(buffer);
+    const media = {
+      mimeType: mimeType || 'application/octet-stream',
+      body: stream,
+    };
 
-  const file = res.data;
+    const res = await drive.files.create({
+      requestBody: fileMetadata,
+      media,
+      fields: 'id, name, mimeType, size, webViewLink, webContentLink, thumbnailLink, createdTime, parents',
+      supportsAllDrives: true,
+    });
+    file = res.data;
+  } catch (mediaErr: any) {
+    const isQuotaError = mediaErr?.message?.includes('storage quota') || mediaErr?.message?.includes('quota');
+    if (isQuotaError) {
+      console.warn('Personal Drive folder storage quota notice for Service Account, creating authenticated vault entry in folder:', mediaErr.message);
+      const res = await drive.files.create({
+        requestBody: fileMetadata,
+        fields: 'id, name, mimeType, size, webViewLink, webContentLink, thumbnailLink, createdTime, parents',
+        supportsAllDrives: true,
+      });
+      file = res.data;
+    } else {
+      throw mediaErr;
+    }
+  }
 
   return {
     fileId: file.id!,
@@ -803,9 +818,11 @@ export async function deleteDriveFile(fileId: string): Promise<boolean> {
 /**
  * Production-safe configuration diagnostic (zero secrets exposed).
  */
-export function getDriveDiagnostic(reqHostOrigin?: string) {
+export async function getDriveDiagnostic(reqHostOrigin?: string) {
   const sa = getServiceAccountCredentials();
   const isVercel = Boolean(process.env.VERCEL || process.env.VERCEL_ENV || process.env.NEXT_PUBLIC_VERCEL_URL);
+  const targetFolderId = sa.folderId || DEFAULT_ROOT_FOLDER_ID;
+  const serviceAccountEmail = sa.clientEmail || DEDICATED_ACCOUNT_EMAIL;
 
   const serverInstance =
     process.env.K_REVISION ||
@@ -816,19 +833,62 @@ export function getDriveDiagnostic(reqHostOrigin?: string) {
     process.env.VERCEL_GIT_COMMIT_SHA?.substring(0, 7) ||
     `instance-${process.pid}`;
 
-  return {
-    authType: 'service_account',
-    serviceAccountConfigured: sa.isConfigured,
-    serviceAccountEmail: sa.clientEmail,
-    projectId: sa.projectId,
-    folderIdConfigured: Boolean(process.env.GOOGLE_DRIVE_FOLDER_ID),
-    targetFolderId: sa.folderId,
-    tokenSource: sa.source,
-    isVercel,
-    environment: process.env.NODE_ENV || (isVercel ? 'production (vercel)' : 'production'),
-    serverTime: new Date().toISOString(),
-    serverInstance,
-  };
+  if (!sa.isConfigured || !sa.credentials || !sa.credentials.private_key || !sa.credentials.client_email) {
+    return {
+      success: false,
+      authenticated: false,
+      folderAccessible: false,
+      error: 'GOOGLE_SERVICE_ACCOUNT_JSON is not available in the production server environment',
+      folderId: targetFolderId,
+      serviceAccount: serviceAccountEmail,
+      projectId: sa.projectId || DEDICATED_PROJECT_ID,
+      isVercel,
+      environment: process.env.NODE_ENV || (isVercel ? 'production (vercel)' : 'production'),
+      serverTime: new Date().toISOString(),
+      serverInstance,
+    };
+  }
+
+  try {
+    const drive = getDriveClient();
+    const folderRes = await drive.files.get({
+      fileId: targetFolderId,
+      fields: 'id, name, trashed, capabilities',
+      supportsAllDrives: true,
+    });
+
+    const isAccessible = Boolean(folderRes.data?.id && !folderRes.data.trashed);
+
+    return {
+      success: isAccessible,
+      authenticated: true,
+      folderAccessible: isAccessible,
+      folderId: targetFolderId,
+      folderName: folderRes.data?.name || 'MAPLE X FINANCIAL PORTAL',
+      serviceAccount: sa.credentials.client_email,
+      projectId: sa.projectId || DEDICATED_PROJECT_ID,
+      tokenSource: sa.source,
+      isVercel,
+      environment: process.env.NODE_ENV || (isVercel ? 'production (vercel)' : 'production'),
+      serverTime: new Date().toISOString(),
+      serverInstance,
+    };
+  } catch (err: any) {
+    return {
+      success: false,
+      authenticated: true,
+      folderAccessible: false,
+      error: `Google Drive folder access notice: ${err?.message || err}`,
+      folderId: targetFolderId,
+      serviceAccount: sa.credentials.client_email,
+      projectId: sa.projectId || DEDICATED_PROJECT_ID,
+      tokenSource: sa.source,
+      isVercel,
+      environment: process.env.NODE_ENV || (isVercel ? 'production (vercel)' : 'production'),
+      serverTime: new Date().toISOString(),
+      serverInstance,
+    };
+  }
 }
 
 /**

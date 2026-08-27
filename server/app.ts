@@ -3289,7 +3289,8 @@ app.get([
   '/api/settings/google-drive/diagnostic'
 ], (req, res) => {
   try {
-    const diagnostic = getDriveDiagnostic();
+    const hostOrigin = `${req.protocol}://${req.get('host')}`;
+    const diagnostic = getDriveDiagnostic(hostOrigin);
     res.json(diagnostic);
   } catch (err: any) {
     res.status(500).json({ error: err?.message || 'Failed to generate Google Drive diagnostic' });

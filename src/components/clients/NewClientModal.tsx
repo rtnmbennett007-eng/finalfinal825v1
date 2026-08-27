@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Modal } from '../common/Modal';
-import { Client, FundingProductType } from '../../types';
+import { Client, FundingProductType, CANONICAL_PIPELINE_STAGES, PipelineStage } from '../../types';
 import { useData } from '../../context/DataContext';
 import { useAuth } from '../../context/AuthContext';
 import { Save, Plus } from 'lucide-react';
@@ -50,7 +50,7 @@ export const NewClientModal: React.FC<NewClientModalProps> = ({
     creditScore: undefined,
     isVerified: false,
     isUnderwritten: false,
-    currentStatus: 'APPLICATION_RECEIVED',
+    currentStatus: 'No Set – Follow Up',
   });
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -327,6 +327,20 @@ export const NewClientModal: React.FC<NewClientModalProps> = ({
                 {staffList.map((s) => (
                   <option key={s.id} value={s.name}>
                     {s.name} ({s.jobTitle})
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className="block text-[10px] font-semibold text-slate-400 uppercase mb-1">Initial Pipeline Stage</label>
+              <select
+                value={formData.currentStatus || 'No Set – Follow Up'}
+                onChange={(e) => setFormData({ ...formData, currentStatus: e.target.value as PipelineStage })}
+                className="w-full bg-slate-950 border border-slate-800 rounded-xl p-2 text-xs text-slate-100 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500/50 font-semibold text-sky-400"
+              >
+                {CANONICAL_PIPELINE_STAGES.map((stage) => (
+                  <option key={stage} value={stage}>
+                    {stage}
                   </option>
                 ))}
               </select>

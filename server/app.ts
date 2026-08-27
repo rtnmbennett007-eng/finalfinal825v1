@@ -2377,7 +2377,7 @@ app.post('/api/leads/:id/convert-to-client', (req, res) => {
     assignedSalesRep: lead.assignedSalesRep || 'Steve',
 
     assignedStaff: lead.assignedSalesRep || 'Dana',
-    currentStatus: 'APPLICATION_RECEIVED',
+    currentStatus: req.body.currentStatus || 'No Set – Follow Up',
     createdAt: now,
     updatedAt: now,
 
@@ -2542,7 +2542,7 @@ app.post('/api/clients', (req, res) => {
     id: `client-${Date.now()}`,
     createdAt: now,
     updatedAt: now,
-    currentStatus: clientData.currentStatus || 'APPLICATION_RECEIVED',
+    currentStatus: clientData.currentStatus || 'No Set – Follow Up',
     assignedStaff: clientData.assignedStaff || 'Dana',
     leadSource: clientData.leadSource || 'Website',
     referralPartner: clientData.referralPartner || '',

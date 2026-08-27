@@ -1,6 +1,6 @@
 import React from 'react';
 import { Layers, UserCheck, Share2, AlertTriangle, Tag, Calendar, Clock, Bell } from 'lucide-react';
-import { Client, PipelineStage, StaffUser } from '../../../types';
+import { Client, PipelineStage, StaffUser, CANONICAL_PIPELINE_STAGES } from '../../../types';
 
 interface MasterPipelineSectionProps {
   form: Partial<Client>;
@@ -8,30 +8,11 @@ interface MasterPipelineSectionProps {
   onChange: (updates: Partial<Client>) => void;
 }
 
-const ALL_PIPELINE_STAGES: { id: PipelineStage; label: string; group: string }[] = [
-  { id: 'NEW_LEAD', label: 'New Lead', group: 'Intake' },
-  { id: 'SALES_CONTACT', label: 'Sales Contact', group: 'Intake' },
-  { id: 'APPLICATION_SENT', label: 'Application Sent', group: 'Intake' },
-  { id: 'APPLICATION_RECEIVED', label: 'Application Received', group: 'Intake' },
-  { id: 'DOCUMENT_REQUEST', label: 'Document Request', group: 'Documents' },
-  { id: 'DOCUMENTS_PENDING', label: 'Documents Pending', group: 'Documents' },
-  { id: 'DOCUMENTS_RECEIVED', label: 'Documents Received', group: 'Documents' },
-  { id: 'VERIFICATION_PENDING', label: 'Verification Pending', group: 'Verification' },
-  { id: 'VERIFICATION_IN_PROGRESS', label: 'Verification In Progress', group: 'Verification' },
-  { id: 'VERIFICATION_COMPLETE', label: 'Verification Complete', group: 'Verification' },
-  { id: 'UNDERWRITING', label: 'Underwriting Review', group: 'Underwriting' },
-  { id: 'READY_FOR_LENDER', label: 'Ready for Lender', group: 'Lender Packaging' },
-  { id: 'SUBMITTED_TO_LENDER', label: 'Submitted to Lender', group: 'Lender Packaging' },
-  { id: 'PRE_APPROVED', label: 'Pre-Approved', group: 'Lender Packaging' },
-  { id: 'APPROVED', label: 'Approved', group: 'Funding' },
-  { id: 'CONDITIONS_DOCUMENTS', label: 'Conditions & Documents', group: 'Funding' },
-  { id: 'FUNDED', label: 'Funded', group: 'Funding' },
-  { id: 'COMMISSION_PENDING', label: 'Commission Pending', group: 'Commissions' },
-  { id: 'COMMISSION_RECEIVED', label: 'Commission Received', group: 'Commissions' },
-  { id: 'NOT_QUALIFIED', label: 'Not Qualified', group: 'Resolution' },
-  { id: 'DECLINED', label: 'Declined', group: 'Resolution' },
-  { id: 'LOST', label: 'Lost', group: 'Resolution' },
-  { id: 'WITHDRAWN', label: 'Withdrawn', group: 'Resolution' },
+const ALL_PIPELINE_STAGES: { id: PipelineStage; label: string }[] = [
+  ...CANONICAL_PIPELINE_STAGES.map((stage) => ({
+    id: stage as PipelineStage,
+    label: stage,
+  })),
 ];
 
 export const MasterPipelineSection: React.FC<MasterPipelineSectionProps> = ({
@@ -51,7 +32,7 @@ export const MasterPipelineSection: React.FC<MasterPipelineSectionProps> = ({
             </h3>
           </div>
           <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-amber-500/20 text-amber-300 border border-amber-500/30 font-bold uppercase">
-            {form.currentStatus || 'NEW_LEAD'}
+            {form.currentStatus || 'No Set – Follow Up'}
           </span>
         </div>
 
@@ -59,13 +40,13 @@ export const MasterPipelineSection: React.FC<MasterPipelineSectionProps> = ({
           <div>
             <label className="block text-xs font-semibold text-slate-300 mb-1">Current Pipeline Stage *</label>
             <select
-              value={form.currentStatus || 'NEW_LEAD'}
+              value={form.currentStatus || 'No Set – Follow Up'}
               onChange={(e) => onChange({ currentStatus: e.target.value as PipelineStage })}
               className="w-full bg-[#070d18] border border-blue-900/70 rounded-xl p-2.5 text-xs text-amber-300 font-bold focus:border-amber-400 focus:outline-none"
             >
               {ALL_PIPELINE_STAGES.map((s) => (
                 <option key={s.id} value={s.id}>
-                  [{s.group}] {s.label}
+                  {s.label}
                 </option>
               ))}
             </select>

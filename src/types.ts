@@ -235,7 +235,54 @@ export interface UserRole {
   updatedAt: string;
 }
 
+export const CANONICAL_PIPELINE_STAGES = [
+  'No Set – Follow Up',
+  'Appointment Set',
+  'No Show',
+  'Showed – Need Follow Up',
+  'Credit Repair',
+  'Showed – Not Interested',
+  'Showed – DQ',
+  'Showed – Document Sent',
+  'Docs Pending',
+  'Underwriting',
+  'Funded',
+  'Commission Received',
+  'LOST',
+] as const;
+
+export type CanonicalPipelineStage = typeof CANONICAL_PIPELINE_STAGES[number];
+
+export function normalizePipelineStage(stage?: string | null): CanonicalPipelineStage {
+  if (!stage) return 'No Set – Follow Up';
+  const trimmed = stage.trim();
+
+  // Exact canonical match
+  if ((CANONICAL_PIPELINE_STAGES as readonly string[]).includes(trimmed)) {
+    return trimmed as CanonicalPipelineStage;
+  }
+
+  const upper = trimmed.toUpperCase().replace(/[_\s-]+/g, ' ');
+
+  if (upper.includes('APPOINTMENT SET')) return 'Appointment Set';
+  if (upper.includes('NO SHOW')) return 'No Show';
+  if (upper.includes('NEED FOLLOW UP') || upper.includes('NEED FOLLOWUP')) return 'Showed – Need Follow Up';
+  if (upper.includes('CREDIT REPAIR')) return 'Credit Repair';
+  if (upper.includes('NOT INTERESTED')) return 'Showed – Not Interested';
+  if (upper.includes('DQ') || upper.includes('DISQUALIFIED') || upper.includes('NOT QUALIFIED')) return 'Showed – DQ';
+  if (upper.includes('DOCUMENT SENT') || upper.includes('DOC SENT') || upper.includes('APPLICATION SENT')) return 'Showed – Document Sent';
+  if (upper.includes('DOCS PENDING') || upper.includes('DOCUMENTS PENDING') || upper.includes('DOCUMENT REQUEST') || upper.includes('DOCUMENTS REQUEST') || upper.includes('PENDING DOCS')) return 'Docs Pending';
+  if (upper.includes('UNDERWRITING') || upper.includes('READY FOR LENDER') || upper.includes('SUBMITTED TO LENDER') || upper.includes('PRE APPROVED') || upper.includes('PRE_APPROVED') || upper.includes('IN REVIEW')) return 'Underwriting';
+  if (upper.includes('FUNDED') || upper.includes('APPROVED') || upper.includes('CONDITIONS MET')) return 'Funded';
+  if (upper.includes('COMMISSION RECEIVED') || upper.includes('COMMISSION COLLECTED') || upper.includes('COMMISSION PENDING') || upper.includes('COMMISSION')) return 'Commission Received';
+  if (upper.includes('LOST') || upper.includes('DECLINED') || upper.includes('WITHDRAWN')) return 'LOST';
+  if (upper.includes('NO SET') || upper.includes('NEW LEAD') || upper.includes('SALES CONTACT') || upper.includes('APPLICATION RECEIVED')) return 'No Set – Follow Up';
+
+  return 'No Set – Follow Up';
+}
+
 export type PipelineStage =
+  | CanonicalPipelineStage
   | 'NEW_LEAD'
   | 'SALES_CONTACT'
   | 'APPLICATION_SENT'
@@ -1649,7 +1696,7 @@ export interface GhlConfig {
     requestedAmountField: string;
     productField: string;
   };
-  pipelineMappings: Record<PipelineStage, string>;
+  pipelineMappings: Record<string, string>;
 }
 
 export interface LeadSourceOption {

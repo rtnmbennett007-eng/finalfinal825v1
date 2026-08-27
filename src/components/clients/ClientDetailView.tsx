@@ -85,30 +85,10 @@ import { DocumentUploadModal } from '../documents/DocumentUploadModal';
 import { DocumentViewerModal } from '../documents/DocumentViewerModal';
 import { DocumentAiReviewModal } from '../documents/DocumentAiReviewModal';
 
+import { CANONICAL_PIPELINE_STAGES, normalizePipelineStage } from '../../types';
+
 const ALL_PIPELINE_STAGES: { value: PipelineStage; label: string }[] = [
-  { value: 'NEW_LEAD', label: 'New Lead' },
-  { value: 'SALES_CONTACT', label: 'Sales Contact' },
-  { value: 'APPLICATION_SENT', label: 'Application Sent' },
-  { value: 'APPLICATION_RECEIVED', label: 'Application Received' },
-  { value: 'DOCUMENT_REQUEST', label: 'Document Request' },
-  { value: 'DOCUMENTS_PENDING', label: 'Documents Pending' },
-  { value: 'DOCUMENTS_RECEIVED', label: 'Documents Received' },
-  { value: 'VERIFICATION_PENDING', label: 'Verification Pending' },
-  { value: 'VERIFICATION_IN_PROGRESS', label: 'Verification In Progress' },
-  { value: 'VERIFICATION_COMPLETE', label: 'Verification Complete' },
-  { value: 'UNDERWRITING', label: 'Underwriting' },
-  { value: 'READY_FOR_LENDER', label: 'Ready For Lender' },
-  { value: 'SUBMITTED_TO_LENDER', label: 'Submitted To Lender' },
-  { value: 'PRE_APPROVED', label: 'Pre-Approved' },
-  { value: 'APPROVED', label: 'Approved' },
-  { value: 'CONDITIONS_DOCUMENTS', label: 'Conditions Documents' },
-  { value: 'FUNDED', label: 'Funded' },
-  { value: 'COMMISSION_PENDING', label: 'Commission Pending' },
-  { value: 'COMMISSION_RECEIVED', label: 'Commission Received' },
-  { value: 'NOT_QUALIFIED', label: 'Not Qualified' },
-  { value: 'DECLINED', label: 'Declined' },
-  { value: 'LOST', label: 'Lost' },
-  { value: 'WITHDRAWN', label: 'Withdrawn' },
+  ...CANONICAL_PIPELINE_STAGES.map((s) => ({ value: s as PipelineStage, label: s })),
 ];
 
 const getStageBadgeStyles = (status?: string | null) => {
@@ -257,7 +237,7 @@ export const ClientDetailView: React.FC<ClientDetailViewProps> = ({
         leadSource: 'Portal Direct',
         assignedSalesRep: 'Robert',
         assignedStaff: 'Dana',
-        currentStatus: 'UNDERWRITING' as PipelineStage,
+        currentStatus: (res.client?.currentStatus || 'No Set – Follow Up') as PipelineStage,
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
         requestedAmount: 50000,

@@ -1,41 +1,67 @@
 import React from 'react';
-import { PipelineStage, FundingProductType } from '../../types';
+import { PipelineStage, FundingProductType, normalizePipelineStage } from '../../types';
 
 interface StatusBadgeProps {
   status?: PipelineStage | string | null;
   size?: 'sm' | 'md' | 'lg';
 }
 
-export const StatusBadge: React.FC<StatusBadgeProps> = ({ status = 'APPLICATION_RECEIVED', size = 'md' }) => {
-  const safeStatus = (status || 'APPLICATION_RECEIVED').toString();
+export const StatusBadge: React.FC<StatusBadgeProps> = ({ status = 'No Set – Follow Up', size = 'md' }) => {
+  const safeStatus = (status || 'No Set – Follow Up').toString();
+  const canonical = normalizePipelineStage(safeStatus);
   const normalized = safeStatus.toUpperCase().replace(/\s+/g, '_');
 
-  let colorClasses = 'bg-slate-800 text-slate-300 border-slate-700';
+  let colorClasses = 'bg-slate-800/90 text-slate-300 border-slate-700/80';
 
-  if (normalized.includes('FUNDED')) {
-    colorClasses = 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20 shadow-xs';
-  } else if (normalized.includes('APPROVED')) {
-    colorClasses = 'bg-teal-500/10 text-teal-400 border-teal-500/20';
-  } else if (normalized.includes('PRE_APPROVED')) {
-    colorClasses = 'bg-cyan-500/10 text-cyan-400 border-cyan-500/20';
-  } else if (normalized.includes('COMMISSION_RECEIVED') || normalized.includes('COLLECTED')) {
-    colorClasses = 'bg-blue-500/10 text-blue-400 border-blue-500/30 font-semibold';
-  } else if (normalized.includes('COMMISSION_PENDING') || normalized.includes('COMMISSION')) {
-    colorClasses = 'bg-amber-500/10 text-amber-400 border-amber-500/20';
-  } else if (normalized.includes('UNDERWRITING') || normalized.includes('READY_FOR_LENDER')) {
-    colorClasses = 'bg-purple-500/10 text-purple-400 border-purple-500/20';
-  } else if (normalized.includes('VERIFICATION_COMPLETE') || normalized === 'VERIFIED') {
-    colorClasses = 'bg-blue-500/10 text-blue-400 border-blue-500/30';
-  } else if (normalized.includes('VERIFICATION') || normalized.includes('PROGRESS')) {
-    colorClasses = 'bg-sky-500/10 text-sky-400 border-sky-500/20';
-  } else if (normalized.includes('DOCUMENTS_RECEIVED') || normalized.includes('DOCUMENT')) {
-    colorClasses = 'bg-indigo-500/10 text-indigo-400 border-indigo-500/20';
-  } else if (normalized.includes('APPLICATION_RECEIVED') || normalized.includes('APPLICATION')) {
-    colorClasses = 'bg-blue-500/10 text-blue-300 border-blue-500/20';
-  } else if (normalized.includes('NEW_LEAD') || normalized.includes('LEAD')) {
-    colorClasses = 'bg-slate-800 text-blue-400 border-slate-700';
-  } else if (normalized.includes('NOT_QUALIFIED') || normalized.includes('DECLINED') || normalized.includes('LOST') || normalized.includes('REJECTED')) {
-    colorClasses = 'bg-rose-500/10 text-rose-400 border-rose-500/20';
+  switch (canonical) {
+    case 'No Set – Follow Up':
+      colorClasses = 'bg-slate-800 text-slate-300 border-slate-700';
+      break;
+    case 'Appointment Set':
+      colorClasses = 'bg-sky-500/15 text-sky-400 border-sky-500/30';
+      break;
+    case 'No Show':
+      colorClasses = 'bg-amber-500/15 text-amber-400 border-amber-500/30';
+      break;
+    case 'Showed – Need Follow Up':
+      colorClasses = 'bg-blue-500/15 text-blue-300 border-blue-500/30';
+      break;
+    case 'Credit Repair':
+      colorClasses = 'bg-violet-500/15 text-violet-300 border-violet-500/30';
+      break;
+    case 'Showed – Not Interested':
+      colorClasses = 'bg-slate-800 text-slate-400 border-slate-700';
+      break;
+    case 'Showed – DQ':
+      colorClasses = 'bg-rose-500/15 text-rose-400 border-rose-500/30';
+      break;
+    case 'Showed – Document Sent':
+      colorClasses = 'bg-cyan-500/15 text-cyan-300 border-cyan-500/30';
+      break;
+    case 'Docs Pending':
+      colorClasses = 'bg-amber-500/15 text-amber-300 border-amber-500/30 font-medium';
+      break;
+    case 'Underwriting':
+      colorClasses = 'bg-purple-500/15 text-purple-300 border-purple-500/30 font-semibold';
+      break;
+    case 'Funded':
+      colorClasses = 'bg-emerald-500/15 text-emerald-300 border-emerald-500/30 font-bold';
+      break;
+    case 'Commission Received':
+      colorClasses = 'bg-emerald-500/20 text-emerald-400 border-emerald-500/40 font-bold';
+      break;
+    case 'LOST':
+      colorClasses = 'bg-rose-500/15 text-rose-400 border-rose-500/30';
+      break;
+    default:
+      if (normalized.includes('FUNDED')) {
+        colorClasses = 'bg-emerald-500/15 text-emerald-300 border-emerald-500/30 font-bold';
+      } else if (normalized.includes('UNDERWRITING')) {
+        colorClasses = 'bg-purple-500/15 text-purple-300 border-purple-500/30 font-semibold';
+      } else if (normalized.includes('COMMISSION')) {
+        colorClasses = 'bg-emerald-500/20 text-emerald-400 border-emerald-500/40 font-bold';
+      }
+      break;
   }
 
   const sizeClasses = {
@@ -44,17 +70,11 @@ export const StatusBadge: React.FC<StatusBadgeProps> = ({ status = 'APPLICATION_
     lg: 'text-sm px-3 py-1.5 font-semibold',
   }[size];
 
-  // Friendly human-readable label
-  const readable = safeStatus
-    .replace(/_/g, ' ')
-    .toLowerCase()
-    .replace(/\b\w/g, (c) => c.toUpperCase());
-
   return (
     <span
       className={`inline-flex items-center justify-center whitespace-nowrap rounded-md border tracking-wide uppercase ${sizeClasses} ${colorClasses}`}
     >
-      {readable}
+      {safeStatus}
     </span>
   );
 };

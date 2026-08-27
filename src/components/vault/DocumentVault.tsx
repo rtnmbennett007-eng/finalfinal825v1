@@ -44,7 +44,7 @@ export const DocumentVault: React.FC<DocumentVaultProps> = ({ setActiveTab }) =>
       ...doc,
       clientName: doc.clientName || (matchedClient ? `${matchedClient.firstName} ${matchedClient.lastName}`.trim() : 'General Client File'),
       businessName: doc.businessName || matchedClient?.businessName || 'Maple X Direct Deal',
-      clientStatus: matchedClient?.currentStatus || 'UNDERWRITING',
+      clientStatus: matchedClient?.currentStatus || 'No Set – Follow Up',
     };
   });
 

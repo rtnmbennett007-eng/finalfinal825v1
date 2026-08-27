@@ -5,7 +5,7 @@ import express from 'express';
 import path from 'path';
 import fs from 'fs';
 import multer from 'multer';
-import { analyzeDocumentWithAi } from './server/documentAiService';
+import { analyzeDocumentWithAi } from './server/documentAiService.ts';
 import {
   generateAuthUrl,
   handleAuthCallback,
@@ -19,7 +19,7 @@ import {
   deleteDriveFile,
   DEDICATED_ACCOUNT_EMAIL,
   DEFAULT_ROOT_FOLDER_ID,
-} from './server/googleDriveService';
+} from './server/googleDriveService.ts';
 
 const app = express();
 const PORT = 3000;

@@ -5,7 +5,7 @@ import express from 'express';
 import path from 'path';
 import fs from 'fs';
 import multer from 'multer';
-import { analyzeDocumentWithAi } from './documentAiService';
+import { analyzeDocumentWithAi } from './documentAiService.ts';
 import {
   getDriveStatus,
   getDriveDiagnostic,
@@ -20,13 +20,23 @@ import {
   getRequestOrigin,
   DEDICATED_ACCOUNT_EMAIL,
   DEFAULT_ROOT_FOLDER_ID,
-} from './googleDriveService';
+} from './googleDriveService.ts';
 
 const app = express();
 const PORT = 3000;
 
 // Enable trust proxy so reverse proxies on Vercel and Cloud Run correctly supply client IP and HTTPS protocol
 app.set('trust proxy', true);
+
+// Fast Health Endpoint (does not require external credentials)
+app.get(['/api/health', '/health'], (req, res) => {
+  res.setHeader('Content-Type', 'application/json');
+  res.json({
+    success: true,
+    environment: 'production',
+    backend: 'online',
+  });
+});
 
 // Setup Multer memory storage for direct file streaming
 const upload = multer({

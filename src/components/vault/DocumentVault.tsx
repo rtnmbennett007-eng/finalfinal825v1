@@ -16,6 +16,9 @@ import {
   FileCheck2,
   AlertTriangle,
   User,
+  ShieldAlert,
+  HelpCircle,
+  Scale,
 } from 'lucide-react';
 import { useData } from '../../context/DataContext';
 import { formatDate } from '../../utils/dateUtils';
@@ -27,26 +30,114 @@ interface DocumentVaultProps {
   setActiveTab: (tab: string) => void;
 }
 
+interface ConflictSummaryInfo {
+  count: number;
+  fields: Array<{
+    label: string;
+    section: string;
+    extractedValue: string | number | boolean;
+    conflictingValue: string | number | boolean;
+    conflictingDocTitle?: string;
+    reason: string;
+  }>;
+}
+
 export const DocumentVault: React.FC<DocumentVaultProps> = ({ setActiveTab }) => {
   const { clients, documents, setSelectedClientId } = useData();
   const [searchQuery, setSearchQuery] = useState('');
   const [categoryFilter, setCategoryFilter] = useState('ALL');
+  const [conflictOnlyFilter, setConflictOnlyFilter] = useState(false);
   const [activeViewingDoc, setActiveViewingDoc] = useState<DocumentItem | null>(null);
   const [activeAiReviewDoc, setActiveAiReviewDoc] = useState<DocumentItem | null>(null);
 
   // Build indexed map of clients for quick lookup
   const clientMap = new Map(clients.map((c) => [c.id, c]));
 
-  // Merge documents with client profile data
+  // Helper to compute cross-document and verified-record conflicts for any document
+  const getDocumentConflictSummary = (targetDoc: DocumentItem): ConflictSummaryInfo | null => {
+    const conflicts: ConflictSummaryInfo['fields'] = [];
+    const extraction = targetDoc.aiExtraction;
+
+    if (!extraction || !extraction.extractedFields || extraction.extractedFields.length === 0) {
+      return null;
+    }
+
+    // 1. Direct conflicts flagged during extraction (against verified canonical values)
+    extraction.extractedFields.forEach((f) => {
+      if (f.isConflictWithVerified && f.currentVerifiedValue !== undefined) {
+        conflicts.push({
+          label: f.label || f.key,
+          section: f.section,
+          extractedValue: f.extractedValue,
+          conflictingValue: f.currentVerifiedValue,
+          reason: `Discrepancy with verified record: "${String(f.currentVerifiedValue)}" vs extracted "${String(f.extractedValue)}"`,
+        });
+      }
+    });
+
+    // 2. Cross-document comparison across other documents of the same client
+    const otherClientDocs = (documents || []).filter(
+      (d) => d.clientId === targetDoc.clientId && d.id !== targetDoc.id && d.aiExtraction?.extractedFields
+    );
+
+    extraction.extractedFields.forEach((targetField) => {
+      if (!targetField.extractedValue || String(targetField.extractedValue).trim() === '') return;
+      const targetValStr = String(targetField.extractedValue).trim().toLowerCase();
+
+      // Look for the same field key & section in other uploaded documents for this client
+      otherClientDocs.forEach((otherDoc) => {
+        const matchingOtherField = otherDoc.aiExtraction?.extractedFields.find(
+          (of) =>
+            of.key === targetField.key &&
+            of.section === targetField.section &&
+            of.extractedValue !== undefined &&
+            String(of.extractedValue).trim() !== ''
+        );
+
+        if (matchingOtherField) {
+          const otherValStr = String(matchingOtherField.extractedValue).trim().toLowerCase();
+          // If values disagree significantly (case-insensitive string mismatch)
+          if (targetValStr !== otherValStr) {
+            // Avoid duplicate conflict entries for same field
+            const alreadyAdded = conflicts.some((c) => c.label === (targetField.label || targetField.key));
+            if (!alreadyAdded) {
+              conflicts.push({
+                label: targetField.label || targetField.key,
+                section: targetField.section,
+                extractedValue: targetField.extractedValue,
+                conflictingValue: matchingOtherField.extractedValue,
+                conflictingDocTitle: otherDoc.title || otherDoc.fileName,
+                reason: `Differs from "${otherDoc.title || otherDoc.fileName}": "${String(matchingOtherField.extractedValue)}" vs "${String(targetField.extractedValue)}"`,
+              });
+            }
+          }
+        }
+      });
+    });
+
+    if (conflicts.length === 0) return null;
+
+    return {
+      count: conflicts.length,
+      fields: conflicts,
+    };
+  };
+
+  // Merge documents with client profile data and conflict intelligence
   const allDocs = (documents || []).map((doc) => {
     const matchedClient = clientMap.get(doc.clientId);
+    const conflictInfo = getDocumentConflictSummary(doc);
     return {
       ...doc,
       clientName: doc.clientName || (matchedClient ? `${matchedClient.firstName} ${matchedClient.lastName}`.trim() : 'General Client File'),
       businessName: doc.businessName || matchedClient?.businessName || 'Maple X Direct Deal',
       clientStatus: matchedClient?.currentStatus || 'No Set – Follow Up',
+      conflictInfo,
+      hasConflict: Boolean(conflictInfo && conflictInfo.count > 0),
     };
   });
+
+  const totalConflictDocsCount = allDocs.filter((d) => d.hasConflict).length;
 
   const filteredDocs = allDocs.filter((doc) => {
     const matchesSearch =
@@ -54,11 +145,13 @@ export const DocumentVault: React.FC<DocumentVaultProps> = ({ setActiveTab }) =>
       doc.title?.toLowerCase().includes(searchQuery.toLowerCase()) ||
       doc.clientName?.toLowerCase().includes(searchQuery.toLowerCase()) ||
       doc.businessName?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      doc.fileName?.toLowerCase().includes(searchQuery.toLowerCase());
+      doc.fileName?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      (doc.hasConflict && 'conflict detected'.includes(searchQuery.toLowerCase()));
 
     const matchesCategory = categoryFilter === 'ALL' || doc.category === categoryFilter;
+    const matchesConflictOnly = !conflictOnlyFilter || doc.hasConflict;
 
-    return matchesSearch && matchesCategory;
+    return matchesSearch && matchesCategory && matchesConflictOnly;
   });
 
   const handleOpenClient = (clientId: string) => {
@@ -103,15 +196,41 @@ export const DocumentVault: React.FC<DocumentVaultProps> = ({ setActiveTab }) =>
               <Sparkles className="w-3 h-3" />
               {aiAnalyzedCount} AI Analyzed
             </span>
+            {totalConflictDocsCount > 0 && (
+              <>
+                <span className="text-xs text-slate-500">•</span>
+                <span className="text-xs text-rose-400 font-bold flex items-center gap-1 bg-rose-950/40 px-2 py-0.5 rounded border border-rose-500/40">
+                  <ShieldAlert className="w-3 h-3 text-rose-400" />
+                  {totalConflictDocsCount} with Conflicts
+                </span>
+              </>
+            )}
           </div>
           <h1 className="text-xl font-bold text-slate-100 mt-2 flex items-center gap-2">
             <FolderLock className="w-5 h-5 text-blue-400" />
             Global Document Vault & Underwriting Repository
           </h1>
           <p className="text-xs text-slate-400 mt-0.5">
-            Encrypted client document repository synchronized with Google Drive service account storage.
+            Encrypted client document repository with automated AI cross-document discrepancy and conflict detection.
           </p>
         </div>
+
+        {/* Quick Filter for Conflicts */}
+        {totalConflictDocsCount > 0 && (
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => setConflictOnlyFilter(!conflictOnlyFilter)}
+              className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 border ${
+                conflictOnlyFilter
+                  ? 'bg-rose-600 text-white border-rose-500 shadow-lg shadow-rose-600/30'
+                  : 'bg-rose-950/30 text-rose-300 border-rose-500/40 hover:bg-rose-900/40'
+              }`}
+            >
+              <ShieldAlert className="w-3.5 h-3.5" />
+              <span>{conflictOnlyFilter ? 'Showing Conflicts Only' : `Filter Conflicts (${totalConflictDocsCount})`}</span>
+            </button>
+          </div>
+        )}
       </div>
 
       {/* Filters */}
@@ -148,13 +267,33 @@ export const DocumentVault: React.FC<DocumentVaultProps> = ({ setActiveTab }) =>
         </div>
       </div>
 
+      {/* Conflict Filter Banner when Active */}
+      {conflictOnlyFilter && (
+        <div className="p-3 bg-rose-950/30 border border-rose-500/40 rounded-xl flex items-center justify-between text-xs text-rose-200">
+          <div className="flex items-center gap-2">
+            <ShieldAlert className="w-4 h-4 text-rose-400 shrink-0" />
+            <span>
+              Showing <strong>{filteredDocs.length}</strong> document(s) with extracted data conflicts against verified canonical records or other client documents.
+            </span>
+          </div>
+          <button
+            onClick={() => setConflictOnlyFilter(false)}
+            className="text-[11px] underline hover:text-white font-medium ml-2"
+          >
+            Show All Documents
+          </button>
+        </div>
+      )}
+
       {/* Document Grid */}
       {filteredDocs.length === 0 ? (
         <div className="p-12 text-center bg-slate-900/30 border border-slate-800 rounded-2xl space-y-3">
           <FolderLock className="w-10 h-10 text-slate-600 mx-auto" />
           <div className="text-sm font-semibold text-slate-300">No documents found matching your criteria</div>
           <p className="text-xs text-slate-500 max-w-sm mx-auto">
-            {allDocs.length === 0
+            {conflictOnlyFilter
+              ? 'No documents currently have conflicting data.'
+              : allDocs.length === 0
               ? 'No documents have been uploaded yet. Upload documents from any Client File or via the Document Upload Modal.'
               : 'Try clearing your search or selecting a different category filter.'}
           </p>
@@ -164,12 +303,16 @@ export const DocumentVault: React.FC<DocumentVaultProps> = ({ setActiveTab }) =>
           {filteredDocs.map((doc) => {
             const hasDriveLink = Boolean(doc.storageProvider === 'google_drive' || doc.driveFileId);
             const hasAi = Boolean(doc.aiExtraction);
+            const hasConflict = Boolean(doc.hasConflict);
+            const conflictInfo = doc.conflictInfo;
 
             return (
               <div
                 key={doc.id}
-                className={`p-4 rounded-xl space-y-3 flex flex-col justify-between transition-all border ${
-                  hasAi
+                className={`p-4 rounded-xl space-y-3 flex flex-col justify-between transition-all border relative group ${
+                  hasConflict
+                    ? 'bg-gradient-to-b from-rose-950/20 to-slate-900/80 border-rose-500/50 shadow-md shadow-rose-950/20 hover:border-rose-400'
+                    : hasAi
                     ? 'bg-slate-900/60 border-indigo-900/40 hover:border-indigo-600/60'
                     : 'bg-slate-900/40 border-slate-800 hover:border-slate-700'
                 }`}
@@ -179,7 +322,55 @@ export const DocumentVault: React.FC<DocumentVaultProps> = ({ setActiveTab }) =>
                     <span className="text-[10px] px-2 py-0.5 rounded bg-slate-800 text-blue-400 font-semibold uppercase tracking-wider">
                       {doc.category}
                     </span>
-                    <div className="flex items-center gap-1.5">
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                      {/* Conflict Detected Tag with Rich Summary Tooltip */}
+                      {hasConflict && conflictInfo && (
+                        <div className="relative group/tooltip">
+                          <button
+                            onClick={() => setActiveAiReviewDoc(doc)}
+                            className="text-[10px] px-2 py-0.5 rounded-full bg-rose-500/20 text-rose-300 border border-rose-500/40 font-bold flex items-center gap-1 hover:bg-rose-500/30 transition-all cursor-pointer shadow-xs animate-pulse"
+                            title="Click to review conflicting extracted values"
+                          >
+                            <AlertTriangle className="w-2.5 h-2.5 text-rose-400 shrink-0" />
+                            <span>Conflict Detected ({conflictInfo.count})</span>
+                          </button>
+
+                          {/* Interactive Summary Tooltip */}
+                          <div className="absolute right-0 top-full mt-1.5 z-40 w-72 p-3 bg-slate-950 border border-rose-500/50 rounded-xl shadow-2xl text-xs text-slate-200 hidden group-hover/tooltip:block pointer-events-none transition-all">
+                            <div className="flex items-center gap-1.5 font-bold text-rose-300 border-b border-rose-500/30 pb-1.5 mb-2">
+                              <ShieldAlert className="w-3.5 h-3.5 text-rose-400 shrink-0" />
+                              <span>Extracted Data Discrepancies ({conflictInfo.count})</span>
+                            </div>
+                            <div className="space-y-2 max-h-48 overflow-y-auto">
+                              {conflictInfo.fields.slice(0, 4).map((f, i) => (
+                                <div key={i} className="p-1.5 bg-slate-900/90 rounded border border-rose-500/20 text-[11px]">
+                                  <div className="font-semibold text-white flex items-center justify-between">
+                                    <span>{f.label}</span>
+                                    <span className="text-[9px] uppercase text-rose-400 font-mono">Mismatch</span>
+                                  </div>
+                                  <div className="mt-1 text-slate-300">
+                                    <span className="text-slate-400">This Doc: </span>
+                                    <strong className="text-rose-300 font-mono">&ldquo;{String(f.extractedValue)}&rdquo;</strong>
+                                  </div>
+                                  <div className="text-slate-300">
+                                    <span className="text-slate-400">Target / Other: </span>
+                                    <strong className="text-emerald-300 font-mono">&ldquo;{String(f.conflictingValue)}&rdquo;</strong>
+                                  </div>
+                                </div>
+                              ))}
+                              {conflictInfo.fields.length > 4 && (
+                                <div className="text-[10px] text-slate-400 text-center italic">
+                                  +{conflictInfo.fields.length - 4} more conflict item(s)...
+                                </div>
+                              )}
+                            </div>
+                            <div className="mt-2 pt-1.5 border-t border-slate-800 text-[10px] text-indigo-300 font-medium text-center">
+                              Click &ldquo;AI Data&rdquo; or &ldquo;Conflict Detected&rdquo; to review &amp; resolve.
+                            </div>
+                          </div>
+                        </div>
+                      )}
+
                       {hasDriveLink && (
                         <span className="text-[10px] px-1.5 py-0.2 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 font-mono font-bold flex items-center gap-0.5">
                           <Cloud className="w-2.5 h-2.5" />
@@ -189,7 +380,11 @@ export const DocumentVault: React.FC<DocumentVaultProps> = ({ setActiveTab }) =>
                       {hasAi && (
                         <button
                           onClick={() => setActiveAiReviewDoc(doc)}
-                          className="text-[10px] px-2 py-0.5 rounded bg-indigo-500/20 text-indigo-300 border border-indigo-500/30 font-semibold flex items-center gap-1 hover:bg-indigo-500/30 transition-colors"
+                          className={`text-[10px] px-2 py-0.5 rounded font-semibold flex items-center gap-1 transition-colors ${
+                            hasConflict
+                              ? 'bg-indigo-500/20 text-indigo-200 border border-indigo-500/40 hover:bg-indigo-500/30'
+                              : 'bg-indigo-500/20 text-indigo-300 border border-indigo-500/30 hover:bg-indigo-500/30'
+                          }`}
                           title="View AI Extraction Details"
                         >
                           <Sparkles className="w-2.5 h-2.5 text-indigo-400" />
@@ -215,7 +410,19 @@ export const DocumentVault: React.FC<DocumentVaultProps> = ({ setActiveTab }) =>
                     {doc.fileName} • {doc.fileSize || 'Standard'}
                   </div>
 
-                  {doc.notes && (
+                  {/* Conflict summary inline banner */}
+                  {hasConflict && conflictInfo && (
+                    <div className="mt-2.5 p-2 bg-rose-950/30 border border-rose-500/30 rounded-lg text-[11px] text-rose-200 flex items-start gap-1.5">
+                      <AlertTriangle className="w-3.5 h-3.5 text-rose-400 shrink-0 mt-0.5" />
+                      <div className="leading-tight">
+                        <span className="font-semibold text-rose-100">Discrepancy Detected: </span>
+                        {conflictInfo.fields[0]?.label} differs from verified record or other documents.
+                        {conflictInfo.count > 1 && ` (+${conflictInfo.count - 1} more)`}
+                      </div>
+                    </div>
+                  )}
+
+                  {doc.notes && !hasConflict && (
                     <div className="text-[11px] text-slate-300 italic mt-2 p-2 bg-slate-950/80 rounded-lg border border-slate-800/60">
                       "{doc.notes}"
                     </div>
@@ -277,3 +484,4 @@ export const DocumentVault: React.FC<DocumentVaultProps> = ({ setActiveTab }) =>
     </div>
   );
 };
+

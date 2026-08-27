@@ -5,10 +5,25 @@ export type FieldSourceType =
   | 'MANUAL'
   | 'VERIFICATION_FORM'
   | 'CLIENT_APPLICATION'
+  | 'APPLICATION'
   | 'AI_FILLED'
   | 'IMPORTED'
   | 'SYSTEM_CALCULATED'
-  | 'NOT_ENTERED';
+  | 'NOT_ENTERED'
+  | 'UNKNOWN';
+
+export type DocumentClassificationType =
+  | 'APPLICATION_FORM'
+  | 'VERIFICATION_FORM'
+  | 'BANK_STATEMENT'
+  | 'DRIVERS_LICENSE'
+  | 'TAX_RETURN'
+  | 'VOIDED_CHECK'
+  | 'PROFIT_LOSS'
+  | 'ARTICLES_OF_INCORPORATION'
+  | 'BUSINESS_LICENSE'
+  | 'UNDERWRITING_DOCUMENT'
+  | 'OTHER';
 
 export interface FieldSourceMetadata {
   value: any;
@@ -19,6 +34,7 @@ export interface FieldSourceMetadata {
   updatedAt?: string;
   updatedBy?: string;
   confidence?: number;
+  verificationStatus?: 'UNVERIFIED' | 'VERIFIED' | 'CALL_VERIFIED' | 'CONFLICT' | 'REJECTED';
   verified?: boolean;
   conflictWith?: {
     value: any;
@@ -1538,11 +1554,12 @@ export type DocumentCategoryType =
 export interface ExtractedFieldItem {
   key: string;
   label: string;
-  section: 'identity' | 'business' | 'employment' | 'employmentVerification' | 'income' | 'payroll' | 'banking' | 'documentChecklist' | 'other';
+  section: 'identity' | 'business' | 'employment' | 'employmentVerification' | 'income' | 'payroll' | 'banking' | 'debts' | 'housing' | 'fundingRequest' | 'credit' | 'documentChecklist' | 'other';
   extractedValue: string | number | boolean;
   confidence: number; // e.g. 0.95
   sourceQuote?: string; // verbatim snippet from the document
   pageOrLocation?: string; // e.g. "Page 1, Box 1a" or "Header block"
+  sourceType?: FieldSourceType;
   currentVerifiedValue?: string | number | boolean;
   currentAppliedValue?: string | number | boolean;
   isConflictWithVerified?: boolean;
@@ -1556,10 +1573,13 @@ export interface DocumentAiExtractionResult {
   docId: string;
   clientId: string;
   detectedCategory: DocumentCategoryType;
+  classificationType?: DocumentClassificationType;
   confidenceScore: number; // 0.0 - 1.0
   documentSummary: string;
   extractedDate: string;
   extractedFields: ExtractedFieldItem[];
+  highConfidenceCount?: number;
+  needsReviewCount?: number;
   modelUsed?: string;
   hasConflicts?: boolean;
   status: 'PENDING_REVIEW' | 'APPLIED_UNVERIFIED' | 'VERIFIED' | 'DISMISSED';

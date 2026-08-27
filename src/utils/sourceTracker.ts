@@ -9,9 +9,11 @@ export const SOURCE_PRIORITIES: Record<FieldSourceType, number> = {
   MANUAL: 50,
   VERIFICATION_FORM: 40,
   CLIENT_APPLICATION: 30,
+  APPLICATION: 30,
   AI_FILLED: 20,
   IMPORTED: 10,
   SYSTEM_CALCULATED: 10,
+  UNKNOWN: 5,
   NOT_ENTERED: 0,
 };
 
@@ -51,6 +53,14 @@ export const SOURCE_DISPLAY_CONFIG: Record<
     borderColor: 'border-indigo-500/50',
     icon: 'FileText',
   },
+  APPLICATION: {
+    label: 'Application',
+    shortLabel: 'APP FORM',
+    badgeBg: 'bg-indigo-950/60',
+    badgeText: 'text-indigo-300',
+    borderColor: 'border-indigo-500/50',
+    icon: 'FileText',
+  },
   AI_FILLED: {
     label: 'AI Filled',
     shortLabel: 'AI FILLED',
@@ -74,6 +84,14 @@ export const SOURCE_DISPLAY_CONFIG: Record<
     badgeText: 'text-cyan-300',
     borderColor: 'border-cyan-500/50',
     icon: 'Calculator',
+  },
+  UNKNOWN: {
+    label: 'Unknown',
+    shortLabel: 'UNKNOWN',
+    badgeBg: 'bg-slate-900/60',
+    badgeText: 'text-slate-400',
+    borderColor: 'border-slate-700',
+    icon: 'HelpCircle',
   },
   NOT_ENTERED: {
     label: 'Not Entered',

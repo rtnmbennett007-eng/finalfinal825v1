@@ -5,7 +5,7 @@ import express from 'express';
 import path from 'path';
 import fs from 'fs';
 import multer from 'multer';
-import { analyzeDocumentWithAi } from './documentAiService.ts';
+import { analyzeDocumentWithAi, classifyDocument, normalizeClassificationType } from './documentAiService.ts';
 import {
   getDriveStatus,
   getDriveDiagnostic,
@@ -3181,6 +3181,26 @@ app.delete('/api/documents/:id', (req, res) => {
   res.json({ success: true });
 });
 
+// AI Document Classification & Pre-Extraction Endpoint
+app.post('/api/documents/classify', async (req, res) => {
+  try {
+    const { fileName, fileBase64, fileMimeType, rawText, categoryHint } = req.body;
+
+    const classification = await classifyDocument({
+      fileName: fileName || 'Uploaded Document',
+      fileBase64,
+      fileMimeType,
+      rawText,
+      categoryHint,
+    });
+
+    res.json({ success: true, classification });
+  } catch (err: any) {
+    console.error('Error classifying document:', err);
+    res.status(500).json({ error: err.message || 'Document classification failed' });
+  }
+});
+
 // AI Document Analysis & Verification Pre-filling Endpoints
 app.post('/api/documents/analyze', async (req, res) => {
   try {
@@ -3214,6 +3234,29 @@ app.post('/api/documents/analyze', async (req, res) => {
         }
         saveDb();
       }
+    }
+
+    // If an Application Form was analyzed, update canonical client record fields without creating duplicate
+    if (extraction.classificationType === 'APPLICATION_FORM' && clientRecord) {
+      const fieldMap: Record<string, any> = {};
+      extraction.extractedFields.forEach((f) => {
+        fieldMap[f.key] = f.extractedValue;
+      });
+
+      if (fieldMap.businessName && !clientRecord.businessName) clientRecord.businessName = String(fieldMap.businessName);
+      if (fieldMap.ein && !clientRecord.federalTaxId) clientRecord.federalTaxId = String(fieldMap.ein);
+      if (fieldMap.stateOfIncorporation && !clientRecord.stateOfOrganization) clientRecord.stateOfOrganization = String(fieldMap.stateOfIncorporation);
+      if (fieldMap.entityType && !clientRecord.entityType) clientRecord.entityType = String(fieldMap.entityType);
+      if (fieldMap.industry && !clientRecord.industry) clientRecord.industry = String(fieldMap.industry);
+      if (fieldMap.annualRevenue && !clientRecord.annualRevenue) clientRecord.annualRevenue = Number(fieldMap.annualRevenue);
+      if (fieldMap.monthlyRevenue && !clientRecord.monthlyRevenue) clientRecord.monthlyRevenue = Number(fieldMap.monthlyRevenue);
+      if (fieldMap.requestedAmount && !clientRecord.requestedAmount) clientRecord.requestedAmount = Number(fieldMap.requestedAmount);
+      if (fieldMap.purposeOfFunds && !clientRecord.useOfFunds) clientRecord.useOfFunds = String(fieldMap.purposeOfFunds);
+      if (fieldMap.dob && !clientRecord.dob) clientRecord.dob = String(fieldMap.dob);
+      if (fieldMap.address && !clientRecord.address) clientRecord.address = String(fieldMap.address);
+
+      clientRecord.updatedAt = new Date().toISOString();
+      saveDb();
     }
 
     res.json({ success: true, extraction });
@@ -3855,6 +3898,19 @@ app.delete('/api/documents/:id', async (req, res) => {
 });
 
 
+const SOURCE_PRIORITIES: Record<string, number> = {
+  CALL_VERIFIED: 60,
+  MANUAL: 50,
+  VERIFICATION_FORM: 40,
+  CLIENT_APPLICATION: 30,
+  APPLICATION: 30,
+  AI_FILLED: 20,
+  IMPORTED: 10,
+  SYSTEM_CALCULATED: 10,
+  UNKNOWN: 5,
+  NOT_ENTERED: 0,
+};
+
 app.post('/api/documents/:docId/apply-to-verification', (req, res) => {
   try {
     const { docId } = req.params;
@@ -3873,40 +3929,64 @@ app.post('/api/documents/:docId/apply-to-verification', (req, res) => {
 
     const doc = db.documents.find((d) => d.id === docId);
     const docTitle = doc ? (doc.title || doc.fileName) : 'Uploaded Document';
+    const classification = doc?.aiExtraction?.classificationType || normalizeClassificationType(doc?.category);
 
     const clientIdx = db.clients.findIndex((c) => c.id === clientId);
     const client = clientIdx !== -1 ? db.clients[clientIdx] : null;
 
     let appliedCount = 0;
     let skippedVerifiedCount = 0;
+    let conflictCount = 0;
 
     (fieldsToApply || []).forEach((item: any) => {
-      const { key, value, section, label, confidence, quote } = item;
-      if (!section || !key) return;
+      const { key, value, section, label, confidence, quote, sourceType: itemSourceType } = item;
+      if (!section || !key || value === undefined || value === null) return;
 
       const secObj = verification[section];
       if (!secObj) return;
 
+      const defaultIncomingSource =
+        itemSourceType ||
+        (classification === 'APPLICATION_FORM'
+          ? 'CLIENT_APPLICATION'
+          : classification === 'VERIFICATION_FORM'
+          ? 'VERIFICATION_FORM'
+          : 'AI_FILLED');
+
+      const incomingPriority = SOURCE_PRIORITIES[defaultIncomingSource] || 20;
+
       const fieldObj = secObj[key];
       if (fieldObj && typeof fieldObj === 'object' && 'asApplied' in fieldObj) {
-        const isAlreadyVerified = fieldObj.status === 'Verified' || fieldObj.status === 'Matches Application';
-        if (isAlreadyVerified && !overwriteVerified) {
-          // DO NOT SILENTLY OVERWRITE VERIFIED VALUE
-          fieldObj.extracted = {
-            value: String(value),
-            sourceDocTitle: docTitle,
-            docId,
-            confidence: confidence || 0.95,
-            extractedAt: new Date().toISOString(),
-            quote: quote || '',
-            isConflict: true,
-          };
+        const isVerified = fieldObj.status === 'Verified' || fieldObj.status === 'Matches Application';
+        const existingPriority = isVerified ? 60 : (SOURCE_PRIORITIES[fieldObj.sourceType || 'NOT_ENTERED'] || 0);
+
+        const valuesDiffer =
+          String(fieldObj.verified || fieldObj.asApplied || '').trim().toLowerCase() !==
+          String(value).trim().toLowerCase();
+
+        // 1. NEVER let AI or lower priority overwrite a CALL_VERIFIED or higher-priority value
+        if (existingPriority > incomingPriority && !overwriteVerified) {
+          if (valuesDiffer) {
+            fieldObj.extracted = {
+              value: String(value),
+              sourceDocTitle: docTitle,
+              docId,
+              confidence: confidence || 0.95,
+              extractedAt: new Date().toISOString(),
+              quote: quote || '',
+              isConflict: true,
+              sourceType: defaultIncomingSource,
+            };
+            conflictCount++;
+          }
           skippedVerifiedCount++;
         } else {
-          // Pre-fill as unverified
+          // 2. Pre-fill field with source tracking
+          const prevValue = fieldObj.asApplied;
           fieldObj.asApplied = String(value);
-          fieldObj.status = 'Unverified';
-          fieldObj.notes = `AI Extracted from ${docTitle} (Unverified)`;
+          fieldObj.sourceType = defaultIncomingSource;
+          fieldObj.status = 'Unverified'; // AI Filled / Application does NOT mean Verified
+          fieldObj.notes = `Extracted from ${docTitle} (${defaultIncomingSource})`;
           fieldObj.extracted = {
             value: String(value),
             sourceDocTitle: docTitle,
@@ -3915,10 +3995,11 @@ app.post('/api/documents/:docId/apply-to-verification', (req, res) => {
             extractedAt: new Date().toISOString(),
             quote: quote || '',
             isConflict: false,
+            sourceType: defaultIncomingSource,
           };
           appliedCount++;
 
-          // Sync with Client record if matching field
+          // 3. Sync with canonical Client record
           if (client) {
             if (key === 'businessName') client.businessName = String(value);
             if (key === 'ein') client.federalTaxId = String(value);
@@ -3941,7 +4022,6 @@ app.post('/api/documents/:docId/apply-to-verification', (req, res) => {
           }
         }
       } else if (secObj[key] !== undefined) {
-        // Direct property
         secObj[key] = value;
         appliedCount++;
       }
@@ -3955,8 +4035,8 @@ app.post('/api/documents/:docId/apply-to-verification', (req, res) => {
 
     addTimelineEvent(
       clientId,
-      `AI Verification Pre-Fill Applied (${appliedCount} fields)`,
-      `Extracted fields from "${docTitle}" pre-filled into Verification worksheet as "Unverified" for underwriter phone/document confirmation. (Preserved ${skippedVerifiedCount} already verified fields).`,
+      `Document Data Pre-Fill Applied (${appliedCount} fields)`,
+      `Extracted fields from "${docTitle}" applied with strict source tracking. Pre-filled ${appliedCount} unverified fields (Preserved ${skippedVerifiedCount} verified fields, Flagged ${conflictCount} conflicts).`,
       appliedBy || 'Staff',
       'VERIFICATION',
       doc?.dealId
@@ -3967,6 +4047,7 @@ app.post('/api/documents/:docId/apply-to-verification', (req, res) => {
       success: true,
       appliedCount,
       skippedVerifiedCount,
+      conflictCount,
       masterVerification: verification,
       client,
     });

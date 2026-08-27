@@ -5,21 +5,25 @@ import {
   CheckCircle2,
   AlertTriangle,
   X,
-  ArrowRight,
   ShieldCheck,
   Building,
   User,
   DollarSign,
   Briefcase,
   Layers,
-  ChevronRight,
   Info,
   RefreshCw,
   Edit2,
-  Check
+  Check,
+  Filter,
+  CheckSquare,
+  Square,
+  Scale,
+  ShieldAlert
 } from 'lucide-react';
-import { DocumentItem, DocumentAiExtractionResult, ExtractedFieldItem, MasterVerificationData } from '../../types';
+import { DocumentItem, DocumentAiExtractionResult, ExtractedFieldItem, MasterVerificationData, DocumentClassificationType } from '../../types';
 import { api } from '../../services/api';
+import { SOURCE_DISPLAY_CONFIG } from '../../utils/sourceTracker';
 
 interface DocumentAiReviewModalProps {
   isOpen: boolean;
@@ -49,7 +53,7 @@ export const DocumentAiReviewModal: React.FC<DocumentAiReviewModalProps> = ({
   const [editedValues, setEditedValues] = useState<Record<string, any>>({});
   const [editingKey, setEditingKey] = useState<string | null>(null);
   const [tempEditValue, setTempEditValue] = useState<string>('');
-  const [activeTab, setActiveTab] = useState<'all' | 'unverified' | 'conflicts'>('all');
+  const [activeTab, setActiveTab] = useState<'all' | 'high_confidence' | 'needs_review' | 'conflicts'>('all');
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
 
   const extraction = document.aiExtraction;
@@ -69,12 +73,16 @@ export const DocumentAiReviewModal: React.FC<DocumentAiReviewModalProps> = ({
   if (!isOpen || !extraction) return null;
 
   const fields = extraction.extractedFields || [];
-  const conflicts = fields.filter((f) => f.isConflictWithVerified);
-  const unverified = fields.filter((f) => !f.isConflictWithVerified);
+  const highConfidenceFields = fields.filter((f) => (f.confidence || 0) >= 0.85);
+  const needsReviewFields = fields.filter((f) => (f.confidence || 0) < 0.85);
+  const conflictFields = fields.filter((f) => f.isConflictWithVerified);
+
+  const classificationType = extraction.classificationType || 'OTHER';
 
   const displayedFields = fields.filter((f) => {
-    if (activeTab === 'conflicts') return f.isConflictWithVerified;
-    if (activeTab === 'unverified') return !f.isConflictWithVerified;
+    if (activeTab === 'high_confidence') return (f.confidence || 0) >= 0.85;
+    if (activeTab === 'needs_review') return (f.confidence || 0) < 0.85;
+    if (activeTab === 'conflicts') return Boolean(f.isConflictWithVerified);
     return true;
   });
 
@@ -83,6 +91,26 @@ export const DocumentAiReviewModal: React.FC<DocumentAiReviewModalProps> = ({
       ...prev,
       [compositeKey]: !prev[compositeKey],
     }));
+  };
+
+  const handleSelectAll = () => {
+    const updated: Record<string, boolean> = {};
+    fields.forEach((f) => {
+      updated[`${f.section}_${f.key}`] = true;
+    });
+    setSelectedFields(updated);
+  };
+
+  const handleSelectHighConfidenceOnly = () => {
+    const updated: Record<string, boolean> = {};
+    fields.forEach((f) => {
+      updated[`${f.section}_${f.key}`] = (f.confidence || 0) >= 0.85 && !f.isConflictWithVerified;
+    });
+    setSelectedFields(updated);
+  };
+
+  const handleDeselectAll = () => {
+    setSelectedFields({});
   };
 
   const handleStartEdit = (f: ExtractedFieldItem) => {
@@ -117,6 +145,7 @@ export const DocumentAiReviewModal: React.FC<DocumentAiReviewModalProps> = ({
             value: finalVal,
             confidence: f.confidence,
             quote: f.sourceQuote,
+            sourceType: f.sourceType || (classificationType === 'APPLICATION_FORM' ? 'CLIENT_APPLICATION' : classificationType === 'VERIFICATION_FORM' ? 'VERIFICATION_FORM' : 'AI_FILLED'),
           };
         });
 
@@ -183,27 +212,54 @@ export const DocumentAiReviewModal: React.FC<DocumentAiReviewModalProps> = ({
     }
   };
 
+  const getClassificationBadge = (type: DocumentClassificationType | string) => {
+    switch (type) {
+      case 'APPLICATION_FORM':
+        return { label: 'Application Form', color: 'bg-blue-500/20 text-blue-300 border-blue-500/40' };
+      case 'VERIFICATION_FORM':
+        return { label: 'Verification Form', color: 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40' };
+      case 'BANK_STATEMENT':
+        return { label: 'Bank Statement', color: 'bg-teal-500/20 text-teal-300 border-teal-500/40' };
+      case 'DRIVERS_LICENSE':
+        return { label: "Driver's License / ID", color: 'bg-purple-500/20 text-purple-300 border-purple-500/40' };
+      case 'TAX_RETURN':
+        return { label: 'Tax Return (1040/1120)', color: 'bg-amber-500/20 text-amber-300 border-amber-500/40' };
+      case 'VOIDED_CHECK':
+        return { label: 'Voided Check', color: 'bg-cyan-500/20 text-cyan-300 border-cyan-500/40' };
+      case 'PROFIT_LOSS':
+        return { label: 'Profit & Loss (P&L)', color: 'bg-indigo-500/20 text-indigo-300 border-indigo-500/40' };
+      case 'ARTICLES_OF_INCORPORATION':
+        return { label: 'Articles of Incorporation', color: 'bg-violet-500/20 text-violet-300 border-violet-500/40' };
+      case 'BUSINESS_LICENSE':
+        return { label: 'Business License', color: 'bg-pink-500/20 text-pink-300 border-pink-500/40' };
+      default:
+        return { label: type || 'Underwriting Document', color: 'bg-slate-500/20 text-slate-300 border-slate-500/40' };
+    }
+  };
+
+  const classBadge = getClassificationBadge(classificationType);
+
   return (
     <div id="document-ai-review-modal" className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm overflow-y-auto">
-      <div className="relative w-full max-w-4xl bg-slate-900 border border-slate-700 rounded-xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
+      <div className="relative w-full max-w-4xl bg-slate-900 border border-slate-700 rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
         {/* Header */}
-        <div className="p-5 border-b border-slate-800 bg-gradient-to-r from-slate-950 via-slate-900 to-indigo-950/40 flex items-center justify-between">
+        <div className="p-5 border-b border-slate-800 bg-gradient-to-r from-slate-950 via-slate-900 to-indigo-950/50 flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <div className="p-2.5 bg-indigo-500/10 border border-indigo-500/30 rounded-lg text-indigo-400">
+            <div className="p-2.5 bg-indigo-500/10 border border-indigo-500/30 rounded-xl text-indigo-400">
               <Sparkles className="w-6 h-6 animate-pulse" />
             </div>
             <div>
-              <div className="flex items-center gap-2">
-                <h3 className="text-lg font-bold text-white tracking-wide">AI Document Intelligence Center</h3>
-                <span className="px-2 py-0.5 text-xs font-semibold rounded-full bg-indigo-500/20 text-indigo-300 border border-indigo-500/30">
-                  {extraction.detectedCategory}
+              <div className="flex items-center gap-2 flex-wrap">
+                <h3 className="text-lg font-bold text-white tracking-wide">AI Document Intelligence & Verification Review</h3>
+                <span className={`px-2.5 py-0.5 text-xs font-bold rounded-full border ${classBadge.color}`}>
+                  {classBadge.label}
                 </span>
                 <span className="px-2 py-0.5 text-xs font-semibold rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
-                  {(extraction.confidenceScore * 100).toFixed(0)}% Confidence
+                  {Math.round((extraction.confidenceScore || 0.9) * 100)}% Overall Confidence
                 </span>
               </div>
-              <p className="text-xs text-slate-400 mt-0.5">
-                Client: <span className="text-slate-200 font-medium">{clientName}</span> ({businessName}) &bull; Source: <span className="text-slate-200 font-medium">{document.title || document.fileName}</span>
+              <p className="text-xs text-slate-400 mt-1">
+                Client: <span className="text-slate-200 font-medium">{clientName}</span> ({businessName}) &bull; File: <span className="text-slate-200 font-medium">{document.title || document.fileName}</span>
               </p>
             </div>
           </div>
@@ -217,11 +273,21 @@ export const DocumentAiReviewModal: React.FC<DocumentAiReviewModalProps> = ({
         </div>
 
         {/* AI Summary Banner */}
-        <div className="px-5 py-3.5 bg-indigo-950/20 border-b border-indigo-500/20 flex items-start gap-3">
-          <Info className="w-4 h-4 text-indigo-400 mt-0.5 shrink-0" />
-          <div className="text-xs text-slate-300 leading-relaxed">
-            <span className="font-semibold text-indigo-300">Extraction Summary: </span>
-            {extraction.documentSummary || 'Document scanned and parsed according to Maple X underwriting standards.'}
+        <div className="px-5 py-3 bg-indigo-950/20 border-b border-indigo-500/20 flex items-start justify-between gap-3 text-xs">
+          <div className="flex items-start gap-2.5">
+            <Info className="w-4 h-4 text-indigo-400 mt-0.5 shrink-0" />
+            <div className="text-slate-300 leading-relaxed">
+              <span className="font-semibold text-indigo-300">Classification & Summary: </span>
+              {extraction.documentSummary || 'Document classified and fields extracted with field-level confidence scoring.'}
+            </div>
+          </div>
+        </div>
+
+        {/* Underwriting Verification Guard Banner */}
+        <div className="px-5 py-2 bg-amber-950/30 border-b border-amber-500/20 flex items-center justify-between text-[11px] text-amber-200">
+          <div className="flex items-center gap-2">
+            <ShieldAlert className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+            <span><strong>Underwriting Rule:</strong> AI Filled and Application data do NOT automatically equal &quot;Call Verified&quot;. Values are pre-filled as Unverified for phone/document audit.</span>
           </div>
         </div>
 
@@ -235,46 +301,76 @@ export const DocumentAiReviewModal: React.FC<DocumentAiReviewModalProps> = ({
           </div>
         )}
 
-        {/* Filter Tabs & Selection Counter */}
-        <div className="px-5 py-2.5 bg-slate-950/60 border-b border-slate-800 flex flex-wrap items-center justify-between gap-3 text-xs">
-          <div className="flex items-center gap-1.5">
+        {/* Confidence & Filter Toolbar */}
+        <div className="px-5 py-3 bg-slate-950/70 border-b border-slate-800 flex flex-wrap items-center justify-between gap-3 text-xs">
+          <div className="flex items-center gap-1.5 flex-wrap">
             <button
               onClick={() => setActiveTab('all')}
-              className={`px-3 py-1 rounded-md transition font-medium ${
+              className={`px-3 py-1.5 rounded-lg transition font-medium ${
                 activeTab === 'all'
                   ? 'bg-indigo-600 text-white shadow'
                   : 'bg-slate-800 text-slate-400 hover:text-slate-200'
               }`}
             >
-              All Extracted Fields ({fields.length})
+              All Fields ({fields.length})
             </button>
             <button
-              onClick={() => setActiveTab('unverified')}
-              className={`px-3 py-1 rounded-md transition font-medium ${
-                activeTab === 'unverified'
-                  ? 'bg-indigo-600 text-white shadow'
-                  : 'bg-slate-800 text-slate-400 hover:text-slate-200'
+              onClick={() => setActiveTab('high_confidence')}
+              className={`px-3 py-1.5 rounded-lg transition font-medium flex items-center gap-1.5 ${
+                activeTab === 'high_confidence'
+                  ? 'bg-emerald-600 text-white shadow'
+                  : 'bg-emerald-950/30 text-emerald-400 border border-emerald-500/30 hover:bg-emerald-900/30'
               }`}
             >
-              Ready to Pre-Fill ({unverified.length})
+              <CheckCircle2 className="w-3.5 h-3.5" />
+              High Confidence ({highConfidenceFields.length})
             </button>
-            {conflicts.length > 0 && (
+            <button
+              onClick={() => setActiveTab('needs_review')}
+              className={`px-3 py-1.5 rounded-lg transition font-medium flex items-center gap-1.5 ${
+                activeTab === 'needs_review'
+                  ? 'bg-amber-600 text-white shadow'
+                  : 'bg-amber-950/30 text-amber-300 border border-amber-500/30 hover:bg-amber-900/30'
+              }`}
+            >
+              <AlertTriangle className="w-3.5 h-3.5" />
+              Needs Review ({needsReviewFields.length})
+            </button>
+            {conflictFields.length > 0 && (
               <button
                 onClick={() => setActiveTab('conflicts')}
-                className={`px-3 py-1 rounded-md transition font-medium flex items-center gap-1.5 ${
+                className={`px-3 py-1.5 rounded-lg transition font-medium flex items-center gap-1.5 ${
                   activeTab === 'conflicts'
-                    ? 'bg-amber-600 text-white shadow'
-                    : 'bg-amber-950/40 text-amber-300 border border-amber-500/30 hover:bg-amber-900/40'
+                    ? 'bg-rose-600 text-white shadow'
+                    : 'bg-rose-950/40 text-rose-300 border border-rose-500/40 hover:bg-rose-900/40'
                 }`}
               >
-                <AlertTriangle className="w-3.5 h-3.5" />
-                Verified Conflicts ({conflicts.length})
+                <Scale className="w-3.5 h-3.5" />
+                Conflicts with Verified ({conflictFields.length})
               </button>
             )}
           </div>
 
-          <div className="flex items-center gap-2 text-slate-400">
-            <span>Selected for pre-fill: <strong className="text-white">{Object.values(selectedFields).filter(Boolean).length}</strong> of {fields.length}</span>
+          {/* Quick Selection Helpers */}
+          <div className="flex items-center gap-2">
+            <button
+              onClick={handleSelectHighConfidenceOnly}
+              className="text-[11px] px-2 py-1 bg-slate-800 hover:bg-slate-700 text-emerald-400 rounded transition font-medium"
+            >
+              Select High Confidence
+            </button>
+            <button
+              onClick={handleSelectAll}
+              className="text-[11px] px-2 py-1 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded transition font-medium"
+            >
+              Select All
+            </button>
+            <button
+              onClick={handleDeselectAll}
+              className="text-[11px] px-2 py-1 bg-slate-800 hover:bg-slate-700 text-slate-400 rounded transition font-medium"
+            >
+              Clear
+            </button>
           </div>
         </div>
 
@@ -283,7 +379,7 @@ export const DocumentAiReviewModal: React.FC<DocumentAiReviewModalProps> = ({
           {displayedFields.length === 0 ? (
             <div className="text-center py-12 text-slate-400">
               <FileText className="w-10 h-10 mx-auto text-slate-600 mb-2" />
-              <p>No extracted fields in this category.</p>
+              <p>No extracted fields in this view.</p>
             </div>
           ) : (
             displayedFields.map((field) => {
@@ -291,16 +387,18 @@ export const DocumentAiReviewModal: React.FC<DocumentAiReviewModalProps> = ({
               const isSelected = Boolean(selectedFields[compKey]);
               const currentValue = editedValues[compKey] !== undefined ? editedValues[compKey] : field.extractedValue;
               const isEditing = editingKey === compKey;
+              const confPct = Math.round((field.confidence || 0.85) * 100);
+              const isHighConfidence = confPct >= 85;
 
               return (
                 <div
                   key={compKey}
-                  className={`p-3.5 rounded-lg border transition ${
+                  className={`p-3.5 rounded-xl border transition-all ${
                     field.isConflictWithVerified
-                      ? 'bg-amber-950/15 border-amber-500/30'
+                      ? 'bg-rose-950/20 border-rose-500/40 shadow-sm'
                       : isSelected
                       ? 'bg-slate-800/80 border-indigo-500/40 shadow-sm'
-                      : 'bg-slate-900 border-slate-800 opacity-80'
+                      : 'bg-slate-900/60 border-slate-800 opacity-80'
                   }`}
                 >
                   <div className="flex items-start justify-between gap-3">
@@ -309,9 +407,10 @@ export const DocumentAiReviewModal: React.FC<DocumentAiReviewModalProps> = ({
                         type="checkbox"
                         checked={isSelected}
                         onChange={() => toggleFieldSelection(compKey)}
-                        className="mt-1 w-4 h-4 rounded border-slate-700 text-indigo-600 focus:ring-indigo-500 bg-slate-800"
+                        className="mt-1.5 w-4 h-4 rounded border-slate-700 text-indigo-600 focus:ring-indigo-500 bg-slate-800 cursor-pointer"
                       />
                       <div className="flex-1 min-w-0">
+                        {/* Title Bar with Section, Confidence & Source Type */}
                         <div className="flex items-center gap-2 flex-wrap">
                           <div className="flex items-center gap-1 text-slate-400 text-xs uppercase tracking-wider font-semibold">
                             {getSectionIcon(field.section)}
@@ -319,20 +418,41 @@ export const DocumentAiReviewModal: React.FC<DocumentAiReviewModalProps> = ({
                           </div>
                           <span className="text-slate-600">&bull;</span>
                           <span className="text-sm font-semibold text-slate-100">{field.label}</span>
-                          <span className="px-1.5 py-0.2 text-[10px] font-medium rounded bg-slate-800 text-slate-300 border border-slate-700">
-                            {field.pageOrLocation || 'Document'}
+                          
+                          {/* Confidence Badge */}
+                          <span
+                            className={`px-2 py-0.5 text-[10px] font-bold rounded-full border ${
+                              isHighConfidence
+                                ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30'
+                                : 'bg-amber-500/20 text-amber-300 border-amber-500/30'
+                            }`}
+                          >
+                            {confPct}% Confidence ({isHighConfidence ? 'High' : 'Needs Review'})
                           </span>
+
+                          {/* Source Badge */}
+                          {field.sourceType && (
+                            <span className="px-2 py-0.5 text-[10px] font-medium rounded bg-slate-800 text-slate-300 border border-slate-700">
+                              Source: {field.sourceType}
+                            </span>
+                          )}
+
+                          {field.pageOrLocation && (
+                            <span className="px-1.5 py-0.5 text-[10px] text-slate-400 bg-slate-800/50 rounded">
+                              {field.pageOrLocation}
+                            </span>
+                          )}
                         </div>
 
                         {/* Value Display or Edit Box */}
-                        <div className="mt-1.5 flex items-center gap-3">
+                        <div className="mt-2 flex items-center gap-3">
                           {isEditing ? (
                             <div className="flex items-center gap-2 w-full max-w-md">
                               <input
                                 type="text"
                                 value={tempEditValue}
                                 onChange={(e) => setTempEditValue(e.target.value)}
-                                className="px-2.5 py-1 text-xs bg-slate-950 border border-indigo-500 rounded text-white focus:outline-none focus:ring-1 focus:ring-indigo-400 w-full"
+                                className="px-2.5 py-1 text-xs bg-slate-950 border border-indigo-500 rounded-lg text-white focus:outline-none focus:ring-1 focus:ring-indigo-400 w-full"
                               />
                               <button
                                 onClick={() => handleSaveEdit(field)}
@@ -351,7 +471,7 @@ export const DocumentAiReviewModal: React.FC<DocumentAiReviewModalProps> = ({
                             </div>
                           ) : (
                             <div className="flex items-center gap-2">
-                              <span className="text-base font-bold text-white bg-slate-950/70 px-2.5 py-1 rounded border border-slate-700/60">
+                              <span className="text-sm font-bold text-white bg-slate-950 px-2.5 py-1 rounded-lg border border-slate-700/60 font-mono">
                                 {typeof currentValue === 'number'
                                   ? `$${currentValue.toLocaleString()}`
                                   : String(currentValue)}
@@ -375,13 +495,13 @@ export const DocumentAiReviewModal: React.FC<DocumentAiReviewModalProps> = ({
 
                         {/* Conflict Warning or Current Status */}
                         {field.isConflictWithVerified && (
-                          <div className="mt-2 p-2 bg-amber-950/40 border border-amber-500/30 rounded text-xs text-amber-300 flex items-start gap-2">
-                            <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
+                          <div className="mt-2.5 p-2.5 bg-rose-950/40 border border-rose-500/40 rounded-xl text-xs text-rose-300 flex items-start gap-2">
+                            <AlertTriangle className="w-4 h-4 text-rose-400 shrink-0 mt-0.5" />
                             <div>
-                              <p className="font-semibold">Conflict with Current Verified Record:</p>
-                              <p className="text-amber-200/90 mt-0.5">
-                                Current Verified Value is <strong className="text-white">&ldquo;{String(field.currentVerifiedValue)}&rdquo;</strong>.
-                                Canadian/US Underwriting Rule: Pre-filling will NOT overwrite verified status without explicit confirmation.
+                              <p className="font-bold text-rose-200">Conflict with Current Verified / Canonical Record:</p>
+                              <p className="text-rose-200/90 mt-0.5">
+                                Current value is <strong className="text-white font-mono">&ldquo;{String(field.currentVerifiedValue)}&rdquo;</strong>.
+                                Canadian & US Underwriting Rule: Pre-filling will NOT overwrite verified status without explicit underwriter override.
                               </p>
                             </div>
                           </div>
@@ -393,7 +513,7 @@ export const DocumentAiReviewModal: React.FC<DocumentAiReviewModalProps> = ({
                     <div className="flex items-center gap-2 shrink-0">
                       <button
                         onClick={() => handleVerifySingleField(field)}
-                        className="px-2.5 py-1 bg-emerald-600/20 hover:bg-emerald-600/30 text-emerald-300 border border-emerald-500/30 rounded text-xs font-semibold flex items-center gap-1 transition"
+                        className="px-3 py-1.5 bg-emerald-600/20 hover:bg-emerald-600/30 text-emerald-300 border border-emerald-500/30 rounded-lg text-xs font-semibold flex items-center gap-1 transition shadow-xs"
                         title="Review and mark as verified now"
                       >
                         <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" />
@@ -411,13 +531,13 @@ export const DocumentAiReviewModal: React.FC<DocumentAiReviewModalProps> = ({
         <div className="p-4 border-t border-slate-800 bg-slate-950 flex flex-wrap items-center justify-between gap-3">
           <div className="flex items-center gap-2 text-xs text-slate-400">
             <ShieldCheck className="w-4 h-4 text-indigo-400" />
-            <span>AI extracted fields are saved as <strong className="text-slate-200">Unverified</strong> until caller phone confirmation.</span>
+            <span>Selected items will be pre-filled as <strong className="text-slate-200 font-semibold">Unverified</strong> with source tracking.</span>
           </div>
 
           <div className="flex items-center gap-2">
             <button
               onClick={onClose}
-              className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-medium rounded-lg transition"
+              className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-medium rounded-xl transition"
             >
               Close
             </button>
@@ -425,17 +545,17 @@ export const DocumentAiReviewModal: React.FC<DocumentAiReviewModalProps> = ({
               id="prefill-unverified-btn"
               onClick={() => handleApplyToVerification(false)}
               disabled={isApplying || Object.values(selectedFields).filter(Boolean).length === 0}
-              className="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white text-xs font-semibold rounded-lg shadow-md flex items-center gap-2 transition"
+              className="px-5 py-2.5 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white text-xs font-bold rounded-xl shadow-lg shadow-indigo-600/30 flex items-center gap-2 transition"
             >
               {isApplying ? (
                 <>
                   <RefreshCw className="w-3.5 h-3.5 animate-spin" />
-                  <span>Pre-Filling...</span>
+                  <span>Applying Pre-Fill...</span>
                 </>
               ) : (
                 <>
                   <Sparkles className="w-3.5 h-3.5" />
-                  <span>Pre-Fill Selected as &quot;Unverified&quot;</span>
+                  <span>Pre-Fill Selected ({Object.values(selectedFields).filter(Boolean).length}) as &quot;Unverified&quot;</span>
                 </>
               )}
             </button>

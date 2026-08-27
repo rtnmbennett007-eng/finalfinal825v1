@@ -888,53 +888,112 @@ export const MasterVerificationTab: React.FC<MasterVerificationTabProps> = ({
     });
   };
 
-  // Helper to detect all fields across identity, business, and employment that remain Unverified
-  const getUnverifiedItems = () => {
-    const list: string[] = [];
+  interface AuditFieldItem {
+    section: string;
+    fieldKey: string;
+    label: string;
+    status: string;
+    asApplied: string;
+    verified: string;
+    isConflict?: boolean;
+    conflictDetails?: string;
+    sourceType?: string;
+  }
+
+  interface VerificationAuditSummary {
+    verified: AuditFieldItem[];
+    unverified: AuditFieldItem[];
+    missing: AuditFieldItem[];
+    conflicting: AuditFieldItem[];
+    totalCount: number;
+    canSignOff: boolean;
+  }
+
+  // Comprehensive Verification Audit Breakdown
+  const getVerificationAuditSummary = (): VerificationAuditSummary => {
+    const verified: AuditFieldItem[] = [];
+    const unverified: AuditFieldItem[] = [];
+    const missing: AuditFieldItem[] = [];
+    const conflicting: AuditFieldItem[] = [];
+
+    const inspectField = (sectionName: string, key: string, field: any, customLabel?: string) => {
+      if (!field || typeof field !== 'object') return;
+      const label = customLabel || key.replace(/([A-Z])/g, ' $1').replace(/^./, (str) => str.toUpperCase());
+      const asApplied = String(field.asApplied || '').trim();
+      const verifiedVal = String(field.verified || '').trim();
+      const status = field.status || 'Unverified';
+      const isConflict = Boolean(field.extracted?.isConflict);
+      const conflictDetails = field.extracted?.conflictDetails;
+      const sourceType = field.extracted?.sourceType || field.sourceType;
+
+      const item: AuditFieldItem = {
+        section: sectionName,
+        fieldKey: key,
+        label,
+        status,
+        asApplied,
+        verified: verifiedVal,
+        isConflict,
+        conflictDetails,
+        sourceType,
+      };
+
+      if (isConflict) {
+        conflicting.push(item);
+      } else if ((!asApplied || asApplied === 'Not Provided') && !verifiedVal) {
+        missing.push(item);
+      } else if (status === 'Verified' || status === 'Matches Application' || status === 'Client Corrected It' || verifiedVal.length > 0) {
+        verified.push(item);
+      } else {
+        unverified.push(item);
+      }
+    };
 
     if (formData.identity) {
-      Object.entries(formData.identity).forEach(([k, field]) => {
-        if (field && typeof field === 'object' && 'status' in field) {
-          if ((field as any).status === 'Unverified') {
-            list.push(`Identity: ${k}`);
-          }
-        }
-      });
+      Object.entries(formData.identity).forEach(([k, f]) => inspectField('Identity', k, f));
     }
 
     if (formData.business) {
-      Object.entries(formData.business).forEach(([k, field]) => {
-        if (field && typeof field === 'object' && 'status' in field) {
-          if ((field as any).status === 'Unverified') {
-            list.push(`Business: ${k}`);
-          }
-        }
-      });
+      Object.entries(formData.business).forEach(([k, f]) => inspectField('Business', k, f));
     }
 
     if (formData.employmentVerification) {
-      Object.entries(formData.employmentVerification).forEach(([k, field]) => {
-        if (field && typeof field === 'object' && 'status' in field) {
-          if ((field as any).status === 'Unverified') {
-            list.push(`Employment: ${k}`);
-          }
+      Object.entries(formData.employmentVerification).forEach(([k, f]) => {
+        if (k !== 'sectionStatus' && k !== 'employmentIncomeNotes' && k !== 'redFlags') {
+          inspectField('Employment', k, f);
         }
       });
     }
 
-    return list;
+    const totalCount = verified.length + unverified.length + missing.length + conflicting.length;
+    const canSignOff = unverified.length === 0 && missing.length === 0 && conflicting.length === 0;
+
+    return {
+      verified,
+      unverified,
+      missing,
+      conflicting,
+      totalCount,
+      canSignOff,
+    };
   };
 
-  const unverifiedList = getUnverifiedItems();
-  const hasUnverifiedItems = unverifiedList.length > 0;
+  const auditSummary = getVerificationAuditSummary();
+  const unverifiedList = auditSummary.unverified.map((i) => `${i.section}: ${i.label}`);
+  const hasUnverifiedItems = !auditSummary.canSignOff;
 
   // Handle Mark Verification Complete Sign-Off
   const handleMarkVerificationComplete = async () => {
-    if (hasUnverifiedItems) {
+    if (!auditSummary.canSignOff) {
+      const blockers: string[] = [];
+      if (auditSummary.conflicting.length > 0) blockers.push(`${auditSummary.conflicting.length} conflicting items`);
+      if (auditSummary.unverified.length > 0) blockers.push(`${auditSummary.unverified.length} unverified items`);
+      if (auditSummary.missing.length > 0) blockers.push(`${auditSummary.missing.length} missing items`);
+      
       addToast(
         'error',
         'Verification Incomplete',
-        `Cannot complete verification. ${unverifiedList.length} item(s) remain marked 'Unverified'. Please review all verification fields.`
+        `Cannot complete verification. Unresolved audit gates: ${blockers.join(', ')}. All fields must be verified and resolved.`
       );
       return;
     }
@@ -2947,6 +3006,102 @@ export const MasterVerificationTab: React.FC<MasterVerificationTabProps> = ({
             </div>
           </div>
 
+          {/* Detailed Verification Audit Summary Card */}
+          <div className="p-4 rounded-xl bg-[#070d18] border border-blue-900/60 space-y-4">
+            <div className="flex items-center justify-between flex-wrap gap-2">
+              <div>
+                <h4 className="text-xs font-bold text-slate-200 uppercase tracking-wide flex items-center gap-1.5">
+                  <ShieldCheck className="w-4 h-4 text-indigo-400" />
+                  Verification Audit Status & Gate Analysis
+                </h4>
+                <p className="text-[11px] text-slate-400 mt-0.5">
+                  {auditSummary.canSignOff
+                    ? 'All required verification items are verified and conflict-free. Ready for final underwriter sign-off.'
+                    : 'The items below must be verified and resolved before final sign-off is unlocked.'}
+                </p>
+              </div>
+
+              {/* 4 Status Breakdown Pills */}
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className="px-2.5 py-1 text-xs font-bold rounded-lg bg-emerald-950/40 border border-emerald-500/40 text-emerald-300">
+                  Verified: {auditSummary.verified.length}
+                </span>
+                <span className="px-2.5 py-1 text-xs font-bold rounded-lg bg-amber-950/40 border border-amber-500/40 text-amber-300">
+                  Unverified: {auditSummary.unverified.length}
+                </span>
+                <span className="px-2.5 py-1 text-xs font-bold rounded-lg bg-blue-950/40 border border-blue-500/40 text-blue-300">
+                  Missing: {auditSummary.missing.length}
+                </span>
+                {auditSummary.conflicting.length > 0 && (
+                  <span className="px-2.5 py-1 text-xs font-bold rounded-lg bg-rose-950/50 border border-rose-500/50 text-rose-300">
+                    Conflicting: {auditSummary.conflicting.length}
+                  </span>
+                )}
+              </div>
+            </div>
+
+            {/* List of Unresolved / Blocker Items */}
+            {!auditSummary.canSignOff && (
+              <div className="pt-3 border-t border-blue-900/40 space-y-2">
+                <span className="text-[11px] font-bold uppercase tracking-wider text-rose-400 block">
+                  Action Required to Unlock Underwriting Sign-Off ({auditSummary.conflicting.length + auditSummary.unverified.length + auditSummary.missing.length} Items):
+                </span>
+                <div className="max-h-48 overflow-y-auto space-y-1.5 pr-1">
+                  {auditSummary.conflicting.map((item, idx) => (
+                    <div
+                      key={`conf-${idx}`}
+                      className="p-2 rounded-lg bg-rose-950/30 border border-rose-500/40 flex items-center justify-between text-xs text-rose-200"
+                    >
+                      <div className="flex items-center gap-2">
+                        <AlertTriangle className="w-3.5 h-3.5 text-rose-400 shrink-0" />
+                        <span>
+                          <strong>[{item.section}] {item.label}:</strong> Conflicting extracted data ({item.conflictDetails || 'Discrepancy with verified value'})
+                        </span>
+                      </div>
+                      <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-rose-900/60 text-rose-200">
+                        Conflict
+                      </span>
+                    </div>
+                  ))}
+
+                  {auditSummary.unverified.map((item, idx) => (
+                    <div
+                      key={`unver-${idx}`}
+                      className="p-2 rounded-lg bg-amber-950/20 border border-amber-500/30 flex items-center justify-between text-xs text-amber-200"
+                    >
+                      <div className="flex items-center gap-2">
+                        <PhoneCall className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+                        <span>
+                          <strong>[{item.section}] {item.label}:</strong> As Applied: &ldquo;{item.asApplied}&rdquo; (Requires Caller/Document Verification)
+                        </span>
+                      </div>
+                      <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-amber-900/50 text-amber-200">
+                        Unverified
+                      </span>
+                    </div>
+                  ))}
+
+                  {auditSummary.missing.map((item, idx) => (
+                    <div
+                      key={`miss-${idx}`}
+                      className="p-2 rounded-lg bg-slate-900/60 border border-slate-700/60 flex items-center justify-between text-xs text-slate-400"
+                    >
+                      <div className="flex items-center gap-2">
+                        <FileText className="w-3.5 h-3.5 text-slate-500 shrink-0" />
+                        <span>
+                          <strong>[{item.section}] {item.label}:</strong> Missing or Not Provided
+                        </span>
+                      </div>
+                      <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-slate-800 text-slate-400">
+                        Missing
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+
           {/* Section 7 Sign-off Box */}
           <div className="pt-4 border-t border-blue-900/60 flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-[#070d18] p-4 rounded-xl border border-blue-900/40">
             <div>
@@ -2955,9 +3110,9 @@ export const MasterVerificationTab: React.FC<MasterVerificationTabProps> = ({
                 Final Verification Sign-Off & Status Advance
               </h4>
               <p className="text-[11px] text-slate-400 mt-0.5">
-                {hasUnverifiedItems ? (
+                {!auditSummary.canSignOff ? (
                   <span className="text-rose-300 font-semibold">
-                    {unverifiedList.length} items remain marked &quot;Unverified&quot;. Resolve them to enable sign-off.
+                    Sign-off locked: {auditSummary.conflicting.length + auditSummary.unverified.length + auditSummary.missing.length} unresolved items remain.
                   </span>
                 ) : (
                   'All fields verified. Enter your name and mark complete to move client to UNDERWRITING.'
@@ -2976,12 +3131,13 @@ export const MasterVerificationTab: React.FC<MasterVerificationTabProps> = ({
               <button
                 type="button"
                 onClick={handleMarkVerificationComplete}
-                disabled={isCompleting || hasUnverifiedItems}
+                disabled={isCompleting || !auditSummary.canSignOff}
                 className={`px-4 py-2 rounded-xl text-xs font-bold transition-all shadow-md ${
-                  hasUnverifiedItems
+                  !auditSummary.canSignOff
                     ? 'bg-slate-800 text-slate-500 border border-slate-700 cursor-not-allowed'
-                    : 'bg-emerald-600 hover:bg-emerald-500 text-white shadow-emerald-600/30'
+                    : 'bg-emerald-600 hover:bg-emerald-500 text-white shadow-emerald-600/30 cursor-pointer'
                 }`}
+                title={!auditSummary.canSignOff ? 'Resolve all unverified, missing, and conflicting items to enable sign-off' : 'Click to complete verification'}
               >
                 {isCompleting ? 'Completing...' : 'Mark Verification Complete'}
               </button>

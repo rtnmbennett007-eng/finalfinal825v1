@@ -1,32 +1,24 @@
 import React, { useState, useEffect } from 'react';
 import {
   Cloud,
-  FolderOpen,
   CheckCircle2,
   AlertCircle,
-  RefreshCw,
-  Lock,
+  FolderOpen,
+  Key,
   ShieldCheck,
-  HardDrive,
+  RefreshCw,
   Copy,
   Check,
-  KeyRound,
-  FileCheck,
-  Cpu,
-  Layers,
-  ArrowUpRight,
-  Info,
-  Terminal,
-  Server,
-  Activity,
   Play,
-  Key,
-  ShieldAlert,
-  ChevronDown,
-  ChevronUp,
+  Lock,
+  Server,
   FileText,
-  Eye,
   ExternalLink,
+  Terminal,
+  KeyRound,
+  Cpu,
+  Database,
+  Code2,
 } from 'lucide-react';
 import { api } from '../../services/api';
 import { GoogleDriveConfig, GoogleDriveDiagnostic, GoogleDriveTestResult } from '../../types';
@@ -34,18 +26,17 @@ import { useData } from '../../context/DataContext';
 
 export const GoogleDriveIntegrationSettings: React.FC = () => {
   const { addToast } = useData();
-
   const [config, setConfig] = useState<GoogleDriveConfig | null>(null);
   const [diagnostic, setDiagnostic] = useState<GoogleDriveDiagnostic | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
+  const [isLoading, setIsLoading] = useState(false);
   const [isDiagnosticLoading, setIsDiagnosticLoading] = useState(false);
   const [diagnosticError, setDiagnosticError] = useState<string | null>(null);
   const [lastDiagnosticRun, setLastDiagnosticRun] = useState<string | null>(null);
-  const [showRawJson, setShowRawJson] = useState(false);
-  const [showFolderExplorer, setShowFolderExplorer] = useState(false);
+
+  // Folder Explorer State
   const [folderFiles, setFolderFiles] = useState<any[]>([]);
   const [isLoadingFiles, setIsLoadingFiles] = useState(false);
-  const [copiedKey, setCopiedKey] = useState<string | null>(null);
+  const [showFolderExplorer, setShowFolderExplorer] = useState(false);
 
   // Live Test State
   const [isTesting, setIsTesting] = useState(false);
@@ -56,6 +47,10 @@ export const GoogleDriveIntegrationSettings: React.FC = () => {
   const [isSavingCredentials, setIsSavingCredentials] = useState(false);
   const [serviceAccountJsonInput, setServiceAccountJsonInput] = useState('');
   const [targetFolderIdInput, setTargetFolderIdInput] = useState('1qTQe0N8Wb_5MTDrp_BmOrdSjI5QWGqVm');
+
+  // UI Telemetry toggle
+  const [showRawJson, setShowRawJson] = useState(false);
+  const [copiedKey, setCopiedKey] = useState<string | null>(null);
 
   const TARGET_FOLDER_ID = '1qTQe0N8Wb_5MTDrp_BmOrdSjI5QWGqVm';
   const TARGET_SERVICE_ACCOUNT = 'maple-x-portal-drive@abiding-orb-506721-j6.iam.gserviceaccount.com';
@@ -69,6 +64,9 @@ export const GoogleDriveIntegrationSettings: React.FC = () => {
       const diagData = await api.getGoogleDriveDiagnostic();
       setDiagnostic(diagData);
       setLastDiagnosticRun(new Date().toLocaleTimeString());
+      if (diagData && !diagData.authenticated && !diagData.success && diagData.error) {
+        setDiagnosticError(diagData.error);
+      }
     } catch (err: any) {
       console.warn('Failed to load Google Drive diagnostic:', err);
       setDiagnosticError(err?.message || 'Failed to fetch diagnostic from production backend.');
@@ -80,16 +78,26 @@ export const GoogleDriveIntegrationSettings: React.FC = () => {
   const loadStatus = async () => {
     setIsLoading(true);
     try {
-      const [configData] = await Promise.allSettled([
+      const [configRes, diagRes] = await Promise.allSettled([
         api.getGoogleDriveConfig(),
-        runDiagnostic(),
+        api.getGoogleDriveDiagnostic(),
       ]);
 
-      if (configData.status === 'fulfilled' && configData.value) {
-        setConfig(configData.value);
-        if (configData.value.targetFolderId) {
-          setTargetFolderIdInput(configData.value.targetFolderId);
+      if (configRes.status === 'fulfilled' && configRes.value) {
+        setConfig(configRes.value);
+        if (configRes.value.targetFolderId) {
+          setTargetFolderIdInput(configRes.value.targetFolderId);
         }
+      }
+
+      if (diagRes.status === 'fulfilled' && diagRes.value) {
+        setDiagnostic(diagRes.value);
+        setLastDiagnosticRun(new Date().toLocaleTimeString());
+        if (diagRes.value && !diagRes.value.authenticated && !diagRes.value.success && diagRes.value.error) {
+          setDiagnosticError(diagRes.value.error);
+        }
+      } else if (diagRes.status === 'rejected') {
+        setDiagnosticError(diagRes.reason?.message || 'Could not reach diagnostic endpoint');
       }
     } catch (err: any) {
       console.warn('Failed to load Google Drive status:', err);
@@ -109,6 +117,7 @@ export const GoogleDriveIntegrationSettings: React.FC = () => {
       } else {
         addToast('warning', 'Google Drive Verification Notice', res.summary || 'Check test output steps.');
       }
+      await loadStatus();
     } catch (err: any) {
       addToast('error', 'Test Execution Failed', err?.message || 'Could not execute live test against Google API.');
     } finally {
@@ -154,20 +163,6 @@ export const GoogleDriveIntegrationSettings: React.FC = () => {
     }
   };
 
-  const handleDisconnect = async () => {
-    if (!window.confirm('Are you sure you want to clear stored Google Drive service account credentials?')) {
-      return;
-    }
-    try {
-      await api.disconnectGoogleDrive();
-      addToast('info', 'Credentials Cleared', 'Google Drive service account cache cleared.');
-      await loadStatus();
-      setTestResult(null);
-    } catch (err: any) {
-      addToast('error', 'Action Failed', err?.message || 'Could not clear credentials.');
-    }
-  };
-
   const copyToClipboard = (text: string, keyName: string) => {
     navigator.clipboard.writeText(text);
     setCopiedKey(keyName);
@@ -179,10 +174,26 @@ export const GoogleDriveIntegrationSettings: React.FC = () => {
     loadStatus();
   }, []);
 
-  const isConnected = Boolean(config?.isConnected);
-  const targetFolder = config?.targetFolderId || TARGET_FOLDER_ID;
-  const saEmail = config?.serviceAccountEmail || TARGET_SERVICE_ACCOUNT;
-  const isServiceAccountConfigured = Boolean(config?.serviceAccountConfigured || config?.isConfigured);
+  // Compute authoritative status directly from backend diagnostic / config responses
+  const isServiceAccountActive = Boolean(
+    diagnostic?.authenticated ||
+    (diagnostic?.hasPrivateKey && diagnostic?.hasClientEmail) ||
+    diagnostic?.serviceAccountConfigured ||
+    config?.serviceAccountConfigured ||
+    (config?.hasPrivateKey && config?.hasClientEmail) ||
+    config?.isConfigured
+  );
+
+  const isFolderAccessible = Boolean(
+    diagnostic?.folderAccessible ||
+    config?.folderAccessible ||
+    config?.isConnected
+  );
+
+  const credentialSource = diagnostic?.credentialSource || config?.credentialSource || (isServiceAccountActive ? 'GOOGLE_SERVICE_ACCOUNT_JSON' : 'none');
+  const targetFolder = diagnostic?.folderId || diagnostic?.targetFolderId || config?.targetFolderId || TARGET_FOLDER_ID;
+  const saEmail = diagnostic?.serviceAccountEmail || diagnostic?.serviceAccount || config?.serviceAccountEmail || TARGET_SERVICE_ACCOUNT;
+  const currentEnv = diagnostic?.environment || (diagnostic?.isVercel ? 'production (vercel)' : 'production');
 
   return (
     <div className="space-y-8 pb-16" id="google-drive-integration-settings-root">
@@ -201,8 +212,12 @@ export const GoogleDriveIntegrationSettings: React.FC = () => {
                   <h2 className="text-xl sm:text-2xl font-bold text-white tracking-tight">
                     Google Drive Document Vault
                   </h2>
-                  <span className="px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
-                    Service Account Auth
+                  <span className={`px-2.5 py-0.5 rounded-full text-[11px] font-semibold ${
+                    isServiceAccountActive
+                      ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20'
+                      : 'bg-amber-500/10 text-amber-400 border border-amber-500/20'
+                  }`}>
+                    {isServiceAccountActive ? 'Service Account Active' : 'Key Required'}
                   </span>
                 </div>
                 <p className="text-sm text-slate-400">
@@ -246,10 +261,13 @@ export const GoogleDriveIntegrationSettings: React.FC = () => {
             <div>
               <div className="text-xs text-slate-400 font-medium">Service Account Status</div>
               <div className="flex items-center gap-2 mt-1">
-                <span className={`w-2.5 h-2.5 rounded-full ${isServiceAccountConfigured ? 'bg-emerald-400 animate-pulse' : 'bg-amber-400'}`} />
+                <span className={`w-2.5 h-2.5 rounded-full ${isServiceAccountActive ? 'bg-emerald-400 animate-pulse' : 'bg-amber-400'}`} />
                 <span className="text-sm font-semibold text-white">
-                  {isServiceAccountConfigured ? 'Active & Authenticated' : 'Key Required'}
+                  {isServiceAccountActive ? 'Active & Authenticated' : 'Key Required'}
                 </span>
+              </div>
+              <div className="text-[10px] text-slate-400 mt-1 font-mono">
+                Source: <span className="text-blue-300">{credentialSource}</span>
               </div>
             </div>
             <KeyRound className="w-5 h-5 text-slate-500" />
@@ -259,10 +277,17 @@ export const GoogleDriveIntegrationSettings: React.FC = () => {
             <div>
               <div className="text-xs text-slate-400 font-medium">Target Folder Access</div>
               <div className="flex items-center gap-2 mt-1">
-                <span className={`w-2.5 h-2.5 rounded-full ${isConnected ? 'bg-emerald-400' : 'bg-blue-400'}`} />
+                <span className={`w-2.5 h-2.5 rounded-full ${isFolderAccessible ? 'bg-emerald-400' : 'bg-amber-400'}`} />
                 <span className="text-sm font-semibold text-white font-mono truncate max-w-[150px]" title={targetFolder}>
                   {targetFolder}
                 </span>
+              </div>
+              <div className="text-[10px] text-slate-400 mt-1">
+                {isFolderAccessible ? (
+                  <span className="text-emerald-400 font-medium">Folder Accessible & Writable</span>
+                ) : (
+                  <span className="text-amber-400 font-medium">Permission Check Ready</span>
+                )}
               </div>
             </div>
             <FolderOpen className="w-5 h-5 text-blue-400" />
@@ -274,11 +299,28 @@ export const GoogleDriveIntegrationSettings: React.FC = () => {
               <div className="text-sm font-semibold text-white mt-1 truncate max-w-[160px]" title={`${GCP_PROJECT_NAME} (${GCP_PROJECT_ID})`}>
                 {GCP_PROJECT_NAME}
               </div>
+              <div className="text-[10px] text-slate-400 mt-1 font-mono">
+                Env: <span className="text-indigo-300">{currentEnv}</span>
+              </div>
             </div>
             <Server className="w-5 h-5 text-indigo-400" />
           </div>
         </div>
       </div>
+
+      {/* Diagnostic Warning / Notice (if error present) */}
+      {diagnosticError && !isServiceAccountActive && (
+        <div className="p-4 sm:p-5 rounded-2xl bg-amber-950/30 border border-amber-500/30 flex items-start gap-3.5 text-amber-200 text-sm">
+          <AlertCircle className="w-5 h-5 text-amber-400 shrink-0 mt-0.5" />
+          <div className="space-y-1">
+            <div className="font-semibold text-amber-300">Google Drive Diagnostic Notice</div>
+            <div className="text-xs text-amber-200/90 leading-relaxed font-mono">{diagnosticError}</div>
+            <div className="text-xs text-slate-300 pt-1">
+              Ensure <code className="text-amber-300">GOOGLE_SERVICE_ACCOUNT_JSON</code> is configured in Vercel Production Environment Variables, or use the direct key importer below.
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Live Test Results Card (if run) */}
       {testResult && (
@@ -301,7 +343,7 @@ export const GoogleDriveIntegrationSettings: React.FC = () => {
             </div>
             <button
               onClick={() => setTestResult(null)}
-              className="text-xs text-slate-400 hover:text-white px-2 py-1 rounded bg-slate-800/60"
+              className="text-xs text-slate-400 hover:text-white px-2 py-1 rounded bg-slate-800/60 cursor-pointer"
             >
               Dismiss
             </button>
@@ -362,7 +404,7 @@ export const GoogleDriveIntegrationSettings: React.FC = () => {
               }}
               className="inline-flex items-center gap-2 px-3.5 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 text-xs font-medium cursor-pointer transition-all"
             >
-              <Eye className="w-3.5 h-3.5" />
+              <FileText className="w-3.5 h-3.5" />
               <span>{showFolderExplorer ? 'Hide Folder Files' : 'Inspect Folder Files'}</span>
             </button>
 
@@ -385,7 +427,7 @@ export const GoogleDriveIntegrationSettings: React.FC = () => {
               <span>Target Folder ID</span>
               <button
                 onClick={() => copyToClipboard(targetFolder, 'Folder ID')}
-                className="text-slate-400 hover:text-white inline-flex items-center gap-1 text-[11px]"
+                className="text-slate-400 hover:text-white inline-flex items-center gap-1 text-[11px] cursor-pointer"
               >
                 {copiedKey === 'Folder ID' ? <Check className="w-3 h-3 text-emerald-400" /> : <Copy className="w-3 h-3" />}
                 <span>{copiedKey === 'Folder ID' ? 'Copied' : 'Copy'}</span>
@@ -404,7 +446,7 @@ export const GoogleDriveIntegrationSettings: React.FC = () => {
               <span>Dedicated Service Account</span>
               <button
                 onClick={() => copyToClipboard(saEmail, 'Service Account Email')}
-                className="text-slate-400 hover:text-white inline-flex items-center gap-1 text-[11px]"
+                className="text-slate-400 hover:text-white inline-flex items-center gap-1 text-[11px] cursor-pointer"
               >
                 {copiedKey === 'Service Account Email' ? <Check className="w-3 h-3 text-emerald-400" /> : <Copy className="w-3 h-3" />}
                 <span>{copiedKey === 'Service Account Email' ? 'Copied' : 'Copy'}</span>
@@ -553,7 +595,7 @@ export const GoogleDriveIntegrationSettings: React.FC = () => {
           </div>
         </div>
 
-        {/* Optional In-Portal Service Account Key Importer Form */}
+        {/* In-Portal Service Account Key Importer Form */}
         {showCredentialsForm && (
           <form onSubmit={handleSaveCredentials} className="p-5 rounded-2xl bg-slate-950/90 border border-blue-500/30 space-y-4">
             <div className="flex items-center justify-between">
@@ -589,7 +631,7 @@ export const GoogleDriveIntegrationSettings: React.FC = () => {
                 placeholder='{ "type": "service_account", "project_id": "abiding-orb-506721-j6", "private_key_id": "...", "private_key": "-----BEGIN PRIVATE KEY-----\n...", "client_email": "maple-x-portal-drive@abiding-orb-506721-j6.iam.gserviceaccount.com" }'
               />
               <p className="text-[11px] text-slate-400 mt-1">
-                Paste the raw JSON from Google Cloud Console. The server will validate structure and store it in encrypted runtime memory.
+                Paste the raw JSON from Google Cloud Console. The server will validate structure and store it securely in runtime cache.
               </p>
             </div>
 

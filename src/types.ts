@@ -1521,7 +1521,11 @@ export interface GoogleDriveConfig {
   rootFolderConfigured?: boolean;
   accountEmailConfigured?: boolean;
   hasRefreshToken?: boolean;
-  tokenSource?: 'environment_variable' | 'persistent_storage' | 'oauth_exchange' | 'runtime_memory' | 'direct_input' | null;
+  tokenSource?: 'environment_variable' | 'persistent_storage' | 'oauth_exchange' | 'runtime_memory' | 'direct_input' | 'GOOGLE_SERVICE_ACCOUNT_JSON' | null;
+  credentialSource?: string;
+  hasServiceAccountJson?: boolean;
+  hasPrivateKey?: boolean;
+  hasClientEmail?: boolean;
   isConfigured: boolean;
   isConnected: boolean;
   authorizedAccount?: string;
@@ -1542,11 +1546,24 @@ export interface GoogleDriveConfig {
 }
 
 export interface GoogleDriveDiagnostic {
+  success?: boolean;
+  authenticated?: boolean;
+  driveApiAuthenticated?: boolean;
+  folderAccessible?: boolean;
+  error?: string;
   authType?: string;
+  credentialSource?: string;
+  hasServiceAccountJson?: boolean;
+  jsonParsed?: boolean;
+  hasClientEmail?: boolean;
+  hasPrivateKey?: boolean;
   serviceAccountConfigured?: boolean;
   serviceAccountEmail?: string;
+  serviceAccount?: string;
   projectId?: string;
   folderIdConfigured?: boolean;
+  folderId?: string;
+  folderName?: string;
   targetFolderId?: string;
   clientIdConfigured?: boolean;
   clientSecretConfigured?: boolean;

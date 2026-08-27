@@ -33,6 +33,14 @@ const upload = multer({
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 
+// Safe diagnostic request logger for serverless / production tracing (never logs secrets/tokens)
+app.use((req, res, next) => {
+  if (req.url && (req.url.startsWith('/api') || req.url.startsWith('/drive') || req.url.startsWith('/auth') || req.url.startsWith('/test'))) {
+    console.log(`[Express API] ${req.method} ${req.originalUrl || req.url} (path: ${req.path})`);
+  }
+  next();
+});
+
 // Database Persistence Directory
 const DATA_DIR = process.env.VERCEL ? path.join('/tmp', 'maplex-data') : path.join(process.cwd(), 'data');
 const DB_FILE = path.join(DATA_DIR, 'db.json');
@@ -1121,13 +1129,23 @@ async function sendDiscordNotification(
 // ----------------------------------------------------
 
 // Health Check
-app.get('/api/health', (req, res) => {
+app.get(['/api/health', '/health'], (req, res) => {
   res.json({
     status: 'ok',
     time: new Date().toISOString(),
     clientCount: db.clients.length,
     dealsCount: db.fundingDeals.length,
     tasksCount: db.tasks.length,
+  });
+});
+
+// Test Endpoint for Serverless Routing Verification
+app.get(['/api/test', '/test'], (req, res) => {
+  res.json({
+    ok: true,
+    source: 'express',
+    path: req.originalUrl || req.url || '/api/test',
+    timestamp: new Date().toISOString(),
   });
 });
 
@@ -3204,7 +3222,7 @@ app.post('/api/documents/analyze', async (req, res) => {
 // ----------------------------------------------------
 
 // Generate Google Drive Authorization URL with CSRF protection
-app.get('/api/auth/google/url', (req, res) => {
+app.get(['/api/auth/google/url', '/auth/google/url'], (req, res) => {
   try {
     const hostOrigin = `${req.protocol}://${req.get('host')}`;
     const returnUrl = (req.query.returnUrl as string) || '/?tab=settings';
@@ -3216,7 +3234,7 @@ app.get('/api/auth/google/url', (req, res) => {
 });
 
 // Google OAuth 2.0 Authorization Callback
-app.get('/api/auth/google/callback', async (req, res) => {
+app.get(['/api/auth/google/callback', '/auth/google/callback'], async (req, res) => {
   const { code, state, error } = req.query;
   const hostOrigin = `${req.protocol}://${req.get('host')}`;
 
@@ -3241,7 +3259,7 @@ app.get('/api/auth/google/callback', async (req, res) => {
 });
 
 // Query Google Drive connection status & metadata (safe, no secrets exposed)
-app.get('/api/drive/config', async (req, res) => {
+app.get(['/api/drive/config', '/drive/config'], async (req, res) => {
   try {
     const hostOrigin = `${req.protocol}://${req.get('host')}`;
     const status = await getDriveStatus(hostOrigin);
@@ -3252,7 +3270,7 @@ app.get('/api/drive/config', async (req, res) => {
 });
 
 // Status endpoint alias
-app.get('/api/drive/status', async (req, res) => {
+app.get(['/api/drive/status', '/drive/status'], async (req, res) => {
   try {
     const hostOrigin = `${req.protocol}://${req.get('host')}`;
     const status = await getDriveStatus(hostOrigin);
@@ -3263,7 +3281,13 @@ app.get('/api/drive/status', async (req, res) => {
 });
 
 // Production-safe Google Drive configuration diagnostic (strictly reads process.env, zero secrets)
-app.get('/api/drive/diagnostic', (req, res) => {
+app.get([
+  '/api/drive/diagnostic',
+  '/drive/diagnostic',
+  '/api/drive/diagnostics',
+  '/drive/diagnostics',
+  '/api/settings/google-drive/diagnostic'
+], (req, res) => {
   try {
     const diagnostic = getDriveDiagnostic();
     res.json(diagnostic);
@@ -3272,17 +3296,9 @@ app.get('/api/drive/diagnostic', (req, res) => {
   }
 });
 
-// Diagnostic route aliases
-app.get('/api/drive/diagnostics', (req, res) => {
-  res.json(getDriveDiagnostic());
-});
-app.get('/api/settings/google-drive/diagnostic', (req, res) => {
-  res.json(getDriveDiagnostic());
-});
-
 
 // Update Google Drive credentials securely on server
-app.post('/api/drive/config', async (req, res) => {
+app.post(['/api/drive/config', '/drive/config'], async (req, res) => {
   try {
     const { clientId, clientSecret, redirectUri, rootFolderId, accountEmail } = req.body;
     const saveResult = saveStoredConfig({
@@ -3305,7 +3321,7 @@ app.post('/api/drive/config', async (req, res) => {
 });
 
 // Disconnect Google Drive account on server
-app.post('/api/drive/disconnect', async (req, res) => {
+app.post(['/api/drive/disconnect', '/drive/disconnect'], async (req, res) => {
   try {
     clearStoredTokens();
     const hostOrigin = `${req.protocol}://${req.get('host')}`;
@@ -3317,7 +3333,7 @@ app.post('/api/drive/disconnect', async (req, res) => {
 });
 
 // Stream file preview inline from Google Drive
-app.get('/api/drive/file/:fileId/view', async (req, res) => {
+app.get(['/api/drive/file/:fileId/view', '/drive/file/:fileId/view'], async (req, res) => {
   const { fileId } = req.params;
   try {
     const { stream, metadata } = await getDriveFileStream(fileId);
@@ -3332,7 +3348,7 @@ app.get('/api/drive/file/:fileId/view', async (req, res) => {
 });
 
 // Stream file download from Google Drive
-app.get('/api/drive/file/:fileId/download', async (req, res) => {
+app.get(['/api/drive/file/:fileId/download', '/drive/file/:fileId/download'], async (req, res) => {
   const { fileId } = req.params;
   try {
     const { stream, metadata } = await getDriveFileStream(fileId);

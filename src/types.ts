@@ -1475,6 +1475,9 @@ export interface DocumentAiExtractionResult {
 export interface DocumentItem {
   id: string;
   clientId: string;
+  clientName?: string;
+  businessName?: string;
+  clientStatus?: string;
   dealId?: string;
   category: DocumentCategoryType;
   title: string;

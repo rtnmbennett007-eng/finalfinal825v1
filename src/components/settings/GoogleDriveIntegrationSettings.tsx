@@ -308,7 +308,7 @@ export const GoogleDriveIntegrationSettings: React.FC = () => {
           </div>
 
           <div className="mt-5 space-y-2.5">
-            {testResult.results.map((step, idx) => (
+            {(testResult.results || []).map((step, idx) => (
               <div
                 key={idx}
                 className="flex items-start justify-between gap-4 p-3.5 rounded-xl bg-slate-900/60 border border-slate-800 text-sm"

@@ -1502,6 +1502,14 @@ export interface DocumentItem {
 }
 
 export interface GoogleDriveConfig {
+  authType?: 'service_account' | 'oauth2';
+  serviceAccountEmail?: string;
+  projectId?: string;
+  targetFolderId?: string;
+  targetFolderName?: string;
+  folderAccessible?: boolean;
+  serviceAccountConfigured?: boolean;
+  folderIdConfigured?: boolean;
   clientId?: string;
   hasClientSecret?: boolean;
   clientIdConfigured?: boolean;
@@ -1509,9 +1517,13 @@ export interface GoogleDriveConfig {
   redirectUriConfigured?: boolean;
   rootFolderConfigured?: boolean;
   accountEmailConfigured?: boolean;
+  hasRefreshToken?: boolean;
+  tokenSource?: 'environment_variable' | 'persistent_storage' | 'oauth_exchange' | 'runtime_memory' | 'direct_input' | null;
   isConfigured: boolean;
   isConnected: boolean;
-  authorizedAccount?: string; // maplexfinancialadmin@gmail.com
+  authorizedAccount?: string;
+  accountEmail?: string;
+  accountName?: string;
   dedicatedAccountEmail?: string;
   rootFolderId: string; // 1qTQe0N8Wb_5MTDrp_BmOrdSjI5QWGqVm
   rootFolderName?: string;
@@ -1519,6 +1531,7 @@ export interface GoogleDriveConfig {
   tokenExpiresAt?: string;
   statusMessage?: string;
   redirectUri?: string;
+  candidateRedirectUris?: string[];
   storageUsage?: {
     usedBytes?: number;
     totalBytes?: number;
@@ -1526,14 +1539,45 @@ export interface GoogleDriveConfig {
 }
 
 export interface GoogleDriveDiagnostic {
-  clientIdConfigured: boolean;
-  clientSecretConfigured: boolean;
-  redirectUriConfigured: boolean;
-  rootFolderConfigured: boolean;
-  accountEmailConfigured: boolean;
+  authType?: string;
+  serviceAccountConfigured?: boolean;
+  serviceAccountEmail?: string;
+  projectId?: string;
+  folderIdConfigured?: boolean;
+  targetFolderId?: string;
+  clientIdConfigured?: boolean;
+  clientSecretConfigured?: boolean;
+  redirectUriConfigured?: boolean;
+  rootFolderConfigured?: boolean;
+  accountEmailConfigured?: boolean;
+  hasRefreshToken?: boolean;
+  hasAccessToken?: boolean;
+  tokenSource?: string | null;
+  isVercel?: boolean;
   environment: string;
   serverTime: string;
   serverInstance: string;
+  candidateRedirectUris?: string[];
+  activeRedirectUri?: string;
+}
+
+export interface GoogleDriveTestStep {
+  step: string;
+  status: 'PASSED' | 'FAILED' | 'WARNING';
+  message: string;
+  details?: any;
+}
+
+export interface GoogleDriveTestResult {
+  success: boolean;
+  summary: string;
+  serviceAccountEmail?: string;
+  targetFolderId?: string;
+  targetFolderName?: string;
+  authenticatedEmail?: string;
+  rootFolderId?: string;
+  tokenSource?: string;
+  results: GoogleDriveTestStep[];
 }
 
 

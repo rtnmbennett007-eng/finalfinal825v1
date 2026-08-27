@@ -14,6 +14,7 @@ import {
   GhlConfig,
   GoogleDriveConfig,
   GoogleDriveDiagnostic,
+  GoogleDriveTestResult,
   InternalTask,
   Lead,
   LeadSourceOption,
@@ -682,8 +683,62 @@ export const api = {
     return res.json();
   },
 
+  testGoogleDriveConnection: async (): Promise<GoogleDriveTestResult> => {
+    const res = await fetch('/api/drive/test-connection', { method: 'POST' });
+    const data = await res.json().catch(() => ({ success: false, summary: 'Failed to parse test result' }));
+    return data;
+  },
 
-  updateGoogleDriveConfig: async (config: Partial<GoogleDriveConfig> & { clientSecret?: string }) => {
+  listGoogleDriveFiles: async (folderId?: string, limit = 50): Promise<{ success: boolean; files: any[] }> => {
+    const query = new URLSearchParams();
+    if (folderId) query.set('folderId', folderId);
+    if (limit) query.set('limit', String(limit));
+    const res = await fetch(`/api/drive/files?${query.toString()}`);
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ error: 'Failed to list Google Drive files' }));
+      throw new Error(err.error || 'Failed to list Google Drive files');
+    }
+    return res.json();
+  },
+
+  saveGoogleDriveServiceAccount: async (payload: {
+    serviceAccountJson?: string;
+    folderId?: string;
+  }) => {
+    const res = await fetch('/api/drive/set-credentials', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ error: 'Failed to save Service Account credentials' }));
+      throw new Error(err.error || 'Failed to save Service Account credentials');
+    }
+    return res.json();
+  },
+
+  saveGoogleDriveTokens: async (tokens: {
+    serviceAccountJson?: string;
+    credentialsJson?: string;
+    refreshToken?: string;
+    accessToken?: string;
+    accountEmail?: string;
+    rootFolderId?: string;
+    folderId?: string;
+  }) => {
+    const res = await fetch('/api/drive/set-credentials', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(tokens),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ error: 'Failed to save credentials' }));
+      throw new Error(err.error || 'Failed to save credentials');
+    }
+    return res.json();
+  },
+
+  updateGoogleDriveConfig: async (config: Partial<GoogleDriveConfig> & { clientSecret?: string; serviceAccountJson?: string; folderId?: string }) => {
     const res = await fetch('/api/drive/config', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },

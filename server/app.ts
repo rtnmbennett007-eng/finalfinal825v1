@@ -7,22 +7,26 @@ import fs from 'fs';
 import multer from 'multer';
 import { analyzeDocumentWithAi } from './documentAiService.ts';
 import {
-  generateAuthUrl,
-  handleAuthCallback,
   getDriveStatus,
   getDriveDiagnostic,
-  saveStoredConfig,
-  clearStoredTokens,
+  saveStoredServiceAccount,
+  clearStoredServiceAccount,
+  testDriveConnectionLive,
   uploadFileToGoogleDrive,
+  listDriveFiles,
   getDriveFileStream,
   getDriveFileBuffer,
   deleteDriveFile,
+  getRequestOrigin,
   DEDICATED_ACCOUNT_EMAIL,
   DEFAULT_ROOT_FOLDER_ID,
 } from './googleDriveService.ts';
 
 const app = express();
 const PORT = 3000;
+
+// Enable trust proxy so reverse proxies on Vercel and Cloud Run correctly supply client IP and HTTPS protocol
+app.set('trust proxy', true);
 
 // Setup Multer memory storage for direct file streaming
 const upload = multer({
@@ -3218,44 +3222,21 @@ app.post('/api/documents/analyze', async (req, res) => {
 });
 
 // ----------------------------------------------------
-// GOOGLE DRIVE OAUTH 2.0 & CLOUD STORAGE ENDPOINTS
+// GOOGLE DRIVE SERVICE ACCOUNT & CLOUD STORAGE ENDPOINTS
 // ----------------------------------------------------
 
-// Generate Google Drive Authorization URL with CSRF protection
+// Google Drive OAuth compatibility route (Informs that Service Account architecture is active)
 app.get(['/api/auth/google/url', '/auth/google/url'], (req, res) => {
-  try {
-    const hostOrigin = `${req.protocol}://${req.get('host')}`;
-    const returnUrl = (req.query.returnUrl as string) || '/?tab=settings';
-    const { url, state } = generateAuthUrl(hostOrigin, returnUrl);
-    res.json({ success: true, url, state });
-  } catch (err: any) {
-    res.status(400).json({ error: err.message || 'Failed to generate Google Drive OAuth URL' });
-  }
+  res.json({
+    success: true,
+    url: '/?tab=settings',
+    state: 'service_account_active',
+    message: 'Google Drive is powered by Google Cloud Service Account authentication.',
+  });
 });
 
-// Google OAuth 2.0 Authorization Callback
-app.get(['/api/auth/google/callback', '/auth/google/callback'], async (req, res) => {
-  const { code, state, error } = req.query;
-  const hostOrigin = `${req.protocol}://${req.get('host')}`;
-
-  if (error) {
-    console.error('Google OAuth callback error reported by Google:', error);
-    return res.redirect(`/?tab=settings&drive_error=${encodeURIComponent(String(error))}`);
-  }
-
-  if (!code || !state) {
-    return res.redirect('/?tab=settings&drive_error=missing_code_or_state');
-  }
-
-  try {
-    const result = await handleAuthCallback(String(code), String(state), hostOrigin);
-    const returnTarget = result.returnUrl && result.returnUrl.startsWith('/') ? result.returnUrl : '/?tab=settings';
-    const separator = returnTarget.includes('?') ? '&' : '?';
-    return res.redirect(`${returnTarget}${separator}drive_connected=true&account=${encodeURIComponent(result.accountEmail)}`);
-  } catch (err: any) {
-    console.error('Google OAuth callback token exchange failed:', err);
-    return res.redirect(`/?tab=settings&drive_error=${encodeURIComponent(err.message || 'oauth_exchange_failed')}`);
-  }
+app.get(['/api/auth/google/callback', '/auth/google/callback'], (req, res) => {
+  return res.redirect('/?tab=settings&notice=service_account_active');
 });
 
 // Query Google Drive connection status & metadata (safe, no secrets exposed)
@@ -3297,37 +3278,70 @@ app.get([
   }
 });
 
-
-// Update Google Drive credentials securely on server
-app.post(['/api/drive/config', '/drive/config'], async (req, res) => {
+// Live comprehensive connection test against Google Drive API (verifies access to 1qTQe0N8Wb_5MTDrp_BmOrdSjI5QWGqVm)
+app.all(['/api/drive/test-connection', '/drive/test-connection'], async (req, res) => {
   try {
-    const { clientId, clientSecret, redirectUri, rootFolderId, accountEmail } = req.body;
-    const saveResult = saveStoredConfig({
-      clientId: clientId ? String(clientId).trim() : undefined,
-      clientSecret: clientSecret ? String(clientSecret).trim() : undefined,
-      redirectUri: redirectUri ? String(redirectUri).trim() : undefined,
-      rootFolderId: rootFolderId ? String(rootFolderId).trim() : undefined,
-      accountEmail: accountEmail ? String(accountEmail).trim() : undefined,
+    const hostOrigin = getRequestOrigin(req);
+    const testResult = await testDriveConnectionLive(hostOrigin);
+    res.json(testResult);
+  } catch (err: any) {
+    res.status(500).json({
+      success: false,
+      summary: `Test failed: ${err.message || err}`,
+      results: [
+        {
+          step: 'API Execution',
+          status: 'FAILED',
+          message: err.message || 'Execution error during live Google Drive test',
+        },
+      ],
     });
-    if (!saveResult.success) {
-      return res.status(500).json({ error: saveResult.error || 'configuration_storage_unavailable' });
+  }
+});
+
+// List files inside the configured target folder or subfolder
+app.get(['/api/drive/files', '/drive/files'], async (req, res) => {
+  try {
+    const folderId = req.query.folderId as string | undefined;
+    const limit = req.query.limit ? parseInt(String(req.query.limit), 10) : 50;
+    const files = await listDriveFiles(folderId, limit);
+    res.json({ success: true, files });
+  } catch (err: any) {
+    console.error('Error listing Google Drive files:', err?.message || err);
+    res.status(500).json({ error: err?.message || 'Failed to list files from Google Drive' });
+  }
+});
+
+// Update Google Drive Service Account / Target Folder credentials securely on server
+app.post(['/api/drive/config', '/drive/config', '/api/drive/set-credentials', '/drive/set-credentials', '/api/drive/set-tokens', '/drive/set-tokens'], async (req, res) => {
+  try {
+    const { serviceAccountJson, credentialsJson, folderId, rootFolderId } = req.body;
+    const targetFolder = folderId || rootFolderId;
+    const rawJson = serviceAccountJson || credentialsJson;
+
+    if (rawJson) {
+      const saveResult = saveStoredServiceAccount(rawJson, targetFolder);
+      if (!saveResult.success) {
+        return res.status(400).json({ error: saveResult.error || 'Failed to parse Service Account JSON' });
+      }
     }
+
     const hostOrigin = `${req.protocol}://${req.get('host')}`;
     const status = await getDriveStatus(hostOrigin);
-    res.json({ success: true, config: status });
+    res.json({ success: true, message: 'Google Drive configuration updated successfully.', config: status });
   } catch (err: any) {
     console.error('Error updating Google Drive config:', err?.message || err);
     res.status(500).json({ error: `server_route_failure: ${err?.message || 'Failed to update Google Drive configuration'}` });
   }
 });
 
-// Disconnect Google Drive account on server
+// Disconnect / reset Google Drive credentials on server
 app.post(['/api/drive/disconnect', '/drive/disconnect'], async (req, res) => {
   try {
-    clearStoredTokens();
+    clearStoredServiceAccount();
     const hostOrigin = `${req.protocol}://${req.get('host')}`;
     const status = await getDriveStatus(hostOrigin);
-    res.json({ success: true, message: 'Google Drive disconnected', config: status });
+    res.json({ success: true, message: 'Google Drive credentials cleared from cache', config: status });
   } catch (err: any) {
     res.status(500).json({ error: err.message || 'Failed to disconnect Google Drive' });
   }

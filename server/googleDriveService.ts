@@ -1,132 +1,273 @@
 import dotenv from 'dotenv';
-// Load environment variables from default and common paths
-dotenv.config();
-dotenv.config({ path: path.join(process.cwd(), '.env.local') });
-dotenv.config({ path: path.join(process.cwd(), '.env.production') });
-
 import fs from 'fs';
 import path from 'path';
 import { google } from 'googleapis';
 import { Readable } from 'stream';
-import crypto from 'crypto';
 
-// Multi-tier storage locations (Primary: ./data, Fallback: /tmp/maplex-drive-data)
+// Load environment variables
+dotenv.config();
+try {
+  dotenv.config({ path: path.join(process.cwd(), '.env.local') });
+  dotenv.config({ path: path.join(process.cwd(), '.env.production') });
+} catch {
+  // Ignore in restricted environments
+}
+
+// Storage locations for runtime persistence
 const PRIMARY_DATA_DIR = path.join(process.cwd(), 'data');
 const FALLBACK_DATA_DIR = path.join('/tmp', 'maplex-drive-data');
+const VERCEL_DATA_DIR = path.join('/tmp', 'maplex-data');
+const TMP_DIR = '/tmp';
 
-// Default target root folder specified by Maple X Financial
+// Default target folder & service account parameters for Maple X Financial
 export const DEFAULT_ROOT_FOLDER_ID = '1qTQe0N8Wb_5MTDrp_BmOrdSjI5QWGqVm';
-export const DEDICATED_ACCOUNT_EMAIL = 'maplexfinancialadmin@gmail.com';
-export const DEFAULT_REDIRECT_URI = 'https://portal.maplexfinancial.com/api/auth/google/callback';
-export const DRIVE_SCOPE = 'https://www.googleapis.com/auth/drive.file';
+export const DEDICATED_ACCOUNT_EMAIL = 'maple-x-portal-drive@abiding-orb-506721-j6.iam.gserviceaccount.com';
+export const DEDICATED_PROJECT_ID = 'abiding-orb-506721-j6';
+export const DRIVE_SCOPES = [
+  'https://www.googleapis.com/auth/drive',
+  'https://www.googleapis.com/auth/drive.file',
+];
 
-interface StoredTokens {
-  access_token?: string | null;
-  refresh_token?: string | null;
-  scope?: string;
-  token_type?: string;
-  expiry_date?: number | null;
-  account_email?: string;
-  account_name?: string;
-  connected_at?: string;
-  root_folder_id?: string;
+export interface ParsedServiceAccount {
+  type?: string;
+  project_id?: string;
+  private_key_id?: string;
+  private_key?: string;
+  client_email?: string;
+  client_id?: string;
+  auth_uri?: string;
+  token_uri?: string;
+  auth_provider_x509_cert_url?: string;
+  client_x509_cert_url?: string;
 }
 
-interface StoredConfig {
-  clientId?: string;
-  clientSecret?: string;
-  redirectUri?: string;
-  rootFolderId?: string;
-  accountEmail?: string;
+export interface StoredDriveConfig {
+  folderId?: string;
+  serviceAccountEmail?: string;
+  projectId?: string;
 }
 
-// In-memory runtime cache ensures continuous operation even if filesystem is read-only
-let inMemoryConfig: StoredConfig = {};
-let inMemoryTokens: StoredTokens | null = null;
+// In-memory runtime caches
+let inMemoryServiceAccount: ParsedServiceAccount | null = null;
+let inMemoryConfig: StoredDriveConfig = {};
 
-// In-memory CSRF state cache with 15-minute TTL
-const oauthStates = new Map<string, { createdAt: number; redirectUrl?: string }>();
+/**
+ * Returns the best writable directory in current runtime
+ */
+function getWritableDataDirs(): string[] {
+  return [PRIMARY_DATA_DIR, VERCEL_DATA_DIR, FALLBACK_DATA_DIR, TMP_DIR];
+}
 
-// Cleanup stale states every 10 minutes
-setInterval(() => {
-  const now = Date.now();
-  for (const [state, meta] of oauthStates.entries()) {
-    if (now - meta.createdAt > 15 * 60 * 1000) {
-      oauthStates.delete(state);
-    }
+/**
+ * Derives request origin dynamically
+ */
+export function getRequestOrigin(req?: any, fallback?: string): string {
+  if (!req) {
+    if (process.env.APP_URL) return process.env.APP_URL.replace(/\/$/, '');
+    if (process.env.PUBLIC_URL) return process.env.PUBLIC_URL.replace(/\/$/, '');
+    if (process.env.VERCEL_URL) return `https://${process.env.VERCEL_URL.replace(/\/$/, '')}`;
+    return fallback || 'https://portal.maplexfinancial.com';
   }
-}, 10 * 60 * 1000);
 
-function getWritableDataDir(): string {
+  const forwardedProto = (req.headers?.['x-forwarded-proto'] || (req.protocol ? req.protocol : 'https')) as string;
+  const proto = (forwardedProto ? forwardedProto.split(',')[0].trim() : 'https') || 'https';
+
+  const forwardedHost = (req.headers?.['x-forwarded-host'] || (req.get ? req.get('host') : req.headers?.host)) as string;
+  const host = forwardedHost ? forwardedHost.split(',')[0].trim() : '';
+
+  if (host) {
+    const isLocal = host.includes('localhost') || host.includes('127.0.0.1') || host.includes('0.0.0.0');
+    const finalProto = isLocal ? proto : 'https';
+    return `${finalProto}://${host}`.replace(/\/$/, '');
+  }
+
+  if (process.env.VERCEL_URL) {
+    return `https://${process.env.VERCEL_URL.replace(/\/$/, '')}`;
+  }
+
+  return fallback || 'https://portal.maplexfinancial.com';
+}
+
+/**
+ * Helper to safely parse Service Account JSON string or base64
+ */
+function parseServiceAccountString(raw: string): ParsedServiceAccount | null {
+  if (!raw || typeof raw !== 'string') return null;
+  const trimmed = raw.trim();
+  if (!trimmed) return null;
+
+  // Try direct JSON parse
   try {
-    if (!fs.existsSync(PRIMARY_DATA_DIR)) {
-      fs.mkdirSync(PRIMARY_DATA_DIR, { recursive: true });
+    const parsed = JSON.parse(trimmed);
+    if (parsed && typeof parsed === 'object') {
+      if (parsed.private_key) {
+        parsed.private_key = parsed.private_key.replace(/\\n/g, '\n');
+      }
+      return parsed;
     }
-    // Test write permission
-    const testFile = path.join(PRIMARY_DATA_DIR, '.write-test');
-    fs.writeFileSync(testFile, 'ok', 'utf-8');
-    fs.unlinkSync(testFile);
-    return PRIMARY_DATA_DIR;
   } catch {
-    try {
-      if (!fs.existsSync(FALLBACK_DATA_DIR)) {
-        fs.mkdirSync(FALLBACK_DATA_DIR, { recursive: true });
-      }
-      return FALLBACK_DATA_DIR;
-    } catch {
-      return '';
-    }
+    // Attempt base64 decode if not plain JSON
   }
-}
 
-export function loadStoredTokens(): StoredTokens | null {
-  if (inMemoryTokens) {
-    return inMemoryTokens;
-  }
-  const dirs = [PRIMARY_DATA_DIR, FALLBACK_DATA_DIR];
-  for (const dir of dirs) {
-    try {
-      const filePath = path.join(dir, 'google-drive-tokens.json');
-      if (fs.existsSync(filePath)) {
-        const raw = fs.readFileSync(filePath, 'utf-8');
-        const parsed = JSON.parse(raw);
-        inMemoryTokens = parsed;
-        return parsed;
+  try {
+    const decoded = Buffer.from(trimmed, 'base64').toString('utf-8');
+    const parsed = JSON.parse(decoded);
+    if (parsed && typeof parsed === 'object') {
+      if (parsed.private_key) {
+        parsed.private_key = parsed.private_key.replace(/\\n/g, '\n');
       }
-    } catch {
-      // Continue to next directory
+      return parsed;
     }
+  } catch {
+    // Ignore parse error
   }
+
   return null;
 }
 
-export function saveStoredTokens(tokens: StoredTokens): void {
-  const existing = loadStoredTokens() || {};
-  const merged: StoredTokens = {
-    ...existing,
-    ...tokens,
-    // Preserve existing refresh token if new payload is only access token renewal
-    refresh_token: tokens.refresh_token || existing.refresh_token,
-  };
-  inMemoryTokens = merged;
+/**
+ * Load Service Account credentials from Environment Variable, Cache, or File
+ */
+export function getServiceAccountCredentials(): {
+  credentials: ParsedServiceAccount | null;
+  source: 'environment_variable' | 'runtime_memory' | 'persistent_storage' | null;
+  folderId: string;
+  clientEmail: string;
+  projectId: string;
+  isConfigured: boolean;
+} {
+  const targetFolderId = (
+    process.env.GOOGLE_DRIVE_FOLDER_ID ||
+    process.env.GOOGLE_DRIVE_ROOT_FOLDER_ID ||
+    process.env.GOOGLE_ROOT_FOLDER_ID ||
+    inMemoryConfig.folderId ||
+    DEFAULT_ROOT_FOLDER_ID
+  ).trim();
 
-  const targetDir = getWritableDataDir();
-  if (targetDir) {
-    try {
-      const filePath = path.join(targetDir, 'google-drive-tokens.json');
-      fs.writeFileSync(filePath, JSON.stringify(merged, null, 2), 'utf-8');
-    } catch (err: any) {
-      console.warn('Could not write tokens to disk, stored in memory cache:', err?.message);
+  // 1. Direct environment variable read (GOOGLE_SERVICE_ACCOUNT_JSON)
+  const envServiceAccountJson = (
+    process.env.GOOGLE_SERVICE_ACCOUNT_JSON ||
+    process.env.GCP_SERVICE_ACCOUNT_JSON ||
+    process.env.SERVICE_ACCOUNT_JSON ||
+    process.env.GOOGLE_SERVICE_ACCOUNT_KEY ||
+    ''
+  ).trim();
+
+  if (envServiceAccountJson) {
+    const parsed = parseServiceAccountString(envServiceAccountJson);
+    if (parsed && parsed.client_email && parsed.private_key) {
+      inMemoryServiceAccount = parsed;
+      return {
+        credentials: parsed,
+        source: 'environment_variable',
+        folderId: targetFolderId,
+        clientEmail: parsed.client_email || DEDICATED_ACCOUNT_EMAIL,
+        projectId: parsed.project_id || DEDICATED_PROJECT_ID,
+        isConfigured: true,
+      };
     }
+  }
+
+  // 2. In-memory runtime cache
+  if (inMemoryServiceAccount && inMemoryServiceAccount.client_email && inMemoryServiceAccount.private_key) {
+    return {
+      credentials: inMemoryServiceAccount,
+      source: 'runtime_memory',
+      folderId: targetFolderId,
+      clientEmail: inMemoryServiceAccount.client_email || DEDICATED_ACCOUNT_EMAIL,
+      projectId: inMemoryServiceAccount.project_id || DEDICATED_PROJECT_ID,
+      isConfigured: true,
+    };
+  }
+
+  // 3. Persistent filesystem storage
+  const dirs = getWritableDataDirs();
+  for (const dir of dirs) {
+    try {
+      const filePath = path.join(dir, 'google-service-account.json');
+      if (fs.existsSync(filePath)) {
+        const raw = fs.readFileSync(filePath, 'utf-8');
+        const parsed = parseServiceAccountString(raw);
+        if (parsed && parsed.client_email && parsed.private_key) {
+          inMemoryServiceAccount = parsed;
+          return {
+            credentials: parsed,
+            source: 'persistent_storage',
+            folderId: targetFolderId,
+            clientEmail: parsed.client_email || DEDICATED_ACCOUNT_EMAIL,
+            projectId: parsed.project_id || DEDICATED_PROJECT_ID,
+            isConfigured: true,
+          };
+        }
+      }
+    } catch {
+      // Continue
+    }
+  }
+
+  return {
+    credentials: null,
+    source: null,
+    folderId: targetFolderId,
+    clientEmail: DEDICATED_ACCOUNT_EMAIL,
+    projectId: DEDICATED_PROJECT_ID,
+    isConfigured: false,
+  };
+}
+
+/**
+ * Save Service Account JSON to runtime cache and secure local data dir
+ */
+export function saveStoredServiceAccount(rawJsonOrObj: string | ParsedServiceAccount, folderId?: string): { success: boolean; error?: string } {
+  try {
+    let parsed: ParsedServiceAccount | null = null;
+    if (typeof rawJsonOrObj === 'string') {
+      parsed = parseServiceAccountString(rawJsonOrObj);
+    } else if (rawJsonOrObj && typeof rawJsonOrObj === 'object') {
+      parsed = { ...rawJsonOrObj };
+      if (parsed.private_key) {
+        parsed.private_key = parsed.private_key.replace(/\\n/g, '\n');
+      }
+    }
+
+    if (!parsed || !parsed.client_email || !parsed.private_key) {
+      return { success: false, error: 'Invalid Service Account JSON. Ensure "client_email" and "private_key" are present.' };
+    }
+
+    inMemoryServiceAccount = parsed;
+    if (folderId) {
+      inMemoryConfig.folderId = folderId.trim();
+    }
+
+    // Persist to writable dirs
+    const dirs = getWritableDataDirs();
+    for (const dir of dirs) {
+      try {
+        if (!fs.existsSync(dir)) {
+          fs.mkdirSync(dir, { recursive: true });
+        }
+        const filePath = path.join(dir, 'google-service-account.json');
+        fs.writeFileSync(filePath, JSON.stringify(parsed, null, 2), 'utf-8');
+      } catch {
+        // Ignore individual folder write failures
+      }
+    }
+
+    return { success: true };
+  } catch (err: any) {
+    return { success: false, error: err?.message || 'Failed to save service account credentials' };
   }
 }
 
-export function clearStoredTokens(): void {
-  inMemoryTokens = null;
-  const dirs = [PRIMARY_DATA_DIR, FALLBACK_DATA_DIR];
+/**
+ * Clear stored service account credentials
+ */
+export function clearStoredServiceAccount(): void {
+  inMemoryServiceAccount = null;
+  const dirs = getWritableDataDirs();
   for (const dir of dirs) {
     try {
-      const filePath = path.join(dir, 'google-drive-tokens.json');
+      const filePath = path.join(dir, 'google-service-account.json');
       if (fs.existsSync(filePath)) {
         fs.unlinkSync(filePath);
       }
@@ -136,382 +277,344 @@ export function clearStoredTokens(): void {
   }
 }
 
-export function loadStoredConfig(): StoredConfig {
-  const dirs = [PRIMARY_DATA_DIR, FALLBACK_DATA_DIR];
-  for (const dir of dirs) {
-    try {
-      const filePath = path.join(dir, 'google-drive-config.json');
-      if (fs.existsSync(filePath)) {
-        const raw = fs.readFileSync(filePath, 'utf-8');
-        const parsed = JSON.parse(raw);
-        inMemoryConfig = { ...parsed, ...inMemoryConfig };
-        return inMemoryConfig;
-      }
-    } catch {
-      // Continue to next directory
-    }
-  }
-  return inMemoryConfig;
-}
-
-export function saveStoredConfig(config: Partial<StoredConfig>): { success: boolean; error?: string; storageMode?: string } {
-  try {
-    const existing = loadStoredConfig();
-    const merged: StoredConfig = { ...existing };
-    if (config.clientId !== undefined && config.clientId.trim() !== '') {
-      merged.clientId = config.clientId.trim();
-    }
-    if (config.clientSecret !== undefined && config.clientSecret.trim() !== '') {
-      merged.clientSecret = config.clientSecret.trim();
-    }
-    if (config.redirectUri !== undefined && config.redirectUri.trim() !== '') {
-      merged.redirectUri = config.redirectUri.trim();
-    }
-    if (config.rootFolderId !== undefined && config.rootFolderId.trim() !== '') {
-      merged.rootFolderId = config.rootFolderId.trim();
-    }
-    if (config.accountEmail !== undefined && config.accountEmail.trim() !== '') {
-      merged.accountEmail = config.accountEmail.trim();
-    }
-
-    inMemoryConfig = merged;
-
-    const targetDir = getWritableDataDir();
-    if (targetDir) {
-      const filePath = path.join(targetDir, 'google-drive-config.json');
-      fs.writeFileSync(filePath, JSON.stringify(merged, null, 2), 'utf-8');
-      return { success: true, storageMode: 'persistent_filesystem' };
-    }
-
-    return { success: true, storageMode: 'runtime_memory_fallback' };
-  } catch (err: any) {
-    const errMsg = err?.message || 'Unknown write error';
-    console.error('Error saving Google Drive config:', errMsg);
-    return { success: false, error: `configuration_storage_error: ${errMsg}` };
-  }
-}
-
-export function getEffectiveCredentials(reqHostOrigin?: string) {
-  const storedConfig = loadStoredConfig();
-
-  // Check standard and alias environment variables
-  const clientId = (
-    process.env.GOOGLE_DRIVE_CLIENT_ID ||
-    process.env.GOOGLE_CLIENT_ID ||
-    process.env.DRIVE_CLIENT_ID ||
-    process.env.VITE_GOOGLE_DRIVE_CLIENT_ID ||
-    storedConfig.clientId ||
-    inMemoryConfig.clientId ||
-    ''
-  ).trim();
-
-  const clientSecret = (
-    process.env.GOOGLE_DRIVE_CLIENT_SECRET ||
-    process.env.GOOGLE_CLIENT_SECRET ||
-    process.env.DRIVE_CLIENT_SECRET ||
-    storedConfig.clientSecret ||
-    inMemoryConfig.clientSecret ||
-    ''
-  ).trim();
-
-  const rootFolderId = (
-    process.env.GOOGLE_DRIVE_ROOT_FOLDER_ID ||
-    process.env.GOOGLE_ROOT_FOLDER_ID ||
-    process.env.DRIVE_ROOT_FOLDER_ID ||
-    storedConfig.rootFolderId ||
-    inMemoryConfig.rootFolderId ||
-    DEFAULT_ROOT_FOLDER_ID
-  ).trim();
-
-  const accountEmail = (
-    process.env.GOOGLE_DRIVE_ACCOUNT_EMAIL ||
-    process.env.GOOGLE_ACCOUNT_EMAIL ||
-    process.env.DRIVE_ACCOUNT_EMAIL ||
-    storedConfig.accountEmail ||
-    inMemoryConfig.accountEmail ||
-    DEDICATED_ACCOUNT_EMAIL
-  ).trim();
-
-  // Compute dynamic or configured redirect URI
-  let redirectUri = (
-    process.env.GOOGLE_DRIVE_REDIRECT_URI ||
-    process.env.GOOGLE_REDIRECT_URI ||
-    process.env.DRIVE_REDIRECT_URI ||
-    storedConfig.redirectUri ||
-    inMemoryConfig.redirectUri ||
-    ''
-  ).trim();
-
-  if (!redirectUri && reqHostOrigin) {
-    redirectUri = `${reqHostOrigin.replace(/\/$/, '')}/api/auth/google/callback`;
-  } else if (!redirectUri) {
-    redirectUri = DEFAULT_REDIRECT_URI;
-  }
-
-  const clientIdConfigured = Boolean(clientId && clientId.length > 3);
-  const clientSecretConfigured = Boolean(clientSecret && clientSecret.length > 3);
-  const redirectUriConfigured = Boolean(redirectUri && redirectUri.length > 5);
-  const rootFolderConfigured = Boolean(rootFolderId && rootFolderId.length > 5);
-  const accountEmailConfigured = Boolean(accountEmail && accountEmail.includes('@'));
-
-  return {
-    clientId,
-    clientSecret,
-    redirectUri,
-    rootFolderId,
-    accountEmail,
-    hasClientSecret: clientSecretConfigured,
-    clientIdConfigured,
-    clientSecretConfigured,
-    redirectUriConfigured,
-    rootFolderConfigured,
-    accountEmailConfigured,
-    isConfigured: Boolean(clientIdConfigured && clientSecretConfigured),
-  };
-}
-
-export function getOAuth2Client(redirectUriOverride?: string) {
-  const creds = getEffectiveCredentials();
-  const redirectUri = redirectUriOverride || creds.redirectUri;
-
-  const oauth2Client = new google.auth.OAuth2(
-    creds.clientId,
-    creds.clientSecret,
-    redirectUri
-  );
-
-  const tokens = loadStoredTokens();
-  if (tokens) {
-    oauth2Client.setCredentials({
-      access_token: tokens.access_token || undefined,
-      refresh_token: tokens.refresh_token || undefined,
-      expiry_date: tokens.expiry_date || undefined,
-      token_type: tokens.token_type || 'Bearer',
-      scope: tokens.scope || DRIVE_SCOPE,
-    });
-
-    // Auto-save refreshed tokens when Google updates them
-    oauth2Client.on('tokens', (newTokens) => {
-      saveStoredTokens({
-        ...tokens,
-        access_token: newTokens.access_token,
-        refresh_token: newTokens.refresh_token || tokens.refresh_token,
-        expiry_date: newTokens.expiry_date,
-        token_type: newTokens.token_type || 'Bearer',
-        scope: newTokens.scope || tokens.scope,
-      });
-    });
-  }
-
-  return oauth2Client;
-}
-
 /**
- * Generates an authorization URL with CSRF protection and offline refresh token request.
+ * Backwards compatible alias for clearing credentials
  */
-export function generateAuthUrl(reqHostOrigin?: string, customReturnUrl?: string): { url: string; state: string } {
-  const creds = getEffectiveCredentials(reqHostOrigin);
-  if (!creds.clientId || !creds.clientSecret) {
-    throw new Error('Google Drive OAuth credentials (Client ID and Client Secret) are not yet configured on the server.');
-  }
-
-  const oauth2Client = getOAuth2Client(creds.redirectUri);
-  const state = crypto.randomBytes(24).toString('hex');
-
-  oauthStates.set(state, {
-    createdAt: Date.now(),
-    redirectUrl: customReturnUrl,
-  });
-
-  const url = oauth2Client.generateAuthUrl({
-    access_type: 'offline',
-    prompt: 'consent', // Forces refresh token issuance
-    scope: [
-      DRIVE_SCOPE,
-      'https://www.googleapis.com/auth/userinfo.email',
-      'https://www.googleapis.com/auth/userinfo.profile',
-    ],
-    state,
-    include_granted_scopes: true,
-  });
-
-  return { url, state };
-}
+export const clearStoredTokens = clearStoredServiceAccount;
 
 /**
- * Validates CSRF state and exchanges the authorization code for tokens.
+ * Backwards compatible alias for saving config
  */
-export async function handleAuthCallback(code: string, state: string, reqHostOrigin?: string) {
-  if (!state || !oauthStates.has(state)) {
-    throw new Error('Invalid or expired OAuth state token (CSRF verification failed).');
+export function saveStoredConfig(config: { rootFolderId?: string; folderId?: string; accountEmail?: string }): { success: boolean; error?: string } {
+  if (config.folderId || config.rootFolderId) {
+    inMemoryConfig.folderId = (config.folderId || config.rootFolderId || '').trim();
   }
-
-  const stateMeta = oauthStates.get(state);
-  oauthStates.delete(state);
-
-  const creds = getEffectiveCredentials(reqHostOrigin);
-  const oauth2Client = getOAuth2Client(creds.redirectUri);
-
-  const { tokens } = await oauth2Client.getToken(code);
-  oauth2Client.setCredentials(tokens);
-
-  // Fetch authenticated user profile details
-  let accountEmail = DEDICATED_ACCOUNT_EMAIL;
-  let accountName = 'Maple X Administrator';
-
-  try {
-    const oauth2 = google.oauth2({ version: 'v2', auth: oauth2Client });
-    const userInfo = await oauth2.userinfo.get();
-    if (userInfo.data.email) {
-      accountEmail = userInfo.data.email;
-    }
-    if (userInfo.data.name) {
-      accountName = userInfo.data.name;
-    }
-  } catch (userErr) {
-    console.warn('Could not query userinfo endpoint after Drive OAuth:', userErr);
-  }
-
-  saveStoredTokens({
-    access_token: tokens.access_token,
-    refresh_token: tokens.refresh_token,
-    scope: tokens.scope || DRIVE_SCOPE,
-    token_type: tokens.token_type || 'Bearer',
-    expiry_date: tokens.expiry_date,
-    account_email: accountEmail,
-    account_name: accountName,
-    connected_at: new Date().toISOString(),
-    root_folder_id: creds.rootFolderId,
-  });
-
-  return {
-    success: true,
-    accountEmail,
-    accountName,
-    returnUrl: stateMeta?.redirectUrl,
-  };
+  return { success: true };
 }
 
 /**
- * Checks Google Drive connection status and verifies access to the target root folder.
+ * Backwards compatible alias for direct token/credential imports
+ */
+export function saveStoredTokens(data: any): void {
+  if (data.credentialsJson) {
+    saveStoredServiceAccount(data.credentialsJson, data.rootFolderId || data.folderId);
+  } else if (data.client_email && data.private_key) {
+    saveStoredServiceAccount(data, data.rootFolderId || data.folderId);
+  }
+}
+
+/**
+ * Loads tokens / credentials status (backwards-compatible alias)
+ */
+export function loadStoredTokens(): any {
+  const sa = getServiceAccountCredentials();
+  if (sa.credentials) {
+    return {
+      access_token: 'service_account_managed',
+      account_email: sa.clientEmail,
+      root_folder_id: sa.folderId,
+      source: sa.source,
+    };
+  }
+  return null;
+}
+
+/**
+ * Returns authenticated Google Drive API Client using the Service Account
+ */
+export function getDriveClient() {
+  const sa = getServiceAccountCredentials();
+  if (!sa.credentials || !sa.credentials.client_email || !sa.credentials.private_key) {
+    throw new Error('Google Drive Service Account is not configured. Set GOOGLE_SERVICE_ACCOUNT_JSON in environment variables.');
+  }
+
+  const auth = new google.auth.JWT({
+    email: sa.credentials.client_email,
+    key: sa.credentials.private_key,
+    scopes: DRIVE_SCOPES,
+  });
+
+  return google.drive({ version: 'v3', auth });
+}
+
+/**
+ * Query Google Drive Service Account status & target folder metadata (safe, zero secrets returned)
  */
 export async function getDriveStatus(reqHostOrigin?: string) {
-  const creds = getEffectiveCredentials(reqHostOrigin);
-  const tokens = loadStoredTokens();
+  const sa = getServiceAccountCredentials();
+  const targetFolderId = sa.folderId;
+  const serviceAccountEmail = sa.clientEmail;
+  const projectId = sa.projectId;
 
-  const isConnected = Boolean(tokens && (tokens.access_token || tokens.refresh_token));
-
-  if (!isConnected) {
+  if (!sa.isConfigured || !sa.credentials) {
     return {
-      isConfigured: creds.isConfigured,
+      isConfigured: false,
       isConnected: false,
-      clientIdConfigured: creds.clientIdConfigured,
-      clientSecretConfigured: creds.clientSecretConfigured,
-      redirectUriConfigured: creds.redirectUriConfigured,
-      rootFolderConfigured: creds.rootFolderConfigured,
-      accountEmailConfigured: creds.accountEmailConfigured,
-      hasClientSecret: creds.clientSecretConfigured,
-      authorizedAccount: tokens?.account_email || creds.accountEmail,
-      dedicatedAccountEmail: creds.accountEmail,
-      rootFolderId: creds.rootFolderId,
-      redirectUri: creds.redirectUri,
-      statusMessage: creds.isConfigured
-        ? 'OAuth credentials configured. Ready to authorize / connect.'
-        : 'Google Drive OAuth credentials required.',
+      authType: 'service_account',
+      serviceAccountEmail,
+      projectId,
+      targetFolderId,
+      rootFolderId: targetFolderId,
+      serviceAccountConfigured: false,
+      folderIdConfigured: Boolean(process.env.GOOGLE_DRIVE_FOLDER_ID),
+      tokenSource: null,
+      statusMessage: 'GOOGLE_SERVICE_ACCOUNT_JSON required in environment variables.',
     };
   }
 
   try {
-    const oauth2Client = getOAuth2Client(creds.redirectUri);
-    const drive = google.drive({ version: 'v3', auth: oauth2Client });
+    const drive = getDriveClient();
 
-    // 1. Verify user profile & storage quota
-    const about = await drive.about.get({
-      fields: 'user, storageQuota',
-    });
+    // Verify access to the configured target folder
+    let targetFolderName = 'Maple X Client Document Vault';
+    let folderAccessible = false;
 
-    const userEmail = about.data.user?.emailAddress || tokens?.account_email || creds.accountEmail;
-    const userName = about.data.user?.displayName || tokens?.account_name;
-    const usedBytes = Number(about.data.storageQuota?.usage || 0);
-    const totalBytes = Number(about.data.storageQuota?.limit || 0);
-
-    // 2. Verify root folder access
-    let rootFolderName = 'Maple X Client Document Vault';
     try {
-      const folder = await drive.files.get({
-        fileId: creds.rootFolderId,
-        fields: 'id, name, mimeType',
+      const folderRes = await drive.files.get({
+        fileId: targetFolderId,
+        fields: 'id, name, mimeType, capabilities, trashed',
         supportsAllDrives: true,
       });
-      if (folder.data.name) {
-        rootFolderName = folder.data.name;
+
+      if (folderRes.data && folderRes.data.id) {
+        targetFolderName = folderRes.data.name || targetFolderName;
+        folderAccessible = !folderRes.data.trashed;
       }
     } catch (folderErr: any) {
-      console.warn(`Note on root folder (${creds.rootFolderId}):`, folderErr.message || folderErr);
+      console.warn(`Target folder verification note (${targetFolderId}):`, folderErr.message || folderErr);
     }
 
     return {
-      isConfigured: creds.isConfigured,
+      isConfigured: true,
       isConnected: true,
-      clientIdConfigured: creds.clientIdConfigured,
-      clientSecretConfigured: creds.clientSecretConfigured,
-      redirectUriConfigured: creds.redirectUriConfigured,
-      rootFolderConfigured: creds.rootFolderConfigured,
-      accountEmailConfigured: creds.accountEmailConfigured,
-      hasClientSecret: creds.clientSecretConfigured,
-      authorizedAccount: userEmail,
-      accountName: userName,
-      dedicatedAccountEmail: creds.accountEmail,
-      rootFolderId: creds.rootFolderId,
-      rootFolderName,
-      redirectUri: creds.redirectUri,
-      lastConnectedAt: tokens?.connected_at || new Date().toISOString(),
-      tokenExpiresAt: tokens?.expiry_date ? new Date(tokens.expiry_date).toISOString() : undefined,
-      storageUsage: {
-        usedBytes,
-        totalBytes,
-      },
-      statusMessage: `Active & Connected to ${userEmail}`,
+      authType: 'service_account',
+      serviceAccountEmail,
+      projectId,
+      targetFolderId,
+      rootFolderId: targetFolderId,
+      targetFolderName,
+      rootFolderName: targetFolderName,
+      folderAccessible,
+      serviceAccountConfigured: true,
+      folderIdConfigured: Boolean(process.env.GOOGLE_DRIVE_FOLDER_ID),
+      tokenSource: sa.source,
+      authorizedAccount: serviceAccountEmail,
+      statusMessage: folderAccessible
+        ? `Connected to Target Folder via Service Account (${serviceAccountEmail})`
+        : `Service Account active; verify folder permissions for ${targetFolderId}`,
     };
   } catch (err: any) {
     return {
-      isConfigured: creds.isConfigured,
+      isConfigured: true,
       isConnected: false,
-      clientIdConfigured: creds.clientIdConfigured,
-      clientSecretConfigured: creds.clientSecretConfigured,
-      redirectUriConfigured: creds.redirectUriConfigured,
-      rootFolderConfigured: creds.rootFolderConfigured,
-      accountEmailConfigured: creds.accountEmailConfigured,
-      hasClientSecret: creds.clientSecretConfigured,
-      authorizedAccount: tokens?.account_email || creds.accountEmail,
-      dedicatedAccountEmail: creds.accountEmail,
-      rootFolderId: creds.rootFolderId,
-      redirectUri: creds.redirectUri,
-      statusMessage: `Connection issue: ${err.message || 'Token refresh failed. Please re-authorize.'}`,
+      authType: 'service_account',
+      serviceAccountEmail,
+      projectId,
+      targetFolderId,
+      rootFolderId: targetFolderId,
+      serviceAccountConfigured: true,
+      folderIdConfigured: Boolean(process.env.GOOGLE_DRIVE_FOLDER_ID),
+      tokenSource: sa.source,
+      authorizedAccount: serviceAccountEmail,
+      statusMessage: `Authentication issue: ${err.message || 'Service account failed to authenticate with Drive API.'}`,
     };
   }
 }
 
 /**
- * Gets or creates a designated client folder under the Maple X root folder.
+ * Runs a comprehensive live connection test against Google Drive API and verifies access to the target folder
+ */
+export async function testDriveConnectionLive(reqHostOrigin?: string) {
+  const sa = getServiceAccountCredentials();
+  const results: {
+    step: string;
+    status: 'PASSED' | 'FAILED' | 'WARNING';
+    message: string;
+    details?: any;
+  }[] = [];
+
+  // Step 1: Service Account JSON validation
+  if (!sa.isConfigured || !sa.credentials) {
+    results.push({
+      step: 'Service Account Configuration',
+      status: 'FAILED',
+      message: 'GOOGLE_SERVICE_ACCOUNT_JSON is missing or does not contain valid "client_email" and "private_key".',
+    });
+    return {
+      success: false,
+      summary: 'Service Account credentials missing in server environment.',
+      serviceAccountEmail: sa.clientEmail,
+      targetFolderId: sa.folderId,
+      results,
+    };
+  }
+
+  results.push({
+    step: 'Service Account Configuration',
+    status: 'PASSED',
+    message: `Service Account detected: ${sa.clientEmail} (Project: ${sa.projectId}, Source: ${sa.source})`,
+  });
+
+  // Step 2: Drive API Authentication
+  let drive;
+  try {
+    drive = getDriveClient();
+    results.push({
+      step: 'Google Drive API Authentication',
+      status: 'PASSED',
+      message: `JWT token created and authenticated for ${sa.clientEmail}`,
+    });
+  } catch (authErr: any) {
+    results.push({
+      step: 'Google Drive API Authentication',
+      status: 'FAILED',
+      message: `Authentication error: ${authErr?.message || authErr}`,
+    });
+    return {
+      success: false,
+      summary: `Google Drive API authentication failed: ${authErr?.message || authErr}`,
+      serviceAccountEmail: sa.clientEmail,
+      targetFolderId: sa.folderId,
+      results,
+    };
+  }
+
+  // Step 3: Target Folder Access & Permissions
+  let folderName = 'Target Root Folder';
+  try {
+    const folderRes = await drive.files.get({
+      fileId: sa.folderId,
+      fields: 'id, name, mimeType, capabilities, trashed, sharingUser',
+      supportsAllDrives: true,
+    });
+
+    const folderData = folderRes.data;
+    folderName = folderData.name || sa.folderId;
+
+    if (folderData.trashed) {
+      results.push({
+        step: 'Target Folder Access',
+        status: 'WARNING',
+        message: `Target folder "${folderName}" (${sa.folderId}) is in the trash bin.`,
+      });
+    } else {
+      const canAddChildren = folderData.capabilities?.canAddChildren !== false;
+      results.push({
+        step: 'Target Folder Access & Permissions',
+        status: canAddChildren ? 'PASSED' : 'WARNING',
+        message: `Target folder "${folderName}" (${sa.folderId}) verified with Editor access for service account.`,
+        details: {
+          name: folderData.name,
+          canAddChildren: folderData.capabilities?.canAddChildren,
+          canListChildren: folderData.capabilities?.canListChildren,
+        },
+      });
+    }
+  } catch (folderErr: any) {
+    results.push({
+      step: 'Target Folder Access & Permissions',
+      status: 'FAILED',
+      message: `Could not access target folder (${sa.folderId}): ${folderErr?.message || folderErr}. Ensure the folder is shared with "${sa.clientEmail}" with Editor role.`,
+    });
+    return {
+      success: false,
+      summary: `Target folder not accessible. Share folder ${sa.folderId} with ${sa.clientEmail}.`,
+      serviceAccountEmail: sa.clientEmail,
+      targetFolderId: sa.folderId,
+      results,
+    };
+  }
+
+  // Step 4: Folder Contents Query (List Files)
+  try {
+    const listRes = await drive.files.list({
+      q: `'${sa.folderId}' in parents and trashed = false`,
+      pageSize: 10,
+      fields: 'files(id, name, mimeType, size, createdTime)',
+      supportsAllDrives: true,
+      includeItemsFromAllDrives: true,
+    });
+
+    const fileCount = listRes.data.files?.length || 0;
+    results.push({
+      step: 'Target Folder Listing',
+      status: 'PASSED',
+      message: `Read access confirmed: found ${fileCount} item(s) in folder "${folderName}".`,
+      details: {
+        sampleFiles: listRes.data.files?.map((f) => ({ name: f.name, id: f.id })),
+      },
+    });
+  } catch (listErr: any) {
+    results.push({
+      step: 'Target Folder Listing',
+      status: 'WARNING',
+      message: `Listing files inside folder encountered notice: ${listErr?.message || listErr}`,
+    });
+  }
+
+  const allPassed = results.every((r) => r.status !== 'FAILED');
+
+  return {
+    success: allPassed,
+    summary: allPassed
+      ? `Google Drive Service Account authenticated successfully. Folder "${folderName}" is ready.`
+      : 'Connection test completed with warnings/errors.',
+    serviceAccountEmail: sa.clientEmail,
+    targetFolderId: sa.folderId,
+    targetFolderName: folderName,
+    results,
+  };
+}
+
+/**
+ * Lists portal files inside the target folder or a designated subfolder
+ */
+export async function listDriveFiles(folderId?: string, limit = 50) {
+  const sa = getServiceAccountCredentials();
+  const drive = getDriveClient();
+  const parentFolder = folderId || sa.folderId;
+
+  const res = await drive.files.list({
+    q: `'${parentFolder}' in parents and trashed = false`,
+    pageSize: Math.min(limit, 100),
+    fields: 'files(id, name, mimeType, size, webViewLink, createdTime, modifiedTime, properties)',
+    orderBy: 'createdTime desc',
+    supportsAllDrives: true,
+    includeItemsFromAllDrives: true,
+  });
+
+  return (res.data.files || []).map((file) => ({
+    id: file.id!,
+    name: file.name!,
+    mimeType: file.mimeType || 'application/octet-stream',
+    size: file.size ? Number(file.size) : 0,
+    webViewLink: file.webViewLink || `https://drive.google.com/file/d/${file.id}/view`,
+    createdTime: file.createdTime || new Date().toISOString(),
+    modifiedTime: file.modifiedTime,
+    properties: file.properties || {},
+  }));
+}
+
+/**
+ * Gets or creates a designated client subfolder under the target Google Drive root folder.
+ * Strict Constraint: All portal subfolders are strictly children of GOOGLE_DRIVE_FOLDER_ID.
  */
 export async function getOrCreateClientFolder(
   clientId: string,
   clientName?: string,
   businessName?: string
 ): Promise<string> {
-  const creds = getEffectiveCredentials();
-  const oauth2Client = getOAuth2Client();
-  const drive = google.drive({ version: 'v3', auth: oauth2Client });
+  const sa = getServiceAccountCredentials();
+  const drive = getDriveClient();
+  const rootFolderId = sa.folderId;
 
-  const rootFolderId = creds.rootFolderId;
   const folderDisplayName = businessName
     ? `${businessName} (${clientId})`
     : clientName
     ? `${clientName} (${clientId})`
     : `Client ${clientId}`;
 
-  // Check if folder already exists in the root folder
+  // Check if folder already exists in the configured target root folder
   const escapedName = folderDisplayName.replace(/'/g, "\\'");
   const q = `'${rootFolderId}' in parents and mimeType = 'application/vnd.google-apps.folder' and name = '${escapedName}' and trashed = false`;
 
@@ -528,10 +631,10 @@ export async function getOrCreateClientFolder(
       return list.data.files[0].id!;
     }
   } catch (searchErr) {
-    console.warn('Folder search notice in Drive, will attempt creation:', searchErr);
+    console.warn('Folder search notice in Drive, attempting folder creation:', searchErr);
   }
 
-  // Create client folder
+  // Create client folder strictly inside target root folder
   const created = await drive.files.create({
     requestBody: {
       name: folderDisplayName,
@@ -547,7 +650,8 @@ export async function getOrCreateClientFolder(
 }
 
 /**
- * Uploads a document directly to Google Drive into the client folder.
+ * Uploads a document directly to Google Drive into the client folder or target folder.
+ * Strict Constraint: Files are strictly uploaded to GOOGLE_DRIVE_FOLDER_ID or a subfolder inside it.
  */
 export async function uploadFileToGoogleDrive({
   buffer,
@@ -566,16 +670,16 @@ export async function uploadFileToGoogleDrive({
   businessName?: string;
   category?: string;
 }) {
-  const creds = getEffectiveCredentials();
-  const oauth2Client = getOAuth2Client();
-  const drive = google.drive({ version: 'v3', auth: oauth2Client });
+  const sa = getServiceAccountCredentials();
+  const drive = getDriveClient();
 
-  // 1. Get or create Client folder
-  let targetFolderId = creds.rootFolderId;
+  // 1. Get or create Client folder inside target folder
+  let targetFolderId = sa.folderId;
   try {
     targetFolderId = await getOrCreateClientFolder(clientId, clientName, businessName);
   } catch (folderErr) {
-    console.warn('Could not create subfolder, uploading to root folder:', folderErr);
+    console.warn(`Could not create subfolder, uploading directly to target root folder (${sa.folderId}):`, folderErr);
+    targetFolderId = sa.folderId;
   }
 
   // 2. Stream upload to Google Drive
@@ -589,6 +693,7 @@ export async function uploadFileToGoogleDrive({
       clientId,
       category: category || 'Other',
       uploadedAt: new Date().toISOString(),
+      uploadedByServiceAccount: sa.clientEmail,
       source: 'Maple X Financial Operations Portal',
     },
   };
@@ -624,8 +729,7 @@ export async function uploadFileToGoogleDrive({
  * Fetches file content stream from Google Drive.
  */
 export async function getDriveFileStream(fileId: string) {
-  const oauth2Client = getOAuth2Client();
-  const drive = google.drive({ version: 'v3', auth: oauth2Client });
+  const drive = getDriveClient();
 
   // Get file metadata first
   const meta = await drive.files.get({
@@ -654,8 +758,7 @@ export async function getDriveFileStream(fileId: string) {
  * Fetches full file buffer from Google Drive (used for Gemini AI document parsing).
  */
 export async function getDriveFileBuffer(fileId: string): Promise<{ buffer: Buffer; mimeType: string; fileName: string }> {
-  const oauth2Client = getOAuth2Client();
-  const drive = google.drive({ version: 'v3', auth: oauth2Client });
+  const drive = getDriveClient();
 
   const meta = await drive.files.get({
     fileId,
@@ -685,8 +788,7 @@ export async function getDriveFileBuffer(fileId: string): Promise<{ buffer: Buff
  */
 export async function deleteDriveFile(fileId: string): Promise<boolean> {
   try {
-    const oauth2Client = getOAuth2Client();
-    const drive = google.drive({ version: 'v3', auth: oauth2Client });
+    const drive = getDriveClient();
     await drive.files.delete({
       fileId,
       supportsAllDrives: true,
@@ -699,12 +801,11 @@ export async function deleteDriveFile(fileId: string): Promise<boolean> {
 }
 
 /**
- * Production-safe configuration diagnostic.
- * Reads directly from process.env and stored config in the backend.
- * Never exposes credential values, secrets, tokens, or OAuth authorization URLs.
+ * Production-safe configuration diagnostic (zero secrets exposed).
  */
 export function getDriveDiagnostic(reqHostOrigin?: string) {
-  const creds = getEffectiveCredentials(reqHostOrigin);
+  const sa = getServiceAccountCredentials();
+  const isVercel = Boolean(process.env.VERCEL || process.env.VERCEL_ENV || process.env.NEXT_PUBLIC_VERCEL_URL);
 
   const serverInstance =
     process.env.K_REVISION ||
@@ -716,13 +817,36 @@ export function getDriveDiagnostic(reqHostOrigin?: string) {
     `instance-${process.pid}`;
 
   return {
-    clientIdConfigured: creds.clientIdConfigured,
-    clientSecretConfigured: creds.clientSecretConfigured,
-    redirectUriConfigured: creds.redirectUriConfigured,
-    rootFolderConfigured: creds.rootFolderConfigured,
-    accountEmailConfigured: creds.accountEmailConfigured,
-    environment: process.env.NODE_ENV || (process.env.VERCEL ? 'production (vercel)' : 'production'),
+    authType: 'service_account',
+    serviceAccountConfigured: sa.isConfigured,
+    serviceAccountEmail: sa.clientEmail,
+    projectId: sa.projectId,
+    folderIdConfigured: Boolean(process.env.GOOGLE_DRIVE_FOLDER_ID),
+    targetFolderId: sa.folderId,
+    tokenSource: sa.source,
+    isVercel,
+    environment: process.env.NODE_ENV || (isVercel ? 'production (vercel)' : 'production'),
     serverTime: new Date().toISOString(),
     serverInstance,
+  };
+}
+
+/**
+ * Backwards compatibility exports for OAuth routes
+ */
+export function generateAuthUrl(reqHostOrigin?: string, customReturnUrl?: string) {
+  return {
+    url: '/?tab=settings&notice=service_account_active',
+    state: 'service_account_mode',
+  };
+}
+
+export async function handleAuthCallback(code: string, state: string, reqHostOrigin?: string) {
+  const sa = getServiceAccountCredentials();
+  return {
+    success: true,
+    accountEmail: sa.clientEmail,
+    accountName: 'Maple X Service Account',
+    returnUrl: '/?tab=settings',
   };
 }

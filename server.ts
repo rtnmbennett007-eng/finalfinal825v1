@@ -11,6 +11,7 @@ import {
   generateAuthUrl,
   handleAuthCallback,
   getDriveStatus,
+  getDriveDiagnostic,
   saveStoredConfig,
   clearStoredTokens,
   uploadFileToGoogleDrive,
@@ -3247,6 +3248,36 @@ app.get('/api/drive/config', async (req, res) => {
   }
 });
 
+// Status endpoint alias
+app.get('/api/drive/status', async (req, res) => {
+  try {
+    const hostOrigin = `${req.protocol}://${req.get('host')}`;
+    const status = await getDriveStatus(hostOrigin);
+    res.json(status);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message || 'Failed to check Google Drive status' });
+  }
+});
+
+// Production-safe Google Drive configuration diagnostic (strictly reads process.env, zero secrets)
+app.get('/api/drive/diagnostic', (req, res) => {
+  try {
+    const diagnostic = getDriveDiagnostic();
+    res.json(diagnostic);
+  } catch (err: any) {
+    res.status(500).json({ error: err?.message || 'Failed to generate Google Drive diagnostic' });
+  }
+});
+
+// Diagnostic route aliases
+app.get('/api/drive/diagnostics', (req, res) => {
+  res.json(getDriveDiagnostic());
+});
+app.get('/api/settings/google-drive/diagnostic', (req, res) => {
+  res.json(getDriveDiagnostic());
+});
+
+
 // Update Google Drive credentials securely on server
 app.post('/api/drive/config', async (req, res) => {
   try {
@@ -4586,4 +4617,8 @@ async function startServer() {
   });
 }
 
-startServer();
+export default app;
+
+if (!process.env.VERCEL) {
+  startServer();
+}

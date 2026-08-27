@@ -697,3 +697,65 @@ export async function deleteDriveFile(fileId: string): Promise<boolean> {
     return false;
   }
 }
+
+/**
+ * Production-safe configuration diagnostic.
+ * Reads directly from process.env in the backend.
+ * Never exposes credential values, secrets, tokens, or OAuth authorization URLs.
+ */
+export function getDriveDiagnostic() {
+  const clientIdRaw = (
+    process.env.GOOGLE_DRIVE_CLIENT_ID ||
+    process.env.GOOGLE_CLIENT_ID ||
+    process.env.DRIVE_CLIENT_ID ||
+    process.env.VITE_GOOGLE_DRIVE_CLIENT_ID ||
+    ''
+  ).trim();
+
+  const clientSecretRaw = (
+    process.env.GOOGLE_DRIVE_CLIENT_SECRET ||
+    process.env.GOOGLE_CLIENT_SECRET ||
+    process.env.DRIVE_CLIENT_SECRET ||
+    ''
+  ).trim();
+
+  const redirectUriRaw = (
+    process.env.GOOGLE_DRIVE_REDIRECT_URI ||
+    process.env.GOOGLE_REDIRECT_URI ||
+    process.env.DRIVE_REDIRECT_URI ||
+    ''
+  ).trim();
+
+  const rootFolderRaw = (
+    process.env.GOOGLE_DRIVE_ROOT_FOLDER_ID ||
+    process.env.GOOGLE_ROOT_FOLDER_ID ||
+    process.env.DRIVE_ROOT_FOLDER_ID ||
+    ''
+  ).trim();
+
+  const accountEmailRaw = (
+    process.env.GOOGLE_DRIVE_ACCOUNT_EMAIL ||
+    process.env.GOOGLE_ACCOUNT_EMAIL ||
+    process.env.DRIVE_ACCOUNT_EMAIL ||
+    ''
+  ).trim();
+
+  const serverInstance =
+    process.env.K_REVISION ||
+    process.env.K_SERVICE ||
+    process.env.HOSTNAME ||
+    process.env.CONTAINER_ID ||
+    process.env.INSTANCE_ID ||
+    `instance-${process.pid}`;
+
+  return {
+    clientIdConfigured: Boolean(clientIdRaw.length > 0),
+    clientSecretConfigured: Boolean(clientSecretRaw.length > 0),
+    redirectUriConfigured: Boolean(redirectUriRaw.length > 0),
+    rootFolderConfigured: Boolean(rootFolderRaw.length > 0),
+    accountEmailConfigured: Boolean(accountEmailRaw.length > 0),
+    environment: process.env.NODE_ENV || 'production',
+    serverTime: new Date().toISOString(),
+    serverInstance,
+  };
+}

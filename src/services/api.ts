@@ -13,6 +13,7 @@ import {
   FundingStrategyRecord,
   GhlConfig,
   GoogleDriveConfig,
+  GoogleDriveDiagnostic,
   InternalTask,
   Lead,
   LeadSourceOption,
@@ -671,6 +672,16 @@ export const api = {
     }
     return res.json();
   },
+
+  getGoogleDriveDiagnostic: async (): Promise<GoogleDriveDiagnostic> => {
+    const res = await fetch('/api/drive/diagnostic');
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ error: 'Failed to fetch Google Drive diagnostic' }));
+      throw new Error(err.error || 'Failed to fetch Google Drive diagnostic');
+    }
+    return res.json();
+  },
+
 
   updateGoogleDriveConfig: async (config: Partial<GoogleDriveConfig> & { clientSecret?: string }) => {
     const res = await fetch('/api/drive/config', {

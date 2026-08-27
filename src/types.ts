@@ -1525,6 +1525,18 @@ export interface GoogleDriveConfig {
   };
 }
 
+export interface GoogleDriveDiagnostic {
+  clientIdConfigured: boolean;
+  clientSecretConfigured: boolean;
+  redirectUriConfigured: boolean;
+  rootFolderConfigured: boolean;
+  accountEmailConfigured: boolean;
+  environment: string;
+  serverTime: string;
+  serverInstance: string;
+}
+
+
 export interface CommunicationLogItem {
   id: string;
   clientId: string;

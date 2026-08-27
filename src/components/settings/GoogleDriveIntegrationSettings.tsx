@@ -17,16 +17,28 @@ import {
   Layers,
   ArrowUpRight,
   Info,
+  Terminal,
+  Server,
+  Activity,
+  Clock,
+  ShieldAlert,
+  ChevronDown,
+  ChevronUp,
 } from 'lucide-react';
 import { api } from '../../services/api';
-import { GoogleDriveConfig } from '../../types';
+import { GoogleDriveConfig, GoogleDriveDiagnostic } from '../../types';
 import { useData } from '../../context/DataContext';
 
 export const GoogleDriveIntegrationSettings: React.FC = () => {
   const { addToast } = useData();
 
   const [config, setConfig] = useState<GoogleDriveConfig | null>(null);
+  const [diagnostic, setDiagnostic] = useState<GoogleDriveDiagnostic | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [isDiagnosticLoading, setIsDiagnosticLoading] = useState(false);
+  const [diagnosticError, setDiagnosticError] = useState<string | null>(null);
+  const [lastDiagnosticRun, setLastDiagnosticRun] = useState<string | null>(null);
+  const [showRawJson, setShowRawJson] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [isDisconnecting, setIsDisconnecting] = useState(false);
   const [isConnecting, setIsConnecting] = useState(false);
@@ -41,17 +53,36 @@ export const GoogleDriveIntegrationSettings: React.FC = () => {
     rootFolderId: '1qTQe0N8Wb_5MTDrp_BmOrdSjI5QWGqVm',
   });
 
+  const runDiagnostic = async () => {
+    setIsDiagnosticLoading(true);
+    setDiagnosticError(null);
+    try {
+      const diagData = await api.getGoogleDriveDiagnostic();
+      setDiagnostic(diagData);
+      setLastDiagnosticRun(new Date().toLocaleTimeString());
+    } catch (err: any) {
+      console.warn('Failed to load Google Drive diagnostic:', err);
+      setDiagnosticError(err?.message || 'Failed to fetch diagnostic from production backend.');
+    } finally {
+      setIsDiagnosticLoading(false);
+    }
+  };
+
   const loadStatus = async () => {
     setIsLoading(true);
     try {
-      const data = await api.getGoogleDriveConfig();
-      setConfig(data);
-      if (data) {
+      const [configData] = await Promise.allSettled([
+        api.getGoogleDriveConfig(),
+        runDiagnostic(),
+      ]);
+
+      if (configData.status === 'fulfilled' && configData.value) {
+        setConfig(configData.value);
         setFormState((prev) => ({
           ...prev,
-          clientId: data.clientId || '',
-          redirectUri: data.redirectUri || '',
-          rootFolderId: data.rootFolderId || '1qTQe0N8Wb_5MTDrp_BmOrdSjI5QWGqVm',
+          clientId: configData.value.clientId || '',
+          redirectUri: configData.value.redirectUri || '',
+          rootFolderId: configData.value.rootFolderId || '1qTQe0N8Wb_5MTDrp_BmOrdSjI5QWGqVm',
         }));
       }
     } catch (err: any) {
@@ -60,6 +91,7 @@ export const GoogleDriveIntegrationSettings: React.FC = () => {
       setIsLoading(false);
     }
   };
+
 
   useEffect(() => {
     loadStatus();
@@ -309,7 +341,7 @@ export const GoogleDriveIntegrationSettings: React.FC = () => {
           <div className="bg-[#081226] border border-blue-900/30 p-3.5 rounded-xl">
             <span className="text-[10px] uppercase font-bold text-slate-400 tracking-wider">Client ID</span>
             <div className="text-slate-200 font-mono truncate mt-1 flex items-center gap-1.5">
-              {config?.clientIdConfigured ? (
+              {(config?.clientIdConfigured || diagnostic?.clientIdConfigured) ? (
                 <span className="text-emerald-400 flex items-center gap-1 font-semibold">
                   <CheckCircle2 className="w-3.5 h-3.5" /> CLIENT ID CONFIGURED
                 </span>
@@ -325,7 +357,7 @@ export const GoogleDriveIntegrationSettings: React.FC = () => {
           <div className="bg-[#081226] border border-blue-900/30 p-3.5 rounded-xl">
             <span className="text-[10px] uppercase font-bold text-slate-400 tracking-wider">Client Secret</span>
             <div className="text-slate-200 font-mono truncate mt-1 flex items-center gap-1.5">
-              {config?.clientSecretConfigured ? (
+              {(config?.clientSecretConfigured || diagnostic?.clientSecretConfigured) ? (
                 <span className="text-emerald-400 flex items-center gap-1 font-semibold">
                   <CheckCircle2 className="w-3.5 h-3.5" /> CLIENT SECRET CONFIGURED
                 </span>
@@ -339,6 +371,219 @@ export const GoogleDriveIntegrationSettings: React.FC = () => {
           </div>
         </div>
       </div>
+
+      {/* Production Backend Environment Diagnostics */}
+      <div className="bg-[#0b1730] border border-cyan-900/40 rounded-2xl p-6 shadow-xl relative overflow-hidden" id="google-drive-diagnostic-card">
+        {/* Glow */}
+        <div className="absolute top-0 right-0 w-80 h-80 bg-cyan-600/5 rounded-full blur-3xl pointer-events-none -mr-16 -mt-16" />
+
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 border-b border-cyan-900/30 pb-4">
+          <div className="flex items-center gap-3">
+            <div className="p-2.5 rounded-xl bg-cyan-500/10 border border-cyan-500/30 text-cyan-400">
+              <Terminal className="w-5 h-5" />
+            </div>
+            <div>
+              <div className="flex items-center gap-2">
+                <h4 className="text-sm font-bold text-slate-100 flex items-center gap-2">
+                  Production Environment Diagnostic
+                </h4>
+                <span className="px-2 py-0.5 rounded-full text-[10px] font-mono font-bold bg-cyan-500/15 text-cyan-300 border border-cyan-500/30 uppercase">
+                  Direct process.env Read
+                </span>
+              </div>
+              <p className="text-xs text-slate-400 mt-0.5">
+                Verifies if the running production container detects Google Drive environment variables in <code className="text-cyan-300 font-mono">process.env</code> (zero secrets exposed).
+              </p>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2 shrink-0">
+            {lastDiagnosticRun && (
+              <span className="text-[11px] text-slate-400 font-mono hidden md:inline-block">
+                Checked: {lastDiagnosticRun}
+              </span>
+            )}
+            <button
+              type="button"
+              id="btn-run-drive-diagnostic"
+              onClick={runDiagnostic}
+              disabled={isDiagnosticLoading}
+              className="px-3.5 py-2 rounded-xl bg-cyan-600/20 hover:bg-cyan-600/30 text-cyan-300 hover:text-cyan-200 border border-cyan-500/30 font-semibold text-xs transition-all flex items-center gap-2 disabled:opacity-50"
+            >
+              <RefreshCw className={`w-3.5 h-3.5 ${isDiagnosticLoading ? 'animate-spin text-cyan-400' : ''}`} />
+              <span>Run Live Diagnostic</span>
+            </button>
+          </div>
+        </div>
+
+        {diagnosticError && (
+          <div className="mt-4 p-3 bg-rose-950/40 border border-rose-900/50 rounded-xl text-xs text-rose-300 flex items-center gap-2">
+            <AlertCircle className="w-4 h-4 text-rose-400 shrink-0" />
+            <span>{diagnosticError}</span>
+          </div>
+        )}
+
+        {/* Diagnostic Status Evaluation Banner */}
+        {diagnostic && (
+          <div className="mt-4 space-y-4">
+            <div className={`p-4 rounded-xl border flex items-start gap-3 text-xs ${
+              diagnostic.clientIdConfigured && diagnostic.clientSecretConfigured
+                ? 'bg-emerald-950/30 border-emerald-500/30 text-emerald-300'
+                : 'bg-amber-950/30 border-amber-500/30 text-amber-300'
+            }`}>
+              {diagnostic.clientIdConfigured && diagnostic.clientSecretConfigured ? (
+                <CheckCircle2 className="w-5 h-5 text-emerald-400 shrink-0 mt-0.5" />
+              ) : (
+                <ShieldAlert className="w-5 h-5 text-amber-400 shrink-0 mt-0.5" />
+              )}
+              <div>
+                <div className="font-bold text-slate-100 text-xs">
+                  {diagnostic.clientIdConfigured && diagnostic.clientSecretConfigured
+                    ? 'Backend Sees All Required OAuth Variables'
+                    : 'Backend Environment Incomplete'}
+                </div>
+                <p className="mt-0.5 leading-relaxed text-[11px] opacity-90">
+                  {diagnostic.clientIdConfigured && diagnostic.clientSecretConfigured
+                    ? 'The production server successfully detects both GOOGLE_DRIVE_CLIENT_ID and GOOGLE_DRIVE_CLIENT_SECRET in process.env. The container is ready for OAuth token exchanges and document streaming.'
+                    : 'The production backend is missing required environment variables in process.env. Ensure GOOGLE_DRIVE_CLIENT_ID and GOOGLE_DRIVE_CLIENT_SECRET are configured in your production host / container environment.'}
+                </p>
+              </div>
+            </div>
+
+            {/* 5 Variable Flags Breakdown */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 text-xs">
+              <div className="bg-[#081226] border border-blue-900/30 p-3 rounded-xl flex items-center justify-between">
+                <div>
+                  <div className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">GOOGLE_DRIVE_CLIENT_ID</div>
+                  <div className="text-slate-200 font-mono text-[11px] mt-0.5">OAuth Client ID</div>
+                </div>
+                <span className={`px-2.5 py-1 rounded-full font-mono text-[10px] font-bold flex items-center gap-1 ${
+                  diagnostic.clientIdConfigured
+                    ? 'bg-emerald-500/15 text-emerald-400 border border-emerald-500/30'
+                    : 'bg-rose-500/15 text-rose-400 border border-rose-500/30'
+                }`}>
+                  {diagnostic.clientIdConfigured ? <CheckCircle2 className="w-3 h-3" /> : <AlertCircle className="w-3 h-3" />}
+                  {diagnostic.clientIdConfigured ? 'CONFIGURED' : 'MISSING'}
+                </span>
+              </div>
+
+              <div className="bg-[#081226] border border-blue-900/30 p-3 rounded-xl flex items-center justify-between">
+                <div>
+                  <div className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">GOOGLE_DRIVE_CLIENT_SECRET</div>
+                  <div className="text-slate-200 font-mono text-[11px] mt-0.5">Client Secret (Hidden)</div>
+                </div>
+                <span className={`px-2.5 py-1 rounded-full font-mono text-[10px] font-bold flex items-center gap-1 ${
+                  diagnostic.clientSecretConfigured
+                    ? 'bg-emerald-500/15 text-emerald-400 border border-emerald-500/30'
+                    : 'bg-rose-500/15 text-rose-400 border border-rose-500/30'
+                }`}>
+                  {diagnostic.clientSecretConfigured ? <CheckCircle2 className="w-3 h-3" /> : <AlertCircle className="w-3 h-3" />}
+                  {diagnostic.clientSecretConfigured ? 'CONFIGURED' : 'MISSING'}
+                </span>
+              </div>
+
+              <div className="bg-[#081226] border border-blue-900/30 p-3 rounded-xl flex items-center justify-between">
+                <div>
+                  <div className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">GOOGLE_DRIVE_REDIRECT_URI</div>
+                  <div className="text-slate-200 font-mono text-[11px] mt-0.5">Callback URI</div>
+                </div>
+                <span className={`px-2.5 py-1 rounded-full font-mono text-[10px] font-bold flex items-center gap-1 ${
+                  diagnostic.redirectUriConfigured
+                    ? 'bg-emerald-500/15 text-emerald-400 border border-emerald-500/30'
+                    : 'bg-blue-500/15 text-blue-300 border border-blue-500/30'
+                }`}>
+                  {diagnostic.redirectUriConfigured ? <CheckCircle2 className="w-3 h-3" /> : <Info className="w-3 h-3" />}
+                  {diagnostic.redirectUriConfigured ? 'CUSTOM' : 'DYNAMIC / DEFAULT'}
+                </span>
+              </div>
+
+              <div className="bg-[#081226] border border-blue-900/30 p-3 rounded-xl flex items-center justify-between">
+                <div>
+                  <div className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">GOOGLE_DRIVE_ROOT_FOLDER_ID</div>
+                  <div className="text-slate-200 font-mono text-[11px] mt-0.5">Target Vault Folder</div>
+                </div>
+                <span className={`px-2.5 py-1 rounded-full font-mono text-[10px] font-bold flex items-center gap-1 ${
+                  diagnostic.rootFolderConfigured
+                    ? 'bg-emerald-500/15 text-emerald-400 border border-emerald-500/30'
+                    : 'bg-blue-500/15 text-blue-300 border border-blue-500/30'
+                }`}>
+                  {diagnostic.rootFolderConfigured ? <CheckCircle2 className="w-3 h-3" /> : <Info className="w-3 h-3" />}
+                  {diagnostic.rootFolderConfigured ? 'CUSTOM' : 'DEFAULT'}
+                </span>
+              </div>
+
+              <div className="bg-[#081226] border border-blue-900/30 p-3 rounded-xl flex items-center justify-between">
+                <div>
+                  <div className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">GOOGLE_DRIVE_ACCOUNT_EMAIL</div>
+                  <div className="text-slate-200 font-mono text-[11px] mt-0.5">Dedicated Admin Email</div>
+                </div>
+                <span className={`px-2.5 py-1 rounded-full font-mono text-[10px] font-bold flex items-center gap-1 ${
+                  diagnostic.accountEmailConfigured
+                    ? 'bg-emerald-500/15 text-emerald-400 border border-emerald-500/30'
+                    : 'bg-blue-500/15 text-blue-300 border border-blue-500/30'
+                }`}>
+                  {diagnostic.accountEmailConfigured ? <CheckCircle2 className="w-3 h-3" /> : <Info className="w-3 h-3" />}
+                  {diagnostic.accountEmailConfigured ? 'CUSTOM' : 'DEFAULT ADMIN'}
+                </span>
+              </div>
+
+              <div className="bg-[#081226] border border-blue-900/30 p-3 rounded-xl flex items-center justify-between">
+                <div>
+                  <div className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">NODE_ENV / ENVIRONMENT</div>
+                  <div className="text-slate-200 font-mono text-[11px] mt-0.5">Execution Target</div>
+                </div>
+                <span className="px-2.5 py-1 rounded-full font-mono text-[10px] font-bold bg-cyan-500/15 text-cyan-300 border border-cyan-500/30 uppercase">
+                  {diagnostic.environment}
+                </span>
+              </div>
+            </div>
+
+            {/* Server Runtime Metadata Bar */}
+            <div className="p-3 bg-[#081226] border border-blue-900/30 rounded-xl flex flex-wrap items-center justify-between gap-3 text-[11px] text-slate-400">
+              <div className="flex items-center gap-2">
+                <Clock className="w-3.5 h-3.5 text-cyan-400" />
+                <span>Backend Server Time:</span>
+                <span className="text-slate-200 font-mono">{diagnostic.serverTime}</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <Server className="w-3.5 h-3.5 text-cyan-400" />
+                <span>Backend Server Instance:</span>
+                <span className="text-slate-200 font-mono font-medium">{diagnostic.serverInstance}</span>
+              </div>
+            </div>
+
+            {/* Toggle Raw JSON Response */}
+            <div className="pt-1">
+              <button
+                type="button"
+                id="toggle-diagnostic-raw-json"
+                onClick={() => setShowRawJson(!showRawJson)}
+                className="text-[11px] text-slate-400 hover:text-slate-200 flex items-center gap-1 font-mono transition-colors"
+              >
+                {showRawJson ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
+                <span>{showRawJson ? 'Hide Diagnostic JSON Endpoint Response' : 'Inspect Diagnostic JSON Endpoint Response (/api/drive/diagnostic)'}</span>
+              </button>
+
+              {showRawJson && (
+                <div className="mt-2 relative">
+                  <pre className="bg-[#050b18] border border-blue-900/40 p-3.5 rounded-xl text-[11px] text-cyan-300 font-mono overflow-x-auto select-all">
+                    {JSON.stringify(diagnostic, null, 2)}
+                  </pre>
+                  <button
+                    type="button"
+                    onClick={() => copyToClipboard(JSON.stringify(diagnostic, null, 2), 'diagnosticJson')}
+                    className="absolute top-2 right-2 px-2 py-1 rounded bg-slate-800/80 hover:bg-slate-700 text-[10px] text-slate-300 font-mono flex items-center gap-1 border border-slate-700"
+                  >
+                    {copiedKey === 'diagnosticJson' ? <Check className="w-3 h-3 text-emerald-400" /> : <Copy className="w-3 h-3" />}
+                    <span>Copy JSON</span>
+                  </button>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+      </div>
+
 
       {/* OAuth Setup & Configuration Details Accordion */}
       <div className="bg-[#0b1730] border border-blue-900/40 rounded-2xl overflow-hidden shadow-lg">

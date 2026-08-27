@@ -3249,23 +3249,39 @@ app.get(['/api/auth/google/callback', '/auth/google/callback'], (req, res) => {
 
 // Query Google Drive connection status & metadata (safe, no secrets exposed)
 app.get(['/api/drive/config', '/drive/config'], async (req, res) => {
+  res.setHeader('Content-Type', 'application/json');
   try {
-    const hostOrigin = `${req.protocol}://${req.get('host')}`;
+    const hostOrigin = getRequestOrigin(req);
     const status = await getDriveStatus(hostOrigin);
     res.json(status);
   } catch (err: any) {
-    res.status(500).json({ error: err.message || 'Failed to check Google Drive configuration' });
+    res.json({
+      isConfigured: false,
+      isConnected: false,
+      authType: 'service_account',
+      serviceAccountEmail: DEDICATED_ACCOUNT_EMAIL,
+      targetFolderId: DEFAULT_ROOT_FOLDER_ID,
+      error: err.message || 'Failed to check Google Drive configuration',
+    });
   }
 });
 
 // Status endpoint alias
 app.get(['/api/drive/status', '/drive/status'], async (req, res) => {
+  res.setHeader('Content-Type', 'application/json');
   try {
-    const hostOrigin = `${req.protocol}://${req.get('host')}`;
+    const hostOrigin = getRequestOrigin(req);
     const status = await getDriveStatus(hostOrigin);
     res.json(status);
   } catch (err: any) {
-    res.status(500).json({ error: err.message || 'Failed to check Google Drive status' });
+    res.json({
+      isConfigured: false,
+      isConnected: false,
+      authType: 'service_account',
+      serviceAccountEmail: DEDICATED_ACCOUNT_EMAIL,
+      targetFolderId: DEFAULT_ROOT_FOLDER_ID,
+      error: err.message || 'Failed to check Google Drive status',
+    });
   }
 });
 
@@ -3277,15 +3293,19 @@ app.get([
   '/drive/diagnostics',
   '/api/settings/google-drive/diagnostic'
 ], async (req, res) => {
+  res.setHeader('Content-Type', 'application/json');
   try {
-    const hostOrigin = `${req.protocol}://${req.get('host')}`;
+    const hostOrigin = getRequestOrigin(req);
     const diagnostic = await getDriveDiagnostic(hostOrigin);
     res.json(diagnostic);
   } catch (err: any) {
-    res.status(500).json({
+    res.json({
       success: false,
       authenticated: false,
       folderAccessible: false,
+      serviceAccount: DEDICATED_ACCOUNT_EMAIL,
+      folderId: DEFAULT_ROOT_FOLDER_ID,
+      tokenSource: 'none',
       error: err?.message || 'Failed to generate Google Drive diagnostic',
     });
   }
@@ -3293,14 +3313,17 @@ app.get([
 
 // Live comprehensive connection test against Google Drive API (verifies access to 1qTQe0N8Wb_5MTDrp_BmOrdSjI5QWGqVm)
 app.all(['/api/drive/test-connection', '/drive/test-connection'], async (req, res) => {
+  res.setHeader('Content-Type', 'application/json');
   try {
     const hostOrigin = getRequestOrigin(req);
     const testResult = await testDriveConnectionLive(hostOrigin);
     res.json(testResult);
   } catch (err: any) {
-    res.status(500).json({
+    res.json({
       success: false,
       summary: `Test failed: ${err.message || err}`,
+      serviceAccountEmail: DEDICATED_ACCOUNT_EMAIL,
+      targetFolderId: DEFAULT_ROOT_FOLDER_ID,
       results: [
         {
           step: 'API Execution',

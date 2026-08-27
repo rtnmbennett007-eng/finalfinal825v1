@@ -667,26 +667,83 @@ export const api = {
   },
 
   getGoogleDriveConfig: async (): Promise<GoogleDriveConfig> => {
-    const res = await fetch('/api/drive/config');
-    if (!res.ok) {
-      throw new Error('Failed to fetch Google Drive status');
+    try {
+      const res = await fetch('/api/drive/config');
+      const data = await res.json().catch(() => null);
+      if (data) return data as GoogleDriveConfig;
+      throw new Error(`HTTP ${res.status}: Failed to parse Google Drive configuration`);
+    } catch (err: any) {
+      console.warn('Backend /api/drive/config error:', err);
+      return {
+        isConfigured: false,
+        isConnected: false,
+        authType: 'service_account',
+        serviceAccountEmail: 'maple-x-portal-drive@abiding-orb-506721-j6.iam.gserviceaccount.com',
+        targetFolderId: '1qTQe0N8Wb_5MTDrp_BmOrdSjI5QWGqVm',
+        rootFolderId: '1qTQe0N8Wb_5MTDrp_BmOrdSjI5QWGqVm',
+        statusMessage: err?.message || 'Failed to reach Google Drive status endpoint',
+      };
     }
-    return res.json();
   },
 
   getGoogleDriveDiagnostic: async (): Promise<GoogleDriveDiagnostic> => {
-    const res = await fetch('/api/drive/diagnostic');
-    if (!res.ok) {
-      const err = await res.json().catch(() => ({ error: 'Failed to fetch Google Drive diagnostic' }));
-      throw new Error(err.error || 'Failed to fetch Google Drive diagnostic');
+    try {
+      const res = await fetch('/api/drive/diagnostic');
+      const data = await res.json().catch(() => null);
+      if (data) return data as GoogleDriveDiagnostic;
+      throw new Error(`HTTP ${res.status}: Failed to parse diagnostic JSON response`);
+    } catch (err: any) {
+      console.warn('Backend /api/drive/diagnostic error:', err);
+      return {
+        success: false,
+        authenticated: false,
+        driveApiAuthenticated: false,
+        folderAccessible: false,
+        error: err?.message || 'Could not fetch Google Drive diagnostic from server',
+        credentialSource: 'none',
+        tokenSource: 'none',
+        serviceAccount: 'maple-x-portal-drive@abiding-orb-506721-j6.iam.gserviceaccount.com',
+        folderId: '1qTQe0N8Wb_5MTDrp_BmOrdSjI5QWGqVm',
+        environment: 'production',
+        serverTime: new Date().toISOString(),
+        serverInstance: 'client-fallback',
+      };
     }
-    return res.json();
   },
 
   testGoogleDriveConnection: async (): Promise<GoogleDriveTestResult> => {
-    const res = await fetch('/api/drive/test-connection', { method: 'POST' });
-    const data = await res.json().catch(() => ({ success: false, summary: 'Failed to parse test result' }));
-    return data;
+    try {
+      const res = await fetch('/api/drive/test-connection', { method: 'POST' });
+      const data = await res.json().catch(() => null);
+      if (data) return data as GoogleDriveTestResult;
+      return {
+        success: false,
+        summary: `HTTP ${res.status}: Failed to parse test connection response`,
+        serviceAccountEmail: 'maple-x-portal-drive@abiding-orb-506721-j6.iam.gserviceaccount.com',
+        targetFolderId: '1qTQe0N8Wb_5MTDrp_BmOrdSjI5QWGqVm',
+        results: [
+          {
+            step: 'API Execution',
+            status: 'FAILED',
+            message: `Server returned HTTP ${res.status} with empty response`,
+          },
+        ],
+      };
+    } catch (err: any) {
+      return {
+        success: false,
+        summary: `Connection error: ${err?.message || 'Failed to execute live test'}`,
+        serviceAccountEmail: 'maple-x-portal-drive@abiding-orb-506721-j6.iam.gserviceaccount.com',
+        targetFolderId: '1qTQe0N8Wb_5MTDrp_BmOrdSjI5QWGqVm',
+        results: [
+          {
+            step: 'Network Transport',
+            status: 'FAILED',
+            message: err?.message || 'Could not reach server endpoint',
+          },
+        ],
+      };
+    }
   },
 
   listGoogleDriveFiles: async (folderId?: string, limit = 50): Promise<{ success: boolean; files: any[] }> => {

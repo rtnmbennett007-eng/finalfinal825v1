@@ -111,16 +111,24 @@ function parseServiceAccountString(raw: string): { parsed: ParsedServiceAccount 
   if (!raw || typeof raw !== 'string') {
     return { parsed: null, error: 'Empty or non-string input' };
   }
-  const trimmed = raw.trim();
+  let trimmed = raw.trim();
   if (!trimmed) {
     return { parsed: null, error: 'Empty input after trimming' };
+  }
+
+  // Remove potential wrapping single or double quotes from environment variable injectors
+  if (
+    (trimmed.startsWith("'") && trimmed.endsWith("'")) ||
+    (trimmed.startsWith('"') && trimmed.endsWith('"') && !trimmed.startsWith('{"'))
+  ) {
+    trimmed = trimmed.slice(1, -1).trim();
   }
 
   // 1. Try direct JSON parse
   try {
     const parsed = JSON.parse(trimmed);
     if (parsed && typeof parsed === 'object') {
-      if (parsed.private_key) {
+      if (parsed.private_key && typeof parsed.private_key === 'string') {
         parsed.private_key = parsed.private_key.replace(/\\n/g, '\n');
       }
       return { parsed };
@@ -131,13 +139,25 @@ function parseServiceAccountString(raw: string): { parsed: ParsedServiceAccount 
       const decoded = Buffer.from(trimmed, 'base64').toString('utf-8');
       const parsed = JSON.parse(decoded);
       if (parsed && typeof parsed === 'object') {
-        if (parsed.private_key) {
+        if (parsed.private_key && typeof parsed.private_key === 'string') {
           parsed.private_key = parsed.private_key.replace(/\\n/g, '\n');
         }
         return { parsed };
       }
     } catch {
-      return { parsed: null, error: directErr?.message || 'JSON parse failure' };
+      // 3. Attempt decoding URL encoded JSON string
+      try {
+        const urlDecoded = decodeURIComponent(trimmed);
+        const parsed = JSON.parse(urlDecoded);
+        if (parsed && typeof parsed === 'object') {
+          if (parsed.private_key && typeof parsed.private_key === 'string') {
+            parsed.private_key = parsed.private_key.replace(/\\n/g, '\n');
+          }
+          return { parsed };
+        }
+      } catch {
+        return { parsed: null, error: directErr?.message || 'JSON parse failure' };
+      }
     }
   }
 
@@ -929,6 +949,13 @@ export async function getDriveDiagnostic(reqHostOrigin?: string) {
     process.env.VERCEL_GIT_COMMIT_SHA?.substring(0, 7) ||
     `instance-${process.pid}`;
 
+  const tokenSource =
+    sa.credentialSource === 'GOOGLE_SERVICE_ACCOUNT_JSON'
+      ? 'environment_variable'
+      : sa.credentialSource === 'none'
+      ? 'none'
+      : sa.credentialSource;
+
   if (!sa.isValid || !sa.credentials || !sa.credentials.private_key || !sa.credentials.client_email) {
     return {
       success: false,
@@ -937,6 +964,7 @@ export async function getDriveDiagnostic(reqHostOrigin?: string) {
       folderAccessible: false,
       error: sa.parseError || (sa.hasServiceAccountJson ? 'GOOGLE_SERVICE_ACCOUNT_JSON exists but could not be parsed.' : 'GOOGLE_SERVICE_ACCOUNT_JSON is missing from the Vercel Production runtime.'),
       credentialSource: sa.credentialSource,
+      tokenSource,
       hasServiceAccountJson: sa.hasServiceAccountJson,
       jsonParsed: sa.jsonParsed,
       hasClientEmail: sa.hasClientEmail,
@@ -968,6 +996,7 @@ export async function getDriveDiagnostic(reqHostOrigin?: string) {
       driveApiAuthenticated: true,
       folderAccessible: isAccessible,
       credentialSource: sa.credentialSource,
+      tokenSource,
       hasServiceAccountJson: sa.hasServiceAccountJson,
       jsonParsed: sa.jsonParsed,
       hasClientEmail: sa.hasClientEmail,
@@ -977,7 +1006,6 @@ export async function getDriveDiagnostic(reqHostOrigin?: string) {
       serviceAccount: serviceAccountEmail,
       folderId: targetFolderId,
       folderName: folderRes.data?.name || 'MAPLE X FINANCIAL PORTAL',
-      tokenSource: sa.credentialSource,
       isVercel,
       environment: process.env.NODE_ENV || (isVercel ? 'production (vercel)' : 'production'),
       serverTime: new Date().toISOString(),
@@ -991,6 +1019,7 @@ export async function getDriveDiagnostic(reqHostOrigin?: string) {
       folderAccessible: false,
       error: `Google Drive API error: ${err?.message || err}`,
       credentialSource: sa.credentialSource,
+      tokenSource,
       hasServiceAccountJson: sa.hasServiceAccountJson,
       jsonParsed: sa.jsonParsed,
       hasClientEmail: sa.hasClientEmail,
@@ -999,7 +1028,6 @@ export async function getDriveDiagnostic(reqHostOrigin?: string) {
       serviceAccountEmail,
       serviceAccount: serviceAccountEmail,
       folderId: targetFolderId,
-      tokenSource: sa.credentialSource,
       isVercel,
       environment: process.env.NODE_ENV || (isVercel ? 'production (vercel)' : 'production'),
       serverTime: new Date().toISOString(),

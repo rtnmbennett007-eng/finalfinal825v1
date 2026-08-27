@@ -16,6 +16,7 @@ import {
 } from 'lucide-react';
 import { Client, CommissionParticipant, FundingDeal } from '../../../types';
 import { ProductBadge } from '../../common/StatusBadge';
+import { calculateDealCommission } from '../../../utils/commissionCalculator';
 
 interface CommissionStackingTabProps {
   filteredDeals: FundingDeal[];
@@ -89,9 +90,8 @@ export const CommissionStackingTab: React.FC<CommissionStackingTabProps> = ({
   let collectedCommission = 0;
 
   for (const deal of filteredDeals) {
-    const amt = Number(deal.fundingAmount) || 0;
-    const pct = Number(deal.percentage) || 0;
-    const totalComm = (amt * pct) / 100;
+    const calc = calculateDealCommission(deal);
+    const totalComm = calc.totalCommission;
 
     predictedCommission += totalComm;
     if (deal.status === 'FUNDED') {

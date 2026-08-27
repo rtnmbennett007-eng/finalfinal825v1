@@ -1,5 +1,42 @@
 export type InternalRole = 'INTERNAL_STAFF_ADMIN' | 'UNDERWRITER' | 'OPERATIONS' | 'STRATEGIST' | 'CUSTOM' | string;
 
+export type FieldSourceType =
+  | 'CALL_VERIFIED'
+  | 'MANUAL'
+  | 'VERIFICATION_FORM'
+  | 'CLIENT_APPLICATION'
+  | 'AI_FILLED'
+  | 'IMPORTED'
+  | 'SYSTEM_CALCULATED'
+  | 'NOT_ENTERED';
+
+export interface FieldSourceMetadata {
+  value: any;
+  source: FieldSourceType;
+  sourceDocumentId?: string;
+  sourceDocumentName?: string;
+  sourceType?: string;
+  updatedAt?: string;
+  updatedBy?: string;
+  confidence?: number;
+  verified?: boolean;
+  conflictWith?: {
+    value: any;
+    source: FieldSourceType;
+    documentName?: string;
+  };
+}
+
+export interface DataHistoryEntry {
+  field: string;
+  previousValue: any;
+  newValue: any;
+  source: FieldSourceType;
+  changedAt: string;
+  changedBy: string;
+  documentName?: string;
+}
+
 export type PermissionGroupType =
   | 'FULL ACCESS'
   | 'Full Administrative Authority'
@@ -547,6 +584,10 @@ export interface Client {
   recommendedProduct?: FundingProductType;
   otherRecommendedProductType?: string;
   otherRecommendedProductDescription?: string;
+
+  // Field-Level Source Tracking & Audit History
+  fieldSources?: Record<string, FieldSourceMetadata>;
+  dataHistory?: DataHistoryEntry[];
 }
 
 export interface FundingDeal {
@@ -1472,6 +1513,10 @@ export interface LenderResponse {
 }
 
 export type DocumentCategoryType =
+  | 'Application Form'
+  | 'Completed Application'
+  | 'Verification Form'
+  | 'Completed Verification'
   | "Driver's License"
   | 'Bank Statement'
   | 'Bank Statements'
@@ -1481,6 +1526,7 @@ export type DocumentCategoryType =
   | 'Voided Check'
   | 'Business License'
   | 'Articles of Incorporation'
+  | 'Underwriting Document'
   | 'Business Credit Card Statement'
   | 'Loan Statement'
   | 'MCA Statement'

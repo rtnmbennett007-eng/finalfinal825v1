@@ -14,6 +14,8 @@ import {
 } from 'lucide-react';
 import { FundingDeal, FundingProductType } from '../../../types';
 import { formatDate } from '../../../utils/dateUtils';
+import { ProductSelect } from '../../common/ProductSelect';
+import { calculateDealCommission } from '../../../utils/commissionCalculator';
 
 interface MasterDealsSectionProps {
   clientId: string;
@@ -22,20 +24,6 @@ interface MasterDealsSectionProps {
   deals: FundingDeal[];
   onChangeDeals: (updatedDeals: FundingDeal[]) => void;
 }
-
-const PRODUCTS: FundingProductType[] = [
-  'Revenue Funding',
-  'Personal Term Loan',
-  'HELOC',
-  'HEI',
-  'Business Term Loan',
-  'Business Line of Credit',
-  'Equipment Financing',
-  '0% Business Credit Cards',
-  '0% Business Cards & Lines of Credit',
-  'SBA Loan',
-  'Other Valid Product',
-];
 
 export const MasterDealsSection: React.FC<MasterDealsSectionProps> = ({
   clientId,
@@ -46,14 +34,12 @@ export const MasterDealsSection: React.FC<MasterDealsSectionProps> = ({
 }) => {
   const [editingDealId, setEditingDealId] = useState<string | null>(null);
 
-  // Auto-calculated summaries
+  // Auto-calculated summaries using canonical calculation
   const totalFunding = deals.reduce((sum, d) => sum + (Number(d.fundingAmount) || 0), 0);
   const totalFees = deals.reduce((sum, d) => sum + (Number(d.fee) || 0), 0);
   const totalCommission = deals.reduce((sum, d) => {
-    const amt = Number(d.fundingAmount) || 0;
-    const pct = Number(d.percentage) || 0;
-    const fee = Number(d.fee) || 0;
-    return sum + (amt * (pct / 100)) + fee;
+    const calc = calculateDealCommission(d);
+    return sum + calc.totalCommission;
   }, 0);
 
   const handleAddDeal = () => {
@@ -63,14 +49,14 @@ export const MasterDealsSection: React.FC<MasterDealsSectionProps> = ({
       clientId,
       clientName: clientName || 'Client',
       businessName: businessName || 'Business',
-      product: 'Business Line of Credit',
-      fundingAmount: 50000,
-      fee: 1500,
-      percentage: 7.0,
+      product: 'Revenue Funding',
+      fundingAmount: 0,
+      fee: 0,
+      percentage: 0,
       termLength: '12 Months',
-      status: 'APPROVED',
+      status: 'PROPOSED',
       assignedStaff: 'Dana',
-      lenderStatus: 'APPROVED',
+      lenderStatus: 'SUBMITTED',
       lenderName: `Lender Position #${newDealNumber}`,
       lenderContact: 'operations@lender.com',
       fundingDate: new Date().toISOString().split('T')[0],
@@ -240,18 +226,14 @@ export const MasterDealsSection: React.FC<MasterDealsSectionProps> = ({
                     </div>
 
                     <div>
-                      <label className="block text-xs font-semibold text-slate-300 mb-1">Funding Product *</label>
-                      <select
-                        value={deal.product || 'Business Line of Credit'}
-                        onChange={(e) => handleUpdateDeal(deal.id, { product: e.target.value as FundingProductType })}
-                        className="w-full bg-[#070d18] border border-blue-900/70 rounded-xl p-2.5 text-xs text-slate-100 focus:border-amber-400 focus:outline-none"
-                      >
-                        {PRODUCTS.map((p) => (
-                          <option key={p} value={p}>
-                            {p}
-                          </option>
-                        ))}
-                      </select>
+                      <ProductSelect
+                        label="Funding Product"
+                        required
+                        value={deal.product || 'Revenue Funding'}
+                        onChange={(val) => handleUpdateDeal(deal.id, { product: val as FundingProductType })}
+                        otherType={deal.otherProductType || ''}
+                        onChangeOtherType={(val) => handleUpdateDeal(deal.id, { otherProductType: val })}
+                      />
                     </div>
 
                     <div>
@@ -260,8 +242,9 @@ export const MasterDealsSection: React.FC<MasterDealsSectionProps> = ({
                         <span className="absolute left-3 top-2.5 text-slate-400 font-mono text-xs">$</span>
                         <input
                           type="number"
-                          value={deal.fundingAmount ?? 0}
+                          value={deal.fundingAmount ?? ''}
                           onChange={(e) => handleUpdateDeal(deal.id, { fundingAmount: Number(e.target.value) })}
+                          placeholder="0"
                           className="w-full bg-[#070d18] border border-blue-900/70 rounded-xl p-2.5 pl-7 text-xs text-emerald-400 font-mono font-bold focus:border-amber-400 focus:outline-none"
                         />
                       </div>
@@ -273,8 +256,9 @@ export const MasterDealsSection: React.FC<MasterDealsSectionProps> = ({
                         <input
                           type="number"
                           step="0.1"
-                          value={deal.percentage ?? 7}
-                          onChange={(e) => handleUpdateDeal(deal.id, { percentage: Number(e.target.value) })}
+                          value={deal.percentage !== undefined && deal.percentage !== null ? deal.percentage : ''}
+                          onChange={(e) => handleUpdateDeal(deal.id, { percentage: e.target.value === '' ? 0 : Number(e.target.value) })}
+                          placeholder="Enter %"
                           className="w-full bg-[#070d18] border border-blue-900/70 rounded-xl p-2.5 pr-7 text-xs text-amber-300 font-mono font-bold focus:border-amber-400 focus:outline-none"
                         />
                         <Percent className="w-3.5 h-3.5 text-slate-400 absolute right-2.5 top-3" />
@@ -287,8 +271,9 @@ export const MasterDealsSection: React.FC<MasterDealsSectionProps> = ({
                         <span className="absolute left-3 top-2.5 text-slate-400 font-mono text-xs">$</span>
                         <input
                           type="number"
-                          value={deal.fee ?? 0}
-                          onChange={(e) => handleUpdateDeal(deal.id, { fee: Number(e.target.value) })}
+                          value={deal.fee !== undefined && deal.fee !== null ? deal.fee : ''}
+                          onChange={(e) => handleUpdateDeal(deal.id, { fee: e.target.value === '' ? 0 : Number(e.target.value) })}
+                          placeholder="Enter fee $"
                           className="w-full bg-[#070d18] border border-blue-900/70 rounded-xl p-2.5 pl-7 text-xs text-cyan-300 font-mono focus:border-amber-400 focus:outline-none"
                         />
                       </div>

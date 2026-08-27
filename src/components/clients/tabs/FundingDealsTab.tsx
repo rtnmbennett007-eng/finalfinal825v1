@@ -30,7 +30,9 @@ import { useData } from '../../../context/DataContext';
 import { useAuth } from '../../../context/AuthContext';
 import { StatusBadge, ProductBadge } from '../../common/StatusBadge';
 import { ConfirmModal } from '../../common/ConfirmModal';
+import { ProductSelect } from '../../common/ProductSelect';
 import { formatDate } from '../../../utils/dateUtils';
+import { calculateDealCommission } from '../../../utils/commissionCalculator';
 
 interface FundingDealsTabProps {
   client: Client;
@@ -104,9 +106,10 @@ export const FundingDealsTab: React.FC<FundingDealsTabProps> = ({
   // Form State
   const [dealForm, setDealForm] = useState<Partial<FundingDeal>>({
     product: client.requestedProduct || 'Revenue Funding',
+    otherProductType: '',
     fundingAmount: client.requestedAmount || 0,
-    fee: 0,
-    percentage: 0,
+    fee: undefined,
+    percentage: undefined,
     termLength: '12 Months',
     status: 'PROPOSED',
     assignedStaff: client.assignedStaff || currentUser?.name || 'Staff',
@@ -142,19 +145,15 @@ export const FundingDealsTab: React.FC<FundingDealsTabProps> = ({
   const totalApprovedDealsCount = safeDeals.filter((d) => d.status === 'APPROVED' || d.status === 'CONDITIONS_MET').length;
 
   const totalEstimatedCommission = safeDeals.reduce((sum, d) => {
-    const amt = Number(d.fundingAmount) || 0;
-    const pct = Number(d.percentage) || 0;
-    const fee = Number(d.fee) || 0;
-    return sum + (amt * (pct / 100)) + fee;
+    const calc = calculateDealCommission(d);
+    return sum + calc.totalCommission;
   }, 0);
 
   const totalFundedCommission = safeDeals
     .filter((d) => d.status === 'FUNDED')
     .reduce((sum, d) => {
-      const amt = Number(d.fundingAmount) || 0;
-      const pct = Number(d.percentage) || 0;
-      const fee = Number(d.fee) || 0;
-      return sum + (amt * (pct / 100)) + fee;
+      const calc = calculateDealCommission(d);
+      return sum + calc.totalCommission;
     }, 0);
 
   // Available unstacked lender offers from Lender History
@@ -181,9 +180,10 @@ export const FundingDealsTab: React.FC<FundingDealsTabProps> = ({
     setEditingDealId(null);
     setDealForm({
       product: preset?.product || client.requestedProduct || 'Revenue Funding',
+      otherProductType: preset?.otherProductType || '',
       fundingAmount: preset?.fundingAmount || client.requestedAmount || 0,
-      fee: preset?.fee !== undefined ? preset.fee : 0,
-      percentage: preset?.percentage !== undefined ? preset.percentage : 0,
+      fee: preset?.fee,
+      percentage: preset?.percentage,
       termLength: preset?.termLength || '12 Months',
       status: preset?.status || 'PROPOSED',
       assignedStaff: client.assignedStaff || currentUser?.name || 'Staff',
@@ -830,9 +830,8 @@ export const FundingDealsTab: React.FC<FundingDealsTabProps> = ({
               </thead>
               <tbody className="divide-y divide-blue-900/40 font-mono text-[11px]">
                 {filteredDeals.map((deal, idx) => {
-                  const dealGrossComm =
-                    ((Number(deal.fundingAmount) || 0) * (Number(deal.percentage) || 0)) / 100 +
-                    (Number(deal.fee) || 0);
+                  const dealCalc = calculateDealCommission(deal);
+                  const dealGrossComm = dealCalc.totalCommission;
 
                   return (
                     <tr key={deal.id} className="hover:bg-blue-950/20 transition-colors">
@@ -932,20 +931,14 @@ export const FundingDealsTab: React.FC<FundingDealsTabProps> = ({
                 </div>
 
                 <div>
-                  <label className="block font-semibold text-slate-300 mb-1">
-                    Funding Product Type *
-                  </label>
-                  <select
+                  <ProductSelect
+                    label="Funding Product Type"
+                    required
                     value={dealForm.product || 'Revenue Funding'}
-                    onChange={(e) => setDealForm({ ...dealForm, product: e.target.value as FundingProductType })}
-                    className="w-full bg-[#070d18] border border-blue-900/70 rounded-xl p-2.5 text-xs text-slate-100 focus:border-amber-400 focus:outline-none"
-                  >
-                    {FUNDING_PRODUCTS.map((prod) => (
-                      <option key={prod} value={prod}>
-                        {prod}
-                      </option>
-                    ))}
-                  </select>
+                    onChange={(val) => setDealForm({ ...dealForm, product: val as FundingProductType })}
+                    otherType={dealForm.otherProductType || ''}
+                    onChangeOtherType={(val) => setDealForm({ ...dealForm, otherProductType: val })}
+                  />
                 </div>
               </div>
 
@@ -978,8 +971,9 @@ export const FundingDealsTab: React.FC<FundingDealsTabProps> = ({
                       step="0.1"
                       min="0"
                       max="100"
-                      value={dealForm.percentage ?? 6.9}
-                      onChange={(e) => setDealForm({ ...dealForm, percentage: Number(e.target.value) })}
+                      value={dealForm.percentage !== undefined && dealForm.percentage !== null ? dealForm.percentage : ''}
+                      onChange={(e) => setDealForm({ ...dealForm, percentage: e.target.value === '' ? undefined : Number(e.target.value) })}
+                      placeholder="Enter %"
                       className="w-full bg-[#070d18] border border-blue-900/70 rounded-xl p-2.5 pr-7 text-xs text-amber-300 font-mono font-bold focus:border-amber-400 focus:outline-none"
                     />
                     <Percent className="w-3.5 h-3.5 text-slate-400 absolute right-2.5 top-3" />
@@ -994,10 +988,10 @@ export const FundingDealsTab: React.FC<FundingDealsTabProps> = ({
                     <span className="absolute left-3 top-2.5 text-slate-400 font-mono text-xs">$</span>
                     <input
                       type="number"
-                      value={dealForm.fee ?? 0}
-                      onChange={(e) => setDealForm({ ...dealForm, fee: Number(e.target.value) })}
+                      value={dealForm.fee !== undefined && dealForm.fee !== null ? dealForm.fee : ''}
+                      onChange={(e) => setDealForm({ ...dealForm, fee: e.target.value === '' ? undefined : Number(e.target.value) })}
                       className="w-full bg-[#070d18] border border-blue-900/70 rounded-xl p-2.5 pl-7 text-xs text-cyan-300 font-mono focus:border-amber-400 focus:outline-none"
-                      placeholder="995"
+                      placeholder="Enter fee $"
                     />
                   </div>
                 </div>
@@ -1007,10 +1001,10 @@ export const FundingDealsTab: React.FC<FundingDealsTabProps> = ({
               <div className="p-3 bg-[#070d18] border border-blue-900/50 rounded-xl flex items-center justify-between text-xs font-mono">
                 <span className="text-slate-400 font-sans">Estimated Total Commission for this position:</span>
                 <span className="font-bold text-amber-400 text-sm">
-                  ${Math.round(
-                    ((Number(dealForm.fundingAmount) || 0) * (Number(dealForm.percentage) || 0)) / 100 +
-                    (Number(dealForm.fee) || 0)
-                  ).toLocaleString()}
+                  {(() => {
+                    const calc = calculateDealCommission(dealForm);
+                    return calc.hasCommission ? calc.formattedTotalCommission : '$0 (Commission % not entered)';
+                  })()}
                 </span>
               </div>
 

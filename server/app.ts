@@ -2403,7 +2403,7 @@ app.post('/api/leads/:id/convert-to-client', (req, res) => {
   lead.applicationStatus = 'SUBMITTED';
   lead.updatedAt = now;
 
-  // Create initial funding deal for this application
+  // Create initial funding deal for this application (Manual commissions only: percentage & fee default to 0 unless provided)
   const dealId = `deal-${Date.now()}`;
   const initialDeal = {
     id: dealId,
@@ -2411,10 +2411,10 @@ app.post('/api/leads/:id/convert-to-client', (req, res) => {
     clientName: `${newClient.firstName} ${newClient.lastName}`,
     businessName: newClient.businessName,
     product: newClient.requestedProduct,
-    fundingAmount: newClient.requestedAmount,
-    fee: 1495,
-    percentage: 6.9, // Default 6.9%
-    termLength: '24 Months',
+    fundingAmount: newClient.requestedAmount || 0,
+    fee: Number(req.body.fee || 0),
+    percentage: Number(req.body.percentage || 0),
+    termLength: req.body.termLength || '24 Months',
     status: 'PROPOSED',
     assignedStaff: newClient.assignedStaff,
     lenderStatus: 'PENDING',
@@ -2428,28 +2428,23 @@ app.post('/api/leads/:id/convert-to-client', (req, res) => {
   };
   db.fundingDeals.unshift(initialDeal);
 
-  // Auto-allocate default 4 Maple X participants
-  const defaultParticipants = [
-    { name: 'Dana', type: 'Internal Staff', role: 'Operations & Funding', points: 1.0 },
-    { name: 'Luke', type: 'Internal Staff', role: 'Underwriting & Stacking', points: 2.9 },
-    { name: 'Steve', type: 'Internal Staff', role: 'Deal Structuring', points: 1.475 },
-    { name: 'Robert', type: 'Internal Staff', role: 'Executive Principal', points: 1.525 },
-  ];
-
-  for (const p of defaultParticipants) {
-    db.commissionParticipants.push({
-      id: `cp-${dealId}-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`,
-      dealId,
-      name: p.name,
-      type: p.type,
-      role: p.role,
-      points: p.points,
-      dollarAmount: (initialDeal.fundingAmount * p.points) / 100,
-      notes: 'Initial standard point allocation',
-      status: 'PENDING',
-      createdAt: now,
-      updatedAt: now,
-    });
+  // If specific participants were provided in request, save them
+  if (Array.isArray(req.body.participants)) {
+    for (const p of req.body.participants) {
+      db.commissionParticipants.push({
+        id: `cp-${dealId}-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`,
+        dealId,
+        name: p.name,
+        type: p.type || 'Internal Staff',
+        role: p.role || 'Commission Participant',
+        points: Number(p.points || 0),
+        dollarAmount: (initialDeal.fundingAmount * Number(p.points || 0)) / 100,
+        notes: p.notes || '',
+        status: 'PENDING',
+        createdAt: now,
+        updatedAt: now,
+      });
+    }
   }
 
   // Create initial client task
@@ -2558,7 +2553,7 @@ app.post('/api/clients', (req, res) => {
 
   db.clients.unshift(newClient);
 
-  // Create initial funding deal
+  // Create initial funding deal if requested
   const dealId = `deal-${Date.now()}`;
   const initialDeal = {
     id: dealId,
@@ -2566,10 +2561,10 @@ app.post('/api/clients', (req, res) => {
     clientName: `${newClient.firstName} ${newClient.lastName}`,
     businessName: newClient.businessName,
     product: newClient.requestedProduct,
-    fundingAmount: newClient.requestedAmount,
-    fee: 1495,
-    percentage: 6.9,
-    termLength: '24 Months',
+    fundingAmount: newClient.requestedAmount || 0,
+    fee: Number(clientData.fee || 0),
+    percentage: Number(clientData.percentage || 0),
+    termLength: clientData.termLength || '24 Months',
     status: 'PROPOSED',
     assignedStaff: newClient.assignedStaff,
     lenderStatus: 'PENDING',
@@ -2583,28 +2578,22 @@ app.post('/api/clients', (req, res) => {
   };
   db.fundingDeals.unshift(initialDeal);
 
-  // Auto-allocate default 4 Maple X participants
-  const defaultParticipants = [
-    { name: 'Dana', type: 'Internal Staff', role: 'Operations & Funding', points: 1.0 },
-    { name: 'Luke', type: 'Internal Staff', role: 'Underwriting & Stacking', points: 2.9 },
-    { name: 'Steve', type: 'Internal Staff', role: 'Deal Structuring', points: 1.475 },
-    { name: 'Robert', type: 'Internal Staff', role: 'Executive Principal', points: 1.525 },
-  ];
-
-  for (const p of defaultParticipants) {
-    db.commissionParticipants.push({
-      id: `cp-${dealId}-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`,
-      dealId,
-      name: p.name,
-      type: p.type,
-      role: p.role,
-      points: p.points,
-      dollarAmount: (initialDeal.fundingAmount * p.points) / 100,
-      notes: 'Initial standard point allocation',
-      status: 'PENDING',
-      createdAt: now,
-      updatedAt: now,
-    });
+  if (Array.isArray(clientData.participants)) {
+    for (const p of clientData.participants) {
+      db.commissionParticipants.push({
+        id: `cp-${dealId}-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`,
+        dealId,
+        name: p.name,
+        type: p.type || 'Internal Staff',
+        role: p.role || 'Commission Participant',
+        points: Number(p.points || 0),
+        dollarAmount: (initialDeal.fundingAmount * Number(p.points || 0)) / 100,
+        notes: p.notes || '',
+        status: 'PENDING',
+        createdAt: now,
+        updatedAt: now,
+      });
+    }
   }
 
   addTimelineEvent(
@@ -2685,9 +2674,9 @@ app.post('/api/deals', (req, res) => {
     clientName: client ? `${client.firstName} ${client.lastName}` : dealData.clientName || 'Client',
     businessName: client ? client.businessName : dealData.businessName || 'Business',
     product: dealData.product || 'Revenue Funding',
-    fundingAmount: Number(dealData.fundingAmount || 50000),
-    fee: Number(dealData.fee || 1495),
-    percentage: Number(dealData.percentage || 6.9),
+    fundingAmount: Number(dealData.fundingAmount || 0),
+    fee: Number(dealData.fee || 0),
+    percentage: Number(dealData.percentage || 0),
     termLength: dealData.termLength || '24 Months',
     status: dealData.status || 'PROPOSED',
     assignedStaff: dealData.assignedStaff || (client ? client.assignedStaff : 'Dana'),
@@ -2703,28 +2692,23 @@ app.post('/api/deals', (req, res) => {
 
   db.fundingDeals.unshift(newDeal);
 
-  // Auto-allocate default 4 Maple X participants for this new deal
-  const defaultParticipants = [
-    { name: 'Dana', type: 'Internal Staff', role: 'Operations & Funding', points: 1.0 },
-    { name: 'Luke', type: 'Internal Staff', role: 'Underwriting & Stacking', points: 2.9 },
-    { name: 'Steve', type: 'Internal Staff', role: 'Deal Structuring', points: 1.475 },
-    { name: 'Robert', type: 'Internal Staff', role: 'Executive Principal', points: Math.max(0, Number((newDeal.percentage - 1.0 - 2.9 - 1.475).toFixed(3))) },
-  ];
-
-  for (const p of defaultParticipants) {
-    db.commissionParticipants.push({
-      id: `cp-${newDeal.id}-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`,
-      dealId: newDeal.id,
-      name: p.name,
-      type: p.type,
-      role: p.role,
-      points: p.points,
-      dollarAmount: (newDeal.fundingAmount * p.points) / 100,
-      notes: 'Auto-initialized allocation',
-      status: 'PENDING',
-      createdAt: now,
-      updatedAt: now,
-    });
+  // If explicit participants were provided in request, save them
+  if (Array.isArray(dealData.participants)) {
+    for (const p of dealData.participants) {
+      db.commissionParticipants.push({
+        id: `cp-${newDeal.id}-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`,
+        dealId: newDeal.id,
+        name: p.name,
+        type: p.type || 'Internal Staff',
+        role: p.role || 'Commission Participant',
+        points: Number(p.points || 0),
+        dollarAmount: (newDeal.fundingAmount * Number(p.points || 0)) / 100,
+        notes: p.notes || '',
+        status: 'PENDING',
+        createdAt: now,
+        updatedAt: now,
+      });
+    }
   }
 
   addTimelineEvent(

@@ -14,6 +14,7 @@ import {
   LenderHistoryRecord,
 } from '../types';
 import { formatDate } from './dateUtils';
+import { calculateDealCommission } from './commissionCalculator';
 
 export interface PdfExportOptions {
   includeVerification?: boolean;
@@ -359,15 +360,20 @@ export function generateClientMasterFilePdf(
     autoTable(doc, {
       startY: currentY,
       head: [['TRANCHE #', 'PRODUCT', 'FUNDED AMT', 'FEE RATE', 'LENDER', 'STATUS', 'COMMISSION']],
-      body: data.deals.map((d, idx) => [
-        `Tranche #${idx + 1}`,
-        d.product || 'Revenue Funding',
-        `$${Number(d.fundingAmount || 0).toLocaleString()}`,
-        `${d.percentage || 6.9}% ($${((Number(d.fundingAmount || 0) * Number(d.percentage || 6.9)) / 100).toLocaleString()})`,
-        d.lenderName || 'Maple Direct',
-        d.status || 'FUNDED',
-        d.commissionStatus === 'COLLECTED' ? 'Collected' : 'Pending',
-      ]),
+      body: data.deals.map((d, idx) => {
+        const calc = calculateDealCommission(d);
+        const feeStr = Number(d.fee || 0) > 0 ? ` + $${Number(d.fee).toLocaleString()} fee` : '';
+        const commRateStr = d.percentage ? `${d.percentage}%${feeStr}` : (feeStr ? feeStr.trim() : '0%');
+        return [
+          `Tranche #${idx + 1}`,
+          d.product || 'Revenue Funding',
+          `$${Number(d.fundingAmount || 0).toLocaleString()}`,
+          `${commRateStr} (${calc.formattedTotalCommission})`,
+          d.lenderName || 'Maple Direct',
+          d.status || 'FUNDED',
+          d.commissionStatus === 'COLLECTED' ? 'Collected' : 'Pending',
+        ];
+      }),
       theme: 'grid',
       headStyles: { fillColor: NAVY, textColor: [255, 255, 255], fontStyle: 'bold', fontSize: 8 },
       bodyStyles: { fontSize: 8, textColor: DARK_SLATE },

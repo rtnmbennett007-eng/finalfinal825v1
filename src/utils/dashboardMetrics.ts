@@ -1,4 +1,5 @@
 import { CommissionParticipant, FundingDeal } from '../types';
+import { calculateDealCommission } from './commissionCalculator';
 
 export interface DashboardMetricsResult {
   activePipeline: number;
@@ -130,9 +131,9 @@ export function calculateDashboardMetrics(
   let commissionCollected = 0;
 
   for (const deal of safeDeals) {
-    const fundingAmount = Math.max(0, Number(deal.fundingAmount) || 0);
-    const percentage = Number(deal.percentage) > 0 ? Number(deal.percentage) : 6.9;
-    const expectedCommission = (fundingAmount * percentage) / 100;
+    const calc = calculateDealCommission(deal);
+    const fundingAmount = calc.fundingAmount;
+    const expectedCommission = calc.totalCommission;
 
     // Check Active Pipeline
     if (isDealInActivePipeline(deal)) {

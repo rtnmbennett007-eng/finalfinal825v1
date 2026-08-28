@@ -17,13 +17,17 @@ export type DocumentClassificationType =
   | 'APPLICATION_FORM'
   | 'VERIFICATION_FORM'
   | 'BANK_STATEMENT'
-  | 'DRIVERS_LICENSE'
-  | 'TAX_RETURN'
-  | 'VOIDED_CHECK'
+  | 'CREDIT_CARD_STATEMENT'
+  | 'MERCHANT_STATEMENT'
   | 'PROFIT_LOSS'
+  | 'BALANCE_SHEET'
+  | 'TAX_RETURN'
+  | 'DRIVERS_LICENSE'
+  | 'VOIDED_CHECK'
   | 'ARTICLES_OF_INCORPORATION'
   | 'BUSINESS_LICENSE'
   | 'UNDERWRITING_DOCUMENT'
+  | 'OTHER_FINANCIAL'
   | 'OTHER';
 
 export interface FieldSourceMetadata {
@@ -785,29 +789,128 @@ export interface LargeTransactionItem {
   notes?: string;
 }
 
+export interface DepositClassificationItem {
+  id: string;
+  date?: string;
+  description: string;
+  amount: number;
+  category: 'REVENUE' | 'TRANSFER' | 'LOAN_ADVANCE' | 'OWNER_CONTRIBUTION' | 'REFUND' | 'ONE_TIME_TRANSFER' | 'OTHER_NON_REVENUE';
+  isRevenue: boolean;
+  confidence: number;
+  requiresReview: boolean;
+  notes?: string;
+}
+
+export interface ObligationBreakdownItem {
+  id: string;
+  lenderName: string;
+  obligationType: 'ACH_DEBIT' | 'MCA_PAYMENT' | 'TERM_LOAN' | 'EQUIPMENT_FINANCING' | 'CREDIT_CARD' | 'OTHER';
+  paymentAmount: number;
+  frequency: 'Daily' | 'Weekly' | 'Bi-Weekly' | 'Monthly';
+  occurrencesCount: number;
+  monthlyEquivalent: number;
+  detectedFrom?: string;
+  isVerified?: boolean;
+  notes?: string;
+}
+
+export interface ManualFieldCorrectionAudit {
+  id: string;
+  fieldKey: string;
+  fieldLabel: string;
+  originalAiValue: any;
+  updatedValue: any;
+  updatedBy: string;
+  updatedAt: string;
+  reason?: string;
+}
+
+export interface FinancialAnalysisHistoryItem {
+  id: string;
+  analyzedAt: string;
+  analyzedBy: string;
+  docId: string;
+  docTitle: string;
+  docCategory: string;
+  statementPeriod?: string;
+  summaryMetrics: {
+    totalDeposits: number;
+    revenueDeposits: number;
+    nonRevenueDeposits: number;
+    avgDailyBalance: number;
+    nsfsCount: number;
+    negativeDaysCount: number;
+    monthlyObligations: number;
+  };
+  manualEditsCount: number;
+  manualEdits?: ManualFieldCorrectionAudit[];
+  status: 'DRAFT' | 'REVIEWED' | 'FINALIZED';
+  notes?: string;
+}
+
 export interface BankStatementAnalysisSummary {
   statementPeriod: string;
   bankName: string;
   accountHolder: string;
+  accountType?: 'Business Checking' | 'Operating Account' | 'Personal Checking' | 'Money Market' | 'Other' | string;
+  accountLastFour?: string;
   beginningBalance: number;
   endingBalance: number;
   totalDeposits: number;
   totalWithdrawals: number;
   avgDailyBalance: number;
+  lowestBalance?: number;
+  highestBalance?: number;
   negativeBalanceDays: number;
   nsfsCount: number;
   overdraftsCount: number;
+  nsfFeesTotal?: number;
+  overdraftFeesTotal?: number;
   returnedItemsCount: number;
+
+  // Revenue vs Non-Revenue Breakdown
+  revenueDepositsTotal?: number;
+  nonRevenueDepositsTotal?: number;
+  uncertainDepositsCount?: number;
+  depositClassifications?: DepositClassificationItem[];
+
+  // Detailed Obligations
   recurringAchObligations: RecurringAchObligation[];
+  detailedObligations?: ObligationBreakdownItem[];
   financingDebitsTotalMonthly: number;
+
+  // Velocity and Transaction Categories
   largeDeposits: LargeTransactionItem[];
   largeWithdrawals: LargeTransactionItem[];
   taxPaymentsTotal: number;
+  payrollTotal?: number;
+  rentMortgageTotal?: number;
+  wireTransfersTotal?: number;
+  p2pTransfersTotal?: number; // Zelle/Venmo/PayPal
+  merchantProcessingDepositsTotal?: number;
+  internalTransfersTotal?: number;
+
+  // Formatted Underwriting Summary
+  underwritingOverviewSummary?: {
+    accountOverview: string;
+    cashFlowSummary: string;
+    riskIndicators: string;
+    existingObligations: string;
+    overallRecommendation?: string;
+  };
+
+  // Confidence & Correction Auditing
+  confidenceLevel?: 'HIGH' | 'MEDIUM' | 'LOW'; // >=90% = HIGH, 70-89% = MEDIUM, <70% = LOW
+  confidenceScore?: number;
+  manualCorrections?: ManualFieldCorrectionAudit[];
+  analysisHistory?: FinancialAnalysisHistoryItem[];
+
   cashFlowConsistency: 'Consistent' | 'Fluctuating' | 'Seasonal' | 'Declining' | 'Rapidly Growing' | string;
   depositVelocity: 'High' | 'Moderate' | 'Low' | string;
   monthlyBreakdowns: BankMonthBreakdown[];
   sourceDocIds?: string[];
   lastAnalyzedAt?: string;
+  lastAnalyzedBy?: string;
 }
 
 export type SubmissionStatusType =
@@ -1915,6 +2018,21 @@ export interface LenderResponse {
   notQualifiedReason?: string;
 }
 
+export interface ReadinessAuditRecord {
+  id: string;
+  evaluatedAt: string;
+  evaluatedBy: string;
+  isEligible: boolean;
+  result: 'READY' | 'NOT_READY';
+  passedPrerequisites: string[];
+  blockers: string[];
+  warnings: string[];
+  missingDocuments: string[];
+  conflictsSummary: string[];
+  requiredActions: string[];
+  notes?: string;
+}
+
 export type DocumentCategoryType =
   | 'Application Form'
   | 'Completed Application'
@@ -1947,6 +2065,7 @@ export interface ExtractedFieldItem {
   sourceQuote?: string; // verbatim snippet from the document
   pageOrLocation?: string; // e.g. "Page 1, Box 1a" or "Header block"
   sourceType?: FieldSourceType;
+  sourceDocTitle?: string;
   currentVerifiedValue?: string | number | boolean;
   currentAppliedValue?: string | number | boolean;
   isConflictWithVerified?: boolean;

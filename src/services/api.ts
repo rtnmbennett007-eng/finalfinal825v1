@@ -839,6 +839,136 @@ export const api = {
     }
   },
 
+  // Business Loan Application Pipeline
+  extractBusinessLoanApplication: async (data: {
+    file?: File;
+    formData?: FormData;
+    fileName?: string;
+    fileBase64?: string;
+    fileMimeType?: string;
+    rawText?: string;
+  }) => {
+    try {
+      if (data.formData) {
+        const res = await fetch('/api/applications/extract', {
+          method: 'POST',
+          body: data.formData,
+        });
+        if (!res.ok) {
+          const errData = await res.json().catch(() => ({ error: 'Extraction failed' }));
+          throw new Error(errData.error || 'Failed to extract loan application');
+        }
+        return res.json();
+      }
+
+      if (data.file) {
+        const fd = new FormData();
+        fd.append('file', data.file);
+        if (data.fileName) fd.append('fileName', data.fileName);
+        const res = await fetch('/api/applications/extract', {
+          method: 'POST',
+          body: fd,
+        });
+        if (!res.ok) {
+          const errData = await res.json().catch(() => ({ error: 'Extraction failed' }));
+          throw new Error(errData.error || 'Failed to extract loan application');
+        }
+        return res.json();
+      }
+
+      const res = await fetch('/api/applications/extract', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data),
+      });
+      if (!res.ok) {
+        const errData = await res.json().catch(() => ({ error: 'Extraction failed' }));
+        throw new Error(errData.error || 'Failed to extract loan application');
+      }
+      return res.json();
+    } catch (err: any) {
+      console.warn('Loan application extraction API notice:', err);
+      throw err;
+    }
+  },
+
+  createClientFromApplication: async (payload: {
+    clientData: any;
+    duplicateAction?: 'create' | 'merge';
+    existingClientId?: string;
+    uploadedBy?: string;
+    fileData?: {
+      fileName: string;
+      fileSize?: string;
+      fileBase64?: string;
+      fileMimeType?: string;
+      fileUrl?: string;
+    };
+    extractionDetails?: any;
+  }) => {
+    try {
+      const res = await fetch('/api/applications/create-client-profile', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+
+      if (!res.ok) {
+        const errData = await res.json().catch(() => ({ error: 'Creation failed' }));
+        throw new Error(errData.error || 'Failed to create client from application');
+      }
+
+      const data = await res.json();
+      // Ensure Firestore client / local cache is also synced immediately
+      if (data.client) {
+        await firestoreService.createClient(data.client);
+      }
+      if (data.deal) {
+        await firestoreService.createDeal(data.deal);
+      }
+      if (data.document) {
+        firestoreService.updateLocalDocument(data.document);
+      }
+
+      return data;
+    } catch (err: any) {
+      console.warn('Create client from application API error:', err);
+      // Fallback: create directly via firestoreService if server API was unreachable
+      const createdClient = await firestoreService.createClient({
+        ...payload.clientData,
+        leadSource: 'Business Loan Application',
+        currentStatus: 'Application Received',
+        isVerified: false,
+      });
+
+      if (payload.fileData) {
+        try {
+          const docId = `doc-${Date.now()}`;
+          const newDoc: DocumentItem = {
+            id: docId,
+            clientId: createdClient.id,
+            category: 'Application Form',
+            title: `Business Loan Application - ${createdClient.businessName || 'Borrower'}`,
+            fileName: payload.fileData.fileName || 'business_application.pdf',
+            fileSize: payload.fileData.fileSize || '1.5 MB',
+            fileUrl: payload.fileData.fileUrl || payload.fileData.fileBase64 || '',
+            fileBase64: payload.fileData.fileBase64,
+            fileMimeType: payload.fileData.fileMimeType || 'application/pdf',
+            uploadedBy: payload.uploadedBy || 'Staff',
+            uploadedDate: new Date().toISOString(),
+            status: 'RECEIVED',
+            aiExtraction: payload.extractionDetails,
+          };
+          firestoreService.updateLocalDocument(newDoc);
+        } catch {
+          // ignore
+        }
+      }
+
+      return { success: true, client: createdClient };
+    }
+  },
+
   // Firebase Config
   getFirebaseConfig: async (): Promise<FirebaseClientConfig> => getActiveFirebaseConfig(),
   updateFirebaseConfig: async (data: Partial<FirebaseClientConfig>) => saveCustomFirebaseConfig(data),

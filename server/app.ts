@@ -5,7 +5,13 @@ import express from 'express';
 import path from 'path';
 import fs from 'fs';
 import multer from 'multer';
-import { analyzeDocumentWithAi, classifyDocument, normalizeClassificationType } from './documentAiService.ts';
+import {
+  analyzeDocumentWithAi,
+  classifyDocument,
+  normalizeClassificationType,
+  extractBusinessLoanApplicationData,
+  checkDuplicateClients,
+} from './documentAiService.ts';
 import {
   getDriveStatus,
   getDriveDiagnostic,
@@ -4634,6 +4640,345 @@ app.post('/api/documents/:id/retry-ai', async (req, res) => {
   }
 });
 
+// ----------------------------------------------------
+// BUSINESS LOAN APPLICATION UPLOAD & EXTRACTION PIPELINE
+// ----------------------------------------------------
+
+// 1. Extract Business Loan Application & Check Duplicates
+app.post('/api/applications/extract', upload.single('file') as any, async (req: any, res: any) => {
+  try {
+    const file = req.file;
+    let fileName = req.body.fileName || 'business_loan_application.pdf';
+    let fileMimeType = req.body.fileMimeType || 'application/pdf';
+    let fileBase64 = req.body.fileBase64;
+    let rawText = req.body.rawText;
+
+    if (file) {
+      fileName = file.originalname || fileName;
+      fileMimeType = file.mimetype || fileMimeType;
+      fileBase64 = file.buffer.toString('base64');
+    }
+
+    if (!fileBase64 && !rawText && !file) {
+      return res.status(400).json({ error: 'No application document or file data provided.' });
+    }
+
+    // Run AI Document Intelligence to extract structured application data
+    const extractedData = await extractBusinessLoanApplicationData({
+      fileName,
+      fileBase64,
+      fileMimeType,
+      rawText,
+    });
+
+    // Check for duplicate clients across existing Client Master 360 directory
+    const duplicateMatches = checkDuplicateClients(extractedData, db.clients || []);
+
+    res.json({
+      success: true,
+      extractedData,
+      duplicateMatches,
+      summary: extractedData.summary,
+      confidence: extractedData.confidence,
+      modelUsed: extractedData.modelUsed,
+      unfoundFields: extractedData.unfoundFields,
+    });
+  } catch (err: any) {
+    console.error('Business loan application extraction error:', err);
+    res.status(500).json({ error: err.message || 'Failed to extract business loan application' });
+  }
+});
+
+// 2. Create or Update Client Profile from Application Review
+app.post('/api/applications/create-client-profile', async (req: any, res: any) => {
+  try {
+    const { clientData, duplicateAction, existingClientId, uploadedBy, fileData, extractionDetails } = req.body;
+    const now = new Date().toISOString();
+    const staffName = uploadedBy || 'Admin';
+
+    if (!clientData || (!clientData.businessName && !clientData.firstName)) {
+      return res.status(400).json({ error: 'Client or business name is required to create a profile.' });
+    }
+
+    let targetClient: any;
+    let isMerge = duplicateAction === 'merge' && existingClientId;
+
+    if (isMerge) {
+      const existingIdx = db.clients.findIndex((c) => c.id === existingClientId);
+      if (existingIdx === -1) {
+        return res.status(404).json({ error: 'Existing client not found for merge' });
+      }
+
+      const existing = db.clients[existingIdx];
+      targetClient = {
+        ...existing,
+        ...clientData,
+        id: existing.id,
+        createdAt: existing.createdAt,
+        updatedAt: now,
+      };
+      db.clients[existingIdx] = targetClient;
+    } else {
+      const newClientId = `client-${Date.now()}`;
+      targetClient = {
+        id: newClientId,
+        firstName: clientData.firstName || '',
+        middleName: clientData.middleName || '',
+        lastName: clientData.lastName || '',
+        email: clientData.email || '',
+        phone: clientData.phone || '',
+        ssn: clientData.ssn || '',
+        dob: clientData.dob || '',
+        address: clientData.address || '',
+        city: clientData.city || '',
+        state: clientData.state || '',
+        zip: clientData.zip || '',
+        businessName: clientData.businessName || '',
+        dba: clientData.dba || '',
+        businessPhone: clientData.businessPhone || clientData.phone || '',
+        businessEmail: clientData.businessEmail || clientData.email || '',
+        businessAddress: clientData.businessAddress || clientData.address || '',
+        businessCity: clientData.businessCity || clientData.city || '',
+        businessState: clientData.businessState || clientData.state || '',
+        businessZip: clientData.businessZip || clientData.zip || '',
+        industry: clientData.industry || 'General Business',
+        businessStartDate: clientData.businessStartDate || '',
+        businessStartDateUnderCurrentOwnership: clientData.businessStartDateUnderCurrentOwnership || clientData.businessStartDate || '',
+        federalTaxId: clientData.federalTaxId || '',
+        stateOfOrganization: clientData.stateOfOrganization || clientData.businessState || clientData.state || '',
+        entityType: clientData.entityType || 'LLC',
+        annualRevenue: Number(clientData.annualRevenue || 500000),
+        monthlyRevenue: Number(clientData.monthlyRevenue || Math.round(Number(clientData.annualRevenue || 500000) / 12)),
+        ownershipPercentage: Number(clientData.ownershipPercentage || 100),
+        ownerTitle: clientData.ownerTitle || 'Owner / President',
+        businessDescription: clientData.businessDescription || '',
+        leadSource: 'Business Loan Application',
+        referralPartner: clientData.referralPartner || '',
+        assignedSalesRep: clientData.assignedSalesRep || 'Steve',
+        assignedStaff: clientData.assignedStaff || 'Dana',
+        currentStatus: 'Application Received',
+        createdAt: now,
+        updatedAt: now,
+        requestedAmount: Number(clientData.requestedAmount || 50000),
+        requestedProduct: clientData.requestedProduct || 'Revenue Funding',
+        useOfFunds: clientData.useOfFunds || 'Working Capital',
+        creditScore: Number(clientData.creditScore || 700),
+        existingLoans: clientData.existingLoans || 'None',
+        existingMcas: clientData.existingMcas || 'None',
+        lenderBalances: clientData.lenderBalances || '$0',
+        bankruptcy: clientData.bankruptcy || 'None',
+        foreclosure: clientData.foreclosure || 'None',
+        repossession: clientData.repossession || 'None',
+        isVerified: false,
+        isUnderwritten: false,
+        ...clientData,
+      };
+
+      db.clients.unshift(targetClient);
+    }
+
+    // 2. Create Funding Deal if New Client
+    let targetDeal: any = null;
+    if (!isMerge) {
+      const dealId = `deal-${Date.now()}`;
+      targetDeal = {
+        id: dealId,
+        clientId: targetClient.id,
+        clientName: `${targetClient.firstName} ${targetClient.lastName}`.trim(),
+        businessName: targetClient.businessName,
+        product: targetClient.requestedProduct || 'Revenue Funding',
+        fundingAmount: Number(targetClient.requestedAmount || 50000),
+        fee: undefined,
+        percentage: undefined,
+        termLength: '24 Months',
+        status: 'PROPOSED',
+        assignedStaff: targetClient.assignedStaff || 'Dana',
+        lenderStatus: 'PENDING',
+        lenderName: 'Maple Direct Capital',
+        lenderContact: 'underwriting@mapledirect.com',
+        commissionStatus: 'PENDING',
+        notes: `Imported from Business Loan Application uploaded on ${new Date().toLocaleDateString()}.`,
+        createdAt: now,
+        updatedAt: now,
+        isStacked: false,
+      };
+      db.fundingDeals.unshift(targetDeal);
+    }
+
+    // 3. Pre-fill Master Verification with Source: Business Loan Application & Status: Not Verified
+    if (!db.masterVerifications[targetClient.id] || isMerge) {
+      const prevVerif = db.masterVerifications[targetClient.id];
+      const createVerifField = (val: any, existingField?: any) => {
+        const asApp = val !== undefined && val !== null ? String(val) : (existingField?.asApplied || '');
+        return {
+          asApplied: asApp,
+          verified: existingField?.verified || '',
+          status: existingField?.status || 'Unverified',
+          notes: existingField?.notes || (asApp ? 'Imported from Business Loan Application' : ''),
+        };
+      };
+
+      const newVerifRecord = {
+        clientId: targetClient.id,
+        verificationStatus: prevVerif?.verificationStatus || 'In Progress',
+        overallProgress: prevVerif?.overallProgress || 15,
+        identity: {
+          borrowerFullName: createVerifField(`${targetClient.firstName} ${targetClient.lastName}`.trim(), prevVerif?.identity?.borrowerFullName),
+          ssn: createVerifField(targetClient.ssn, prevVerif?.identity?.ssn),
+          dob: createVerifField(targetClient.dob, prevVerif?.identity?.dob),
+          residentialAddress: createVerifField(
+            `${targetClient.address || ''}, ${targetClient.city || ''}, ${targetClient.state || ''} ${targetClient.zip || ''}`.trim().replace(/^,\s*/, ''),
+            prevVerif?.identity?.residentialAddress
+          ),
+          phone: createVerifField(targetClient.phone, prevVerif?.identity?.phone),
+          email: createVerifField(targetClient.email, prevVerif?.identity?.email),
+          redFlags: prevVerif?.identity?.redFlags || 'None',
+        },
+        business: {
+          businessName: createVerifField(targetClient.businessName, prevVerif?.business?.businessName),
+          dba: createVerifField(targetClient.dba, prevVerif?.business?.dba),
+          federalTaxId: createVerifField(targetClient.federalTaxId, prevVerif?.business?.federalTaxId),
+          businessAddress: createVerifField(
+            `${targetClient.businessAddress || ''}, ${targetClient.businessCity || ''}, ${targetClient.businessState || ''} ${targetClient.businessZip || ''}`.trim().replace(/^,\s*/, ''),
+            prevVerif?.business?.businessAddress
+          ),
+          businessPhone: createVerifField(targetClient.businessPhone || targetClient.phone, prevVerif?.business?.businessPhone),
+          businessEmail: createVerifField(targetClient.businessEmail || targetClient.email, prevVerif?.business?.businessEmail),
+          stateOfIncorporation: createVerifField(targetClient.stateOfOrganization, prevVerif?.business?.stateOfIncorporation),
+          entityStructure: createVerifField(targetClient.entityType, prevVerif?.business?.entityStructure),
+          industry: createVerifField(targetClient.industry, prevVerif?.business?.industry),
+          ownershipPercentage: createVerifField(`${targetClient.ownershipPercentage}%`, prevVerif?.business?.ownershipPercentage),
+          ownerTitle: createVerifField(targetClient.ownerTitle, prevVerif?.business?.ownerTitle),
+          startDate: createVerifField(targetClient.businessStartDate, prevVerif?.business?.startDate),
+          redFlags: prevVerif?.business?.redFlags || 'None',
+        },
+        income: {
+          annualRevenue: createVerifField(targetClient.annualRevenue ? `$${Number(targetClient.annualRevenue).toLocaleString()}` : '', prevVerif?.income?.annualRevenue),
+          monthlyRevenue: createVerifField(targetClient.monthlyRevenue ? `$${Number(targetClient.monthlyRevenue).toLocaleString()}` : '', prevVerif?.income?.monthlyRevenue),
+          personalAnnualIncome: createVerifField(clientData.personalAnnualIncome ? `$${Number(clientData.personalAnnualIncome).toLocaleString()}` : '', prevVerif?.income?.personalAnnualIncome),
+          redFlags: prevVerif?.income?.redFlags || 'None',
+        },
+        banking: {
+          primaryBank: createVerifField(clientData.businessBank, prevVerif?.banking?.primaryBank),
+          businessAccount: createVerifField(clientData.businessCheckingAccount, prevVerif?.banking?.businessAccount),
+          redFlags: prevVerif?.banking?.redFlags || 'None',
+        },
+        fundingRequest: {
+          requestedAmount: createVerifField(targetClient.requestedAmount ? `$${Number(targetClient.requestedAmount).toLocaleString()}` : '', prevVerif?.fundingRequest?.requestedAmount),
+          purposeOfFunds: createVerifField(targetClient.useOfFunds, prevVerif?.fundingRequest?.purposeOfFunds),
+          fundingUrgency: createVerifField(clientData.fundingUrgency || 'Flexible', prevVerif?.fundingRequest?.fundingUrgency),
+          redFlags: prevVerif?.fundingRequest?.redFlags || 'None',
+        },
+        creditVerification: {
+          exactCreditScore: targetClient.creditScore || 700,
+          creditNotes: prevVerif?.creditVerification?.creditNotes || `Stated FICO from loan application: ${targetClient.creditScore || 700}`,
+          redFlags: prevVerif?.creditVerification?.redFlags || 'None',
+        },
+        updatedAt: now,
+      };
+
+      db.masterVerifications[targetClient.id] = newVerifRecord as any;
+    }
+
+    // 4. Attach original uploaded application to client's Document Vault
+    let newDoc: any = null;
+    if (fileData) {
+      const docId = `doc-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
+      const fileName = fileData.fileName || 'Business_Loan_Application.pdf';
+      const fileMimeType = fileData.fileMimeType || 'application/pdf';
+      let storageProvider: 'google_drive' | 'local' = 'local';
+      let driveFileId: string | undefined;
+      let driveFolderId: string | undefined;
+      let driveWebViewLink: string | undefined;
+      let driveWebContentLink: string | undefined;
+      let driveThumbnailLink: string | undefined;
+      let finalFileUrl = fileData.fileUrl || `/api/documents/${docId}/download`;
+
+      // If fileBuffer available and Google Drive is connected, store in Google Drive
+      if (fileData.fileBase64) {
+        const base64Clean = fileData.fileBase64.includes('base64,') ? fileData.fileBase64.split('base64,')[1] : fileData.fileBase64;
+        try {
+          const buffer = Buffer.from(base64Clean, 'base64');
+          const hostOrigin = `${req.protocol}://${req.get('host')}`;
+          const driveStatus = await getDriveStatus(hostOrigin);
+
+          if (driveStatus.isConnected) {
+            const driveUpload = await uploadFileToGoogleDrive({
+              buffer,
+              fileName,
+              mimeType: fileMimeType,
+              clientId: targetClient.id,
+              clientName: `${targetClient.firstName} ${targetClient.lastName}`.trim(),
+              businessName: targetClient.businessName,
+              category: 'Application Form',
+            });
+
+            if (driveUpload && driveUpload.fileId) {
+              storageProvider = 'google_drive';
+              driveFileId = driveUpload.fileId;
+              driveFolderId = driveUpload.folderId;
+              driveWebViewLink = driveUpload.webViewLink;
+              driveWebContentLink = driveUpload.webContentLink;
+              driveThumbnailLink = driveUpload.thumbnailLink;
+              finalFileUrl = `/api/drive/file/${driveUpload.fileId}/view`;
+            }
+          }
+        } catch (driveErr) {
+          console.warn('Google Drive document vault attachment notice:', driveErr);
+        }
+      }
+
+      newDoc = {
+        id: docId,
+        clientId: targetClient.id,
+        dealId: targetDeal?.id || undefined,
+        category: 'Application Form',
+        title: `Business Loan Application - ${targetClient.businessName || 'Borrower'}`,
+        fileName,
+        fileSize: fileData.fileSize || '1.5 MB',
+        fileUrl: finalFileUrl,
+        fileBase64: fileData.fileBase64,
+        fileMimeType,
+        uploadedBy: staffName,
+        uploadedDate: now,
+        status: 'RECEIVED',
+        aiExtraction: extractionDetails || undefined,
+        storageProvider,
+        driveFileId,
+        driveFolderId,
+        driveWebViewLink,
+        driveWebContentLink,
+        driveThumbnailLink,
+      };
+
+      db.documents.unshift(newDoc);
+    }
+
+    // 5. Timeline Activity Log
+    addTimelineEvent(
+      targetClient.id,
+      isMerge ? 'Business Loan Application Merged' : 'Client Profile Created from Business Loan Application',
+      `Application form uploaded by ${staffName}. Extracted details populated into Client Master 360 (Source: Business Loan Application, Status: Not Verified). Original application attached to Document Vault.`,
+      staffName,
+      'STATUS_CHANGE',
+      targetDeal?.id
+    );
+
+    saveDb();
+
+    res.status(201).json({
+      success: true,
+      client: targetClient,
+      deal: targetDeal,
+      document: newDoc,
+      message: isMerge ? 'Client file updated with application data' : 'New Client Master 360 profile successfully initialized from application',
+    });
+  } catch (err: any) {
+    console.error('Error creating client profile from application:', err);
+    res.status(500).json({ error: err.message || 'Failed to create client profile' });
+  }
+});
+
 // Download document endpoint (Google Drive Stream & Fallback)
 app.get('/api/documents/:id/download', async (req, res) => {
   const { id } = req.params;
@@ -4877,6 +5222,7 @@ app.post('/api/documents/:docId/verify-field', (req, res) => {
   try {
     const { docId } = req.params;
     const { clientId, section, key, verifiedValue, verifiedBy, notes } = req.body;
+    const doc = db.documents.find((d: any) => d.id === docId);
 
     if (!clientId || !section || !key) {
       return res.status(400).json({ error: 'clientId, section, and key are required' });

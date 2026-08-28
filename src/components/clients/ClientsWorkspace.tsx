@@ -26,6 +26,8 @@ import { ConfirmModal } from '../common/ConfirmModal';
 import { ClientDetailView } from './ClientDetailView';
 import { NewClientModal } from './NewClientModal';
 import { ClientsKanbanView } from './ClientsKanbanView';
+import { UploadApplicationModal } from './UploadApplicationModal';
+import { FileText } from 'lucide-react';
 
 interface ClientsWorkspaceProps {
   onOpenNewClientModal: () => void;
@@ -50,6 +52,7 @@ export const ClientsWorkspace: React.FC<ClientsWorkspaceProps> = ({
   } = useData();
 
   const [viewMode, setViewMode] = useState<'list' | 'kanban'>('list');
+  const [isUploadAppModalOpen, setIsUploadAppModalOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState('ALL');
   const [sourceFilter, setSourceFilter] = useState('ALL');
@@ -166,6 +169,14 @@ export const ClientsWorkspace: React.FC<ClientsWorkspaceProps> = ({
               <span>Pipeline / Kanban View</span>
             </button>
           </div>
+
+          <button
+            onClick={() => setIsUploadAppModalOpen(true)}
+            className="flex items-center space-x-1.5 px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-bold transition-all shadow-md shadow-emerald-600/20 active:scale-95 border border-emerald-500/30"
+          >
+            <FileText className="w-4 h-4" />
+            <span>📄 Upload Business Loan Application</span>
+          </button>
 
           <button
             onClick={onOpenNewClientModal}
@@ -372,6 +383,15 @@ export const ClientsWorkspace: React.FC<ClientsWorkspaceProps> = ({
         <NewClientModal
           isOpen={isNewClientModalOpen}
           onClose={() => setIsNewClientModalOpen(false)}
+          onClientCreated={(created) => setSelectedClientId(created.id)}
+        />
+      )}
+
+      {/* Upload Business Loan Application Modal */}
+      {isUploadAppModalOpen && (
+        <UploadApplicationModal
+          isOpen={isUploadAppModalOpen}
+          onClose={() => setIsUploadAppModalOpen(false)}
           onClientCreated={(created) => setSelectedClientId(created.id)}
         />
       )}

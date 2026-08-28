@@ -8,7 +8,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   res.setHeader('Content-Type', 'application/json');
   res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate');
 
-  const hasApiKey = Boolean(process.env.GEMINI_API_KEY);
+  const apiKey = process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY;
+  const hasApiKey = Boolean(apiKey && apiKey.trim());
 
   return res.status(200).json({
     success: true,

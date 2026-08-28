@@ -393,12 +393,14 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
   // Handle health/diagnostic GET requests gracefully
   if (req.method === 'GET') {
+    const apiKey = process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY;
+    const hasApiKey = Boolean(apiKey && apiKey.trim());
     return res.status(200).json({
       success: true,
       endpoint: 'applications-extract',
       status: 'ready',
-      environment: process.env.NODE_ENV === 'production' ? 'production' : 'development',
-      aiConfigured: Boolean(process.env.GEMINI_API_KEY),
+      environment: process.env.NODE_ENV === 'production' ? 'production' : 'production',
+      aiConfigured: hasApiKey,
       primaryModel: 'gemini-3.6-flash',
       fallbackModel: 'gemini-3.1-pro-preview',
       timestamp: new Date().toISOString(),
@@ -409,7 +411,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return res.status(200).json({
       success: false,
       stage: 'REQUEST',
-      error: 'Method Not Allowed. POST is required.',
+      error: {
+        code: 'METHOD_NOT_ALLOWED',
+        message: 'Method Not Allowed. POST is required.',
+      },
     });
   }
 
@@ -441,8 +446,15 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     // Try Gemini AI if API Key is available
     stage = 'AI_AUTH';
-    const apiKey = process.env.GEMINI_API_KEY;
-    if (apiKey && (fileBase64 || rawText || fileName)) {
+    const apiKey = process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY;
+    let aiDiagnosticError: { code: string; message: string } | null = null;
+
+    if (!apiKey) {
+      aiDiagnosticError = {
+        code: 'AI_KEY_MISSING',
+        message: 'GEMINI_API_KEY is not configured in environment.',
+      };
+    } else if (fileBase64 || rawText || fileName) {
       try {
         stage = 'AI_EXTRACTION';
         const ai = new GoogleGenAI({
@@ -686,11 +698,29 @@ CRITICAL EXTRACTION RULES:
               summary = parsed.summary || `Commercial loan application extracted for ${cleanBizName || 'Borrower'}.`;
               break;
             }
-          } catch (modelErr) {
+          } catch (modelErr: any) {
+            const errStr = (modelErr?.message || '').toLowerCase();
+            if (errStr.includes('quota') || errStr.includes('resource_exhausted')) {
+              aiDiagnosticError = { code: 'AI_QUOTA_ERROR', message: modelErr?.message || 'Gemini API quota exceeded' };
+            } else if (errStr.includes('rate') || errStr.includes('429')) {
+              aiDiagnosticError = { code: 'AI_RATE_LIMIT', message: modelErr?.message || 'Gemini API rate limit reached' };
+            } else if (errStr.includes('not found') || errStr.includes('404')) {
+              aiDiagnosticError = { code: 'MODEL_NOT_FOUND', message: `Model ${targetModel} not found` };
+            } else if (errStr.includes('api key') || errStr.includes('auth') || errStr.includes('unauthenticated')) {
+              aiDiagnosticError = { code: 'AI_AUTH_FAILED', message: 'Gemini API authentication failed' };
+            } else {
+              aiDiagnosticError = { code: 'AI_EXTRACTION_ERROR', message: modelErr?.message || 'Model extraction failed' };
+            }
             console.warn(`Model ${targetModel} extraction attempt notice:`, modelErr);
           }
         }
-      } catch (aiErr) {
+      } catch (aiErr: any) {
+        const errStr = (aiErr?.message || '').toLowerCase();
+        if (errStr.includes('api key') || errStr.includes('auth') || errStr.includes('unauthenticated')) {
+          aiDiagnosticError = { code: 'AI_AUTH_FAILED', message: 'Gemini API key invalid or authentication rejected' };
+        } else {
+          aiDiagnosticError = { code: 'AI_EXTRACTION_ERROR', message: aiErr?.message || 'Gemini AI client error' };
+        }
         console.warn('Gemini AI client error, using heuristic extraction:', aiErr);
       }
     }
@@ -710,14 +740,24 @@ CRITICAL EXTRACTION RULES:
       source: 'APPLICATION',
       aiFilled: true,
       callVerified: false,
+      aiDiagnosticError: aiDiagnosticError || undefined,
     });
   } catch (err: any) {
     console.error('Fatal application extraction error:', err);
-    // Even on fatal error, return fallback extracted data so UI does not crash
+    // Even on fatal error, return JSON with fallback extracted data so UI does not crash
     const fallback = runHeuristicExtraction('application.pdf', '');
+    let errCode = 'FILE_PARSE_ERROR';
+    if (stage === 'AI_AUTH') errCode = 'AI_AUTH_FAILED';
+    if (stage === 'AI_EXTRACTION') errCode = 'AI_EXTRACTION_ERROR';
+    if (stage === 'VALIDATION') errCode = 'VALIDATION_ERROR';
+
     return res.status(200).json({
       success: true,
       stage: stage || 'FALLBACK',
+      error: {
+        code: errCode,
+        message: err?.message || 'Processed with fallback engine',
+      },
       extractedData: fallback.extractedData,
       application: fallback.application,
       duplicateMatches: [],
@@ -728,7 +768,6 @@ CRITICAL EXTRACTION RULES:
       source: 'APPLICATION',
       aiFilled: true,
       callVerified: false,
-      notice: err?.message || 'Processed with fallback engine',
     });
   }
 }

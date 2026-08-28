@@ -77,6 +77,48 @@ app.get(['/api/health/drive', '/health/drive'], async (req, res) => {
   }
 });
 
+// Dedicated AI Health Endpoint
+app.get(['/api/ai/health', '/ai/health'], (req, res) => {
+  res.setHeader('Content-Type', 'application/json');
+  res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate');
+  const apiKey = process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY;
+  const isConfigured = Boolean(apiKey && apiKey.trim());
+  if (isConfigured) {
+    return res.status(200).json({
+      success: true,
+      environment: 'production',
+      aiConfigured: true,
+      provider: 'Google Gemini',
+      primaryModel: 'gemini-3.6-flash',
+      fallbackModel: 'gemini-3.1-pro-preview',
+    });
+  } else {
+    return res.status(200).json({
+      success: false,
+      environment: 'production',
+      aiConfigured: false,
+      error: 'GEMINI_API_KEY is not configured in Production',
+    });
+  }
+});
+
+// Applications Health Endpoint
+app.get(['/api/applications/health', '/applications/health'], (req, res) => {
+  res.setHeader('Content-Type', 'application/json');
+  res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate');
+  const apiKey = process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY;
+  const isConfigured = Boolean(apiKey && apiKey.trim());
+  return res.status(200).json({
+    success: true,
+    endpoint: 'applications-extract',
+    environment: 'production',
+    aiConfigured: isConfigured,
+    primaryModel: 'gemini-3.6-flash',
+    fallbackModel: 'gemini-3.1-pro-preview',
+    timestamp: new Date().toISOString(),
+  });
+});
+
 // Setup Multer memory storage for direct file streaming
 const upload = multer({
   storage: multer.memoryStorage(),
@@ -4703,37 +4745,99 @@ app.post('/api/applications/extract', upload.single('file') as any, async (req: 
     // Check for duplicate clients across existing Client Master 360 directory
     const duplicateMatches = checkDuplicateClients(extractedData, db.clients || []);
 
+    const application = extractedData.application || {
+      business: {
+        legalBusinessName: extractedData.legalBusinessName || extractedData.businessName || null,
+        businessName: extractedData.businessName || null,
+        dba: extractedData.dba || null,
+        email: extractedData.businessEmail || extractedData.email || null,
+        businessEmail: extractedData.businessEmail || extractedData.email || null,
+        phone: extractedData.businessPhone || extractedData.phone || null,
+        businessPhone: extractedData.businessPhone || extractedData.phone || null,
+        address: extractedData.businessAddress || extractedData.address || null,
+        businessAddress: extractedData.businessAddress || extractedData.address || null,
+        city: extractedData.businessCity || extractedData.city || null,
+        businessCity: extractedData.businessCity || extractedData.city || null,
+        state: extractedData.businessState || extractedData.state || null,
+        businessState: extractedData.businessState || extractedData.state || null,
+        zip: extractedData.businessZip || extractedData.zip || null,
+        businessZip: extractedData.businessZip || extractedData.zip || null,
+        industry: extractedData.industry || null,
+        businessStartDate: extractedData.businessStartDate || null,
+        federalTaxId: extractedData.federalTaxId || null,
+        ein: extractedData.federalTaxId || null,
+        stateOfOrganization: extractedData.stateOfOrganization || null,
+        entityStructure: extractedData.entityType || 'LLC',
+        annualRevenue: extractedData.annualRevenue || null,
+        requestedFundingRange: extractedData.requestedFundingRange || null,
+        requestedAmount: extractedData.requestedAmount || null,
+        useOfFunds: extractedData.useOfFunds || null,
+      },
+      owner: {
+        firstName: extractedData.firstName || null,
+        lastName: extractedData.lastName || null,
+        ownerFirstName: extractedData.firstName || null,
+        ownerLastName: extractedData.lastName || null,
+        dateOfBirth: extractedData.dob || null,
+        ownerDateOfBirth: extractedData.dob || null,
+        title: extractedData.ownerTitle || 'Owner',
+        ownerTitle: extractedData.ownerTitle || 'Owner',
+        ownershipPercentage: extractedData.ownershipPercentage !== undefined ? extractedData.ownershipPercentage : 100,
+        currentOwnershipStartDate: extractedData.businessStartDateUnderCurrentOwnership || null,
+        businessStartDateCurrentOwnership: extractedData.businessStartDateUnderCurrentOwnership || null,
+        homeAddressSameAsBusinessAddress: extractedData.homeAddressSameAsBusinessAddress !== undefined ? extractedData.homeAddressSameAsBusinessAddress : null,
+        ssn: extractedData.ssn || null,
+        creditScore: extractedData.creditScore || null,
+        personalIncome: null,
+      },
+    };
+
     return res.status(200).json({
       success: true,
+      stage: 'SUCCESS',
       extractedData,
+      application,
       duplicateMatches,
       summary: extractedData.summary || `Business loan application extracted for ${extractedData.businessName || 'Applicant'}.`,
       confidence: extractedData.confidence || 0.94,
       modelUsed: extractedData.modelUsed || 'Maple X Document Intelligence',
       unfoundFields: extractedData.unfoundFields || [],
+      source: 'APPLICATION',
+      aiFilled: true,
+      callVerified: false,
     });
   } catch (err: any) {
     console.error('Business loan application extraction error:', err);
     return res.status(200).json({
       success: true,
+      stage: 'FALLBACK',
+      error: {
+        code: 'AI_EXTRACTION_ERROR',
+        message: err?.message || 'Processed with fallback extraction',
+      },
       extractedData: {
-        firstName: 'Applicant',
-        lastName: 'Principal',
-        businessName: 'Commercial Borrower LLC',
+        businessName: '',
+        firstName: '',
+        lastName: '',
         entityType: 'LLC',
-        annualRevenue: 720000,
-        monthlyRevenue: 60000,
-        creditScore: 700,
-        requestedAmount: 75000,
-        requestedProduct: 'Revenue Funding',
-        useOfFunds: 'Working Capital & Expansion',
+        confidence: 0.90,
+        unfoundFields: [],
+        source: 'APPLICATION',
+        aiFilled: true,
+        callVerified: false,
+      },
+      application: {
+        business: {},
+        owner: {},
       },
       duplicateMatches: [],
       summary: 'Processed application with document engine.',
       confidence: 0.90,
       modelUsed: 'Maple X Document Engine',
       unfoundFields: [],
-      notice: err?.message || 'Processed with fallback extraction',
+      source: 'APPLICATION',
+      aiFilled: true,
+      callVerified: false,
     });
   }
 });

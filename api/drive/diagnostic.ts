@@ -1,18 +1,20 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
+import { getDriveDiagnostic, getRequestOrigin } from '../_server/googleDriveService';
 
 /**
  * Dedicated Google Drive Diagnostic Endpoint
- * Always returns structured JSON.
+ * Statically imports GoogleDriveService so Vercel bundles it into the Lambda.
+ * Always returns structured JSON with stage classification.
  */
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   res.setHeader('Content-Type', 'application/json');
   res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate');
   try {
-    const { getDriveDiagnostic, getRequestOrigin } = await import('../_server/googleDriveService.ts');
     const hostOrigin = getRequestOrigin(req);
     const diag = await getDriveDiagnostic(hostOrigin);
     return res.status(200).json(diag);
   } catch (err: any) {
+    console.error('[API Diagnostic Error]:', err);
     return res.status(200).json({
       success: false,
       authenticated: false,
@@ -29,8 +31,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       serviceAccount: '',
       folderId: process.env.GOOGLE_DRIVE_FOLDER_ID || process.env.GOOGLE_DRIVE_ROOT_FOLDER_ID || '1qTQe0N8Wb_5MTDrp_BmOrdSjI5QWGqVm',
       folderName: 'MAPLE X FINANCIAL PORTAL',
-      error: err?.message || 'Unexpected diagnostic evaluation error',
-      stage: 'DIAGNOSTIC_EVALUATION',
+      error: `Diagnostic module error: ${err?.message || err}`,
+      stage: 'MODULE_ERROR',
       isVercel: true,
       environment: 'production',
       serverTime: new Date().toISOString(),

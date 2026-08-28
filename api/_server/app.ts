@@ -11,7 +11,7 @@ import {
   normalizeClassificationType,
   extractBusinessLoanApplicationData,
   checkDuplicateClients,
-} from './documentAiService.ts';
+} from './documentAiService';
 import {
   getDriveStatus,
   getDriveDiagnostic,
@@ -27,7 +27,7 @@ import {
   getRequestOrigin,
   DEDICATED_ACCOUNT_EMAIL,
   DEFAULT_ROOT_FOLDER_ID,
-} from './googleDriveService.ts';
+} from './googleDriveService';
 
 const app = express();
 const PORT = 3000;

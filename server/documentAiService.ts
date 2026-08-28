@@ -1,1 +1,1 @@
-export * from '../api/_server/documentAiService.ts';
+export * from '../api/_server/documentAiService';

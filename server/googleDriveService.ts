@@ -1,1 +1,1 @@
-export * from '../api/_server/googleDriveService.ts';
+export * from '../api/_server/googleDriveService';

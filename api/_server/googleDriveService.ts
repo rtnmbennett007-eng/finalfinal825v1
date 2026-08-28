@@ -548,9 +548,12 @@ export async function testDriveConnectionLive(reqHostOrigin?: string) {
     });
     return {
       success: false,
-      summary: 'Service Account credentials missing in server environment.',
+      status: 'FAILED',
+      stage: 'CREDENTIAL_ERROR',
+      summary: 'Service Account credentials missing or invalid in server environment.',
       serviceAccountEmail: sa.serviceAccountEmail,
       targetFolderId: sa.folderId,
+      steps: results.map((r) => ({ name: r.step, status: r.status, message: r.message })),
       results,
     };
   }
@@ -578,9 +581,12 @@ export async function testDriveConnectionLive(reqHostOrigin?: string) {
     });
     return {
       success: false,
+      status: 'FAILED',
+      stage: 'DRIVE_API_ERROR',
       summary: `Google authentication failed: ${authErr.message}`,
       serviceAccountEmail: sa.serviceAccountEmail,
       targetFolderId: sa.folderId,
+      steps: results.map((r) => ({ name: r.step, status: r.status, message: r.message })),
       results,
     };
   }
@@ -602,9 +608,12 @@ export async function testDriveConnectionLive(reqHostOrigin?: string) {
       });
       return {
         success: false,
+        status: 'FAILED',
+        stage: 'FOLDER_ACCESS_ERROR',
         summary: 'Target folder is in the Google Drive trash.',
         serviceAccountEmail: sa.serviceAccountEmail,
         targetFolderId: sa.folderId,
+        steps: results.map((r) => ({ name: r.step, status: r.status, message: r.message })),
         results,
       };
     }
@@ -637,10 +646,12 @@ export async function testDriveConnectionLive(reqHostOrigin?: string) {
 
     return {
       success: true,
+      status: 'CONNECTED',
       summary: `Google Drive Verification Passed. Connected to "${folder.name}" with service account ${sa.serviceAccountEmail}.`,
       serviceAccountEmail: sa.serviceAccountEmail,
       targetFolderId: sa.folderId,
       targetFolderName: folder.name,
+      steps: results.map((r) => ({ name: r.step, status: r.status, message: r.message })),
       results,
     };
   } catch (folderErr: any) {
@@ -651,9 +662,12 @@ export async function testDriveConnectionLive(reqHostOrigin?: string) {
     });
     return {
       success: false,
+      status: 'FAILED',
+      stage: 'FOLDER_ACCESS_ERROR',
       summary: `Folder access failed: ${folderErr.message || 'Check folder permissions'}`,
       serviceAccountEmail: sa.serviceAccountEmail,
       targetFolderId: sa.folderId,
+      steps: results.map((r) => ({ name: r.step, status: r.status, message: r.message })),
       results,
     };
   }
@@ -1032,6 +1046,7 @@ export async function getDriveDiagnostic(reqHostOrigin?: string) {
       authenticated: false,
       driveApiAuthenticated: false,
       folderAccessible: false,
+      stage: 'CREDENTIAL_ERROR',
       error: sa.parseError || (sa.hasServiceAccountJson ? 'GOOGLE_SERVICE_ACCOUNT_JSON exists but could not be parsed.' : 'GOOGLE_SERVICE_ACCOUNT_JSON is missing from the Vercel Production runtime.'),
       credentialSource: sa.credentialSource,
       tokenSource,
@@ -1065,6 +1080,8 @@ export async function getDriveDiagnostic(reqHostOrigin?: string) {
       authenticated: true,
       driveApiAuthenticated: true,
       folderAccessible: isAccessible,
+      stage: isAccessible ? 'VERIFIED' : 'FOLDER_ACCESS_ERROR',
+      error: isAccessible ? undefined : 'Target folder is inaccessible or trashed in Google Drive.',
       credentialSource: sa.credentialSource,
       tokenSource,
       hasServiceAccountJson: sa.hasServiceAccountJson,
@@ -1082,12 +1099,15 @@ export async function getDriveDiagnostic(reqHostOrigin?: string) {
       serverInstance,
     };
   } catch (err: any) {
+    const errMsg = err?.message || String(err);
+    const isAuthErr = errMsg.toLowerCase().includes('auth') || errMsg.toLowerCase().includes('jwt') || errMsg.toLowerCase().includes('token');
     return {
       success: false,
       authenticated: false,
       driveApiAuthenticated: false,
       folderAccessible: false,
-      error: `Google Drive API error: ${err?.message || err}`,
+      stage: isAuthErr ? 'DRIVE_API_ERROR' : 'FOLDER_ACCESS_ERROR',
+      error: `Google Drive API error: ${errMsg}`,
       credentialSource: sa.credentialSource,
       tokenSource,
       hasServiceAccountJson: sa.hasServiceAccountJson,

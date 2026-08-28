@@ -117,6 +117,11 @@ service cloud.firestore {
       allow read, write: if isStaffOrAdmin();
     }
 
+    // Submission Packages - Generated lender packages and cover sheets
+    match /submissionPackages/{pkgId} {
+      allow read, write: if isStaffOrAdmin();
+    }
+
     // Internal Notes - Internal staff communication on client files
     match /internalNotes/{noteId} {
       allow read, write: if isStaffOrAdmin();

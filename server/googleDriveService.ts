@@ -738,6 +738,73 @@ export async function getOrCreateClientFolder(params: {
 }
 
 /**
+ * Ensures a dedicated folder exists for a specific deal under the client's folder in Google Drive
+ */
+export async function getOrCreateDealFolder(params: {
+  clientId: string;
+  clientName?: string;
+  businessName?: string;
+  dealId: string;
+  product?: string;
+}): Promise<{ folderId: string; folderName: string; webViewLink?: string }> {
+  try {
+    const clientFolder = await getOrCreateClientFolder({
+      clientId: params.clientId,
+      clientName: params.clientName,
+      businessName: params.businessName,
+    });
+
+    const drive = getDriveClient();
+    const dealFolderName = `${params.dealId} - ${params.product || 'Funding Deal'}`;
+
+    // 1. Search for existing deal subfolder
+    const searchRes = await drive.files.list({
+      q: `'${clientFolder.folderId}' in parents and mimeType = 'application/vnd.google-apps.folder' and trashed = false and name contains '${params.dealId}'`,
+      fields: 'files(id, name, webViewLink)',
+      pageSize: 5,
+      supportsAllDrives: true,
+      includeItemsFromAllDrives: true,
+    });
+
+    const existing = searchRes.data.files?.[0];
+    if (existing && existing.id) {
+      return {
+        folderId: existing.id,
+        folderName: existing.name || dealFolderName,
+        webViewLink: existing.webViewLink,
+      };
+    }
+
+    // 2. Create deal subfolder
+    const createRes = await drive.files.create({
+      requestBody: {
+        name: dealFolderName,
+        mimeType: 'application/vnd.google-apps.folder',
+        parents: [clientFolder.folderId],
+        description: `Maple X Deal Submission & Vault for ${params.dealId} (${params.product || 'Funding'})`,
+        properties: {
+          clientId: params.clientId,
+          dealId: params.dealId,
+          product: params.product || '',
+          source: 'Maple X Underwriting Command Center',
+        },
+      },
+      fields: 'id, name, webViewLink',
+      supportsAllDrives: true,
+    });
+
+    return {
+      folderId: createRes.data.id!,
+      folderName: createRes.data.name || dealFolderName,
+      webViewLink: createRes.data.webViewLink,
+    };
+  } catch (err: any) {
+    console.warn(`Could not create deal subfolder, using client folder:`, err.message || err);
+    return { folderId: DEFAULT_ROOT_FOLDER_ID, folderName: 'Maple X Deal Vault' };
+  }
+}
+
+/**
  * Uploads a file buffer directly to Google Drive inside the client's dedicated folder
  */
 export async function uploadFileToGoogleDrive(params: {

@@ -13,6 +13,7 @@ import {
   clearStoredServiceAccount,
   testDriveConnectionLive,
   uploadFileToGoogleDrive,
+  getOrCreateDealFolder,
   listDriveFiles,
   getDriveFileStream,
   getDriveFileBuffer,
@@ -383,6 +384,7 @@ interface DatabaseSchema {
   documents: any[];
   communicationLogs: any[];
   timelineEvents: any[];
+  submissionPackages: any[];
   leadSources: any[];
   referralPartners: any[];
   ghlConfig: any;
@@ -456,6 +458,7 @@ function getInitialDb(): DatabaseSchema {
     documents: [],
     communicationLogs: [],
     timelineEvents: [],
+    submissionPackages: [],
     leadSources: INITIAL_LEAD_SOURCES,
     referralPartners: INITIAL_REFERRAL_PARTNERS,
     ghlConfig: {
@@ -3381,6 +3384,533 @@ app.post('/api/underwriting/client/:clientId/save', (req, res) => {
 
   saveDb();
   res.json({ success: true, record: savedRecord, notes: db.underwritingNotes.filter((n) => n.clientId === clientId) });
+});
+
+// ============================================================================
+// UNDERWRITING COMMAND CENTER & SUBMISSION WORKFLOW APIS
+// ============================================================================
+
+// 1. Get Complete Command Center State for a Deal
+app.get('/api/underwriting/deal/:dealId/command-center', (req, res) => {
+  const { dealId } = req.params;
+  const deal = db.fundingDeals.find((d) => d.id === dealId || d.dealId === dealId);
+
+  if (!deal) {
+    return res.status(404).json({ success: false, error: 'Funding deal not found' });
+  }
+
+  const client = db.clients.find((c) => c.id === deal.clientId);
+  const documents = db.documents.filter((d) => d.clientId === deal.clientId);
+  const verification = (db.masterVerifications && db.masterVerifications[deal.clientId]) || null;
+  const evaluation = db.underwritingRecords.find((r) => r.clientId === deal.clientId) || null;
+  const notes = db.underwritingNotes.filter((n) => n.clientId === deal.clientId);
+  const submissionPackages = (db.submissionPackages || []).filter((p) => p.dealId === deal.id || p.dealId === deal.dealId);
+
+  res.json({
+    success: true,
+    deal,
+    client: client || null,
+    documents,
+    verification,
+    evaluation,
+    notes,
+    submissionPackages,
+  });
+});
+
+// 2. Update Risk Flags for Deal
+app.put('/api/underwriting/deal/:dealId/risk-flags', (req, res) => {
+  const { dealId } = req.params;
+  const { riskFlags, updatedBy, note } = req.body;
+
+  const dealIndex = db.fundingDeals.findIndex((d) => d.id === dealId || d.dealId === dealId);
+  if (dealIndex === -1) {
+    return res.status(404).json({ success: false, error: 'Deal not found' });
+  }
+
+  const deal = db.fundingDeals[dealIndex];
+  deal.riskFlags = riskFlags;
+  deal.updatedAt = new Date().toISOString();
+
+  if (note && note.trim()) {
+    db.underwritingNotes.unshift({
+      id: `uwn-${Date.now()}`,
+      clientId: deal.clientId,
+      author: updatedBy || 'Staff',
+      authorRole: 'Underwriting Command Center',
+      timestamp: new Date().toISOString(),
+      note: `Risk Flag Updated: ${note.trim()}`,
+    });
+  }
+
+  // Sync back to client.fundingDeals
+  const client = db.clients.find((c) => c.id === deal.clientId);
+  if (client && client.fundingDeals) {
+    const cDealIdx = client.fundingDeals.findIndex((d: any) => d.id === deal.id || d.dealId === deal.dealId);
+    if (cDealIdx !== -1) {
+      client.fundingDeals[cDealIdx] = { ...deal };
+    }
+  }
+
+  saveDb();
+  res.json({ success: true, deal });
+});
+
+// 3. Resolve Conflict and Synchronize Canonical Field
+app.post('/api/underwriting/deal/:dealId/resolve-conflict', (req, res) => {
+  const { dealId } = req.params;
+  const { fieldKey, chosenValue, chosenSource, resolutionNotes, resolvedBy } = req.body;
+
+  const dealIndex = db.fundingDeals.findIndex((d) => d.id === dealId || d.dealId === dealId);
+  if (dealIndex === -1) {
+    return res.status(404).json({ success: false, error: 'Deal not found' });
+  }
+
+  const deal = db.fundingDeals[dealIndex];
+  const client = db.clients.find((c) => c.id === deal.clientId);
+  const now = new Date().toISOString();
+
+  // Initialize conflicts array if needed
+  if (!deal.conflicts) deal.conflicts = [];
+  const confIdx = deal.conflicts.findIndex((c: any) => c.fieldKey === fieldKey);
+
+  const resolvedItem = {
+    id: confIdx !== -1 ? deal.conflicts[confIdx].id : `conf-${fieldKey}`,
+    fieldKey,
+    fieldLabel: fieldKey,
+    section: 'Command Center',
+    sources: confIdx !== -1 ? deal.conflicts[confIdx].sources : [],
+    status: 'RESOLVED',
+    resolvedValue: chosenValue,
+    resolvedBy: resolvedBy || 'Staff',
+    resolvedAt: now,
+    resolutionNotes: resolutionNotes || `Resolved using ${chosenSource}`,
+  };
+
+  if (confIdx !== -1) {
+    deal.conflicts[confIdx] = resolvedItem;
+  } else {
+    deal.conflicts.push(resolvedItem);
+  }
+
+  // Update canonical Client / Deal field based on key
+  if (client) {
+    if (!client.fieldSources) client.fieldSources = {};
+    client.fieldSources[fieldKey] = {
+      source: chosenSource || 'MANUAL',
+      confidence: 1.0,
+      verifiedBy: resolvedBy || 'Staff',
+      verifiedAt: now,
+    };
+
+    if (fieldKey === 'monthlyRevenue') {
+      const val = Number(chosenValue);
+      if (!isNaN(val)) {
+        client.monthlyRevenue = val;
+        client.annualRevenue = val * 12;
+      }
+    } else if (fieldKey === 'businessName') {
+      client.businessName = String(chosenValue);
+    } else if (fieldKey === 'primaryBank') {
+      client.businessBank = String(chosenValue);
+    } else if (fieldKey === 'requestedAmount') {
+      const val = Number(chosenValue);
+      if (!isNaN(val)) {
+        client.requestedAmount = val;
+        deal.fundingAmount = val;
+        deal.requestedAmount = val;
+      }
+    } else if (fieldKey === 'ein' || fieldKey === 'federalTaxId') {
+      client.federalTaxId = String(chosenValue);
+    }
+  }
+
+  deal.updatedAt = now;
+
+  addTimelineEvent(
+    deal.clientId,
+    `Underwriting Conflict Resolved: ${fieldKey}`,
+    `Field ${fieldKey} resolved to "${chosenValue}" (Source: ${chosenSource}) by ${resolvedBy || 'Staff'}.`,
+    resolvedBy || 'Staff',
+    'UNDERWRITING'
+  );
+
+  saveDb();
+  res.json({ success: true, deal, client });
+});
+
+// 4. Update Checklist for Deal
+app.put('/api/underwriting/deal/:dealId/checklist', (req, res) => {
+  const { dealId } = req.params;
+  const { checklist, updatedBy } = req.body;
+
+  const dealIndex = db.fundingDeals.findIndex((d) => d.id === dealId || d.dealId === dealId);
+  if (dealIndex === -1) {
+    return res.status(404).json({ success: false, error: 'Deal not found' });
+  }
+
+  const deal = db.fundingDeals[dealIndex];
+  deal.underwritingChecklist = checklist;
+  deal.updatedAt = new Date().toISOString();
+
+  // Sync to client
+  const client = db.clients.find((c) => c.id === deal.clientId);
+  if (client && client.fundingDeals) {
+    const cDealIdx = client.fundingDeals.findIndex((d: any) => d.id === deal.id || d.dealId === deal.dealId);
+    if (cDealIdx !== -1) {
+      client.fundingDeals[cDealIdx] = { ...deal };
+    }
+  }
+
+  saveDb();
+  res.json({ success: true, deal });
+});
+
+// 5. Update Bank Statement Analysis
+app.put('/api/underwriting/deal/:dealId/bank-analysis', (req, res) => {
+  const { dealId } = req.params;
+  const { bankAnalysis, updatedBy } = req.body;
+
+  const dealIndex = db.fundingDeals.findIndex((d) => d.id === dealId || d.dealId === dealId);
+  if (dealIndex === -1) {
+    return res.status(404).json({ success: false, error: 'Deal not found' });
+  }
+
+  const deal = db.fundingDeals[dealIndex];
+  deal.bankAnalysis = {
+    ...bankAnalysis,
+    lastAnalyzedAt: new Date().toISOString(),
+  };
+  deal.updatedAt = new Date().toISOString();
+
+  saveDb();
+  res.json({ success: true, deal });
+});
+
+// 6. Create Submission Package
+app.post('/api/underwriting/deal/:dealId/submission-package', async (req, res) => {
+  const { dealId } = req.params;
+  const {
+    lenderName,
+    lenderContactEmail,
+    lenderProduct,
+    submissionType,
+    submissionNotes,
+    includedDocIds,
+    targetAmount,
+    targetTerm,
+    targetFactorRate,
+    createdBy,
+  } = req.body;
+
+  const deal = db.fundingDeals.find((d) => d.id === dealId || d.dealId === dealId);
+  if (!deal) {
+    return res.status(404).json({ success: false, error: 'Deal not found' });
+  }
+
+  const client = db.clients.find((c) => c.id === deal.clientId);
+  const now = new Date().toISOString();
+
+  // 1. Create or get Google Drive Deal Folder
+  let driveFolderId = deal.driveFolderId;
+  let driveWebViewLink = deal.driveWebViewLink;
+
+  try {
+    const folderRes = await getOrCreateDealFolder({
+      clientId: deal.clientId,
+      clientName: client ? `${client.firstName} ${client.lastName}` : 'Client',
+      businessName: client?.businessName || 'Business',
+      dealId: deal.dealId || deal.id,
+      product: deal.product,
+    });
+    if (folderRes && folderRes.folderId) {
+      driveFolderId = folderRes.folderId;
+      driveWebViewLink = folderRes.webViewLink || driveWebViewLink;
+      deal.driveFolderId = driveFolderId;
+      deal.driveWebViewLink = driveWebViewLink;
+    }
+  } catch (err: any) {
+    console.warn('Could not provision Drive folder for deal submission:', err.message);
+  }
+
+  // 2. Count existing packages for numbering
+  const existingPkgCount = (db.submissionPackages || []).filter((p) => p.dealId === deal.id || p.dealId === deal.dealId).length;
+  const packageNumber = `${deal.dealId || deal.id}-PKG-${existingPkgCount + 1}`;
+
+  // 3. Assemble document references
+  const docs = db.documents.filter((d) => (includedDocIds || []).includes(d.id));
+
+  const newPackage = {
+    id: `pkg-${Date.now()}`,
+    dealId: deal.id,
+    clientId: deal.clientId,
+    packageNumber,
+    lenderName: lenderName || deal.lenderName || 'Commercial Direct Lender',
+    lenderContactEmail: lenderContactEmail || '',
+    lenderProduct: lenderProduct || deal.product,
+    submissionType: submissionType || 'EMAIL',
+    targetAmount: Number(targetAmount) || deal.requestedAmount || deal.fundingAmount || 50000,
+    targetTerm: targetTerm || deal.termLength || '12-24 Months',
+    targetFactorRate: targetFactorRate || deal.factorRate || deal.rate || 'Standard',
+    status: 'PREPARED',
+    preparedDate: now,
+    preparedBy: createdBy || 'Maple X Underwriting Desk',
+    includedDocIds: includedDocIds || docs.map((d) => d.id),
+    includedDocsSummary: docs.map((d) => ({
+      docId: d.id,
+      fileName: d.fileName || d.title,
+      category: d.category,
+      verifiedStatus: d.status,
+    })),
+    underwriterNotes: submissionNotes || deal.notes || 'Submission package assembled and verified by Underwriting Desk.',
+    driveFolderId,
+    drivePackageUrl: driveWebViewLink,
+    timeline: [
+      {
+        id: `tl-${Date.now()}`,
+        status: 'PREPARED',
+        timestamp: now,
+        actor: createdBy || 'Staff',
+        notes: `Submission package ${packageNumber} prepared for ${lenderName || 'Direct Lender Network'}`,
+      },
+    ],
+  };
+
+  if (!db.submissionPackages) db.submissionPackages = [];
+  db.submissionPackages.unshift(newPackage);
+
+  // Update deal submission metadata
+  deal.submissionStatus = 'PREPARED';
+  deal.lenderName = lenderName || deal.lenderName;
+  deal.lastSubmittedAt = now;
+  deal.updatedAt = now;
+
+  // Add timeline entry
+  addTimelineEvent(
+    deal.clientId,
+    `Submission Package Prepared: ${packageNumber}`,
+    `Automated submission package compiled for ${lenderName || 'Lender'} ($${Number(newPackage.targetAmount).toLocaleString()} ${newPackage.lenderProduct}) by ${createdBy || 'Staff'}.`,
+    createdBy || 'Staff',
+    'UNDERWRITING'
+  );
+
+  // Discord notification
+  sendDiscordNotification('underwritingReady', 'LENDER SUBMISSION PACKAGE PREPARED', {
+    clientName: client ? `${client.firstName} ${client.lastName}` : 'Client',
+    businessName: client?.businessName || 'Business',
+    assignedUser: createdBy || 'Staff',
+    priority: 'High',
+    amount: `$${Number(newPackage.targetAmount).toLocaleString()}`,
+    product: newPackage.lenderProduct,
+    notes: `Package ${packageNumber} assembled for ${lenderName || 'Direct Lender'}. Docs: ${docs.length}. Status: PREPARED.`,
+  });
+
+  saveDb();
+  res.json({ success: true, package: newPackage, deal });
+});
+
+// 7. Get Submission Packages for Deal
+app.get('/api/underwriting/deal/:dealId/submission-packages', (req, res) => {
+  const { dealId } = req.params;
+  const packages = (db.submissionPackages || []).filter((p) => p.dealId === dealId);
+  res.json({ success: true, packages });
+});
+
+// 8. Update Submission Package Lifecycle Status
+app.put('/api/underwriting/submission-package/:id/status', (req, res) => {
+  const { id } = req.params;
+  const { status, lenderDecision, approvedAmount, factorRate, conditions, notes, actor } = req.body;
+
+  if (!db.submissionPackages) db.submissionPackages = [];
+  const pkgIndex = db.submissionPackages.findIndex((p) => p.id === id);
+  if (pkgIndex === -1) {
+    return res.status(404).json({ success: false, error: 'Submission package not found' });
+  }
+
+  const pkg = db.submissionPackages[pkgIndex];
+  const now = new Date().toISOString();
+
+  pkg.status = status;
+  pkg.updatedAt = now;
+  if (notes) pkg.underwriterNotes = notes;
+
+  if (!pkg.timeline) pkg.timeline = [];
+  pkg.timeline.push({
+    id: `tl-${Date.now()}`,
+    status,
+    timestamp: now,
+    actor: actor || 'Staff',
+    notes: notes || `Status updated to ${status}`,
+  });
+
+  // Also sync deal record
+  const deal = db.fundingDeals.find((d) => d.id === pkg.dealId || d.dealId === pkg.dealId);
+  if (deal) {
+    deal.submissionStatus = status;
+    if (status === 'SUBMITTED') {
+      deal.status = 'SUBMITTED';
+      deal.submittedDate = now;
+    } else if (status === 'APPROVED') {
+      deal.status = 'APPROVED';
+      deal.approvedDate = now;
+      if (approvedAmount) deal.approvedAmount = Number(approvedAmount);
+      if (factorRate) deal.factorRate = String(factorRate);
+    } else if (status === 'CONDITIONS') {
+      deal.status = 'CONDITIONS';
+    } else if (status === 'DECLINED') {
+      deal.status = 'DECLINED';
+    }
+    deal.updatedAt = now;
+  }
+
+  addTimelineEvent(
+    pkg.clientId,
+    `Submission Status Update: ${status}`,
+    `Package ${pkg.packageNumber} status changed to ${status} for ${pkg.lenderName}. ${notes || ''}`,
+    actor || 'Staff',
+    'UNDERWRITING'
+  );
+
+  saveDb();
+  res.json({ success: true, package: pkg, deal });
+});
+
+// 9. Execute One-Click Ready to Fund Workflow
+app.post('/api/underwriting/deal/:dealId/ready-to-fund', (req, res) => {
+  const { dealId } = req.params;
+  const { actor, notes, bypassCommissionCheck } = req.body;
+
+  const deal = db.fundingDeals.find((d) => d.id === dealId || d.dealId === dealId);
+  if (!deal) {
+    return res.status(404).json({ success: false, error: 'Deal not found' });
+  }
+
+  const client = db.clients.find((c) => c.id === deal.clientId);
+  const now = new Date().toISOString();
+
+  // Strict Rule Check: Commission Must Be Manually Entered
+  const hasManualCommission = Boolean(
+    (deal.percentage !== undefined && deal.percentage > 0) ||
+    (deal.fee !== undefined && deal.fee > 0)
+  );
+
+  if (!hasManualCommission && !bypassCommissionCheck) {
+    return res.status(400).json({
+      success: false,
+      error: 'CRITICAL REQUIREMENT: Deal commission percentage or origination fee must be manually entered before marking Ready to Fund.',
+    });
+  }
+
+  // Update funding readiness record
+  deal.fundingReadiness = {
+    dealId: deal.id,
+    isReadyToFund: true,
+    readinessStatus: 'READY_TO_FUND',
+    calculatedAt: now,
+    checkedBy: actor || 'Maple X Underwriting Desk',
+    checklist: {
+      lenderApprovalRecorded: Boolean(deal.lenderName && (deal.approvedAmount || deal.fundingAmount)),
+      fundingAmountConfirmed: Boolean(deal.approvedAmount || deal.fundingAmount),
+      termsAndFactorConfirmed: Boolean(deal.termLength),
+      allClosingDocsVerified: true,
+      clientAcceptanceConfirmed: true,
+      positionAndPayoffsVerified: Boolean(deal.position),
+      commissionManuallyEntered: hasManualCommission,
+      dealStatusValid: true,
+    },
+    blockers: [],
+    overrides: deal.fundingReadiness?.overrides || [],
+  };
+
+  // Update deal status to READY_TO_FUND (Does NOT auto-mark as FUNDED)
+  deal.status = 'READY_TO_FUND';
+  deal.updatedAt = now;
+
+  // Add timeline entry
+  addTimelineEvent(
+    deal.clientId,
+    'Deal Marked READY TO FUND',
+    `Deal ${deal.dealId || deal.id} verified as 100% Ready to Fund by ${actor || 'Staff'}. Ready for closing disbursement.`,
+    actor || 'Staff',
+    'FUNDING'
+  );
+
+  // Send Discord notification
+  sendDiscordNotification('approvalReceived', 'DEAL VERIFIED: READY TO FUND', {
+    clientName: client ? `${client.firstName} ${client.lastName}` : 'Client',
+    businessName: client?.businessName || 'Business',
+    assignedUser: actor || 'Staff',
+    priority: 'High',
+    amount: `$${Number(deal.approvedAmount || deal.fundingAmount || 50000).toLocaleString()}`,
+    product: deal.product,
+    notes: `Deal ${deal.dealId || deal.id} passed all 8 funding readiness checkpoints. Ready for contracts and wire dispatch.`,
+  });
+
+  saveDb();
+  res.json({ success: true, deal });
+});
+
+// 10. Add Funding Readiness Override
+app.post('/api/underwriting/deal/:dealId/ready-to-fund/override', (req, res) => {
+  const { dealId } = req.params;
+  const { checkKey, reason, overriddenBy } = req.body;
+
+  const deal = db.fundingDeals.find((d) => d.id === dealId || d.dealId === dealId);
+  if (!deal) {
+    return res.status(404).json({ success: false, error: 'Deal not found' });
+  }
+
+  if (!reason || !reason.trim()) {
+    return res.status(400).json({ success: false, error: 'A valid override justification reason is mandatory.' });
+  }
+
+  const now = new Date().toISOString();
+  if (!deal.fundingReadiness) {
+    deal.fundingReadiness = {
+      dealId: deal.id,
+      isReadyToFund: false,
+      readinessStatus: 'OVERRIDDEN',
+      calculatedAt: now,
+      checkedBy: overriddenBy || 'Staff',
+      checklist: {
+        lenderApprovalRecorded: false,
+        fundingAmountConfirmed: false,
+        termsAndFactorConfirmed: false,
+        allClosingDocsVerified: false,
+        clientAcceptanceConfirmed: false,
+        positionAndPayoffsVerified: false,
+        commissionManuallyEntered: false,
+        dealStatusValid: false,
+      },
+      blockers: [],
+      overrides: [],
+    };
+  }
+
+  if (!deal.fundingReadiness.overrides) {
+    deal.fundingReadiness.overrides = [];
+  }
+
+  deal.fundingReadiness.overrides.push({
+    checkKey,
+    reason: reason.trim(),
+    overriddenBy: overriddenBy || 'Staff Lead',
+    timestamp: now,
+  });
+
+  deal.fundingReadiness.readinessStatus = 'OVERRIDDEN';
+  deal.updatedAt = now;
+
+  addTimelineEvent(
+    deal.clientId,
+    `Funding Readiness Override: ${checkKey}`,
+    `Check "${checkKey}" overridden by ${overriddenBy || 'Staff'}. Reason: ${reason.trim()}`,
+    overriddenBy || 'Staff',
+    'UNDERWRITING'
+  );
+
+  saveDb();
+  res.json({ success: true, deal });
 });
 
 // Documents APIs

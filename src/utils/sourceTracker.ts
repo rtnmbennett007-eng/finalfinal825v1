@@ -8,6 +8,7 @@ export const SOURCE_PRIORITIES: Record<FieldSourceType, number> = {
   CALL_VERIFIED: 60,
   MANUAL: 50,
   VERIFICATION_FORM: 40,
+  BANK_STATEMENT: 35,
   CLIENT_APPLICATION: 30,
   APPLICATION: 30,
   AI_FILLED: 20,
@@ -44,6 +45,14 @@ export const SOURCE_DISPLAY_CONFIG: Record<
     badgeText: 'text-teal-300',
     borderColor: 'border-teal-500/50',
     icon: 'FileCheck',
+  },
+  BANK_STATEMENT: {
+    label: 'Bank Statement',
+    shortLabel: 'BANK STMT',
+    badgeBg: 'bg-amber-950/60',
+    badgeText: 'text-amber-300',
+    borderColor: 'border-amber-500/50',
+    icon: 'Landmark',
   },
   CLIENT_APPLICATION: {
     label: 'Client Application',

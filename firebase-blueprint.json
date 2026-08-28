@@ -183,6 +183,22 @@
       },
       "required": ["id", "fileName", "storagePath", "clientId", "documentType", "uploadedAt"]
     },
+    "SubmissionPackage": {
+      "title": "SubmissionPackage",
+      "description": "Lender submission packages and generated cover sheets",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "packageNumber": { "type": "string" },
+        "dealId": { "type": "string" },
+        "clientId": { "type": "string" },
+        "lenderName": { "type": "string" },
+        "preparedDate": { "type": "string" },
+        "preparedBy": { "type": "string" },
+        "status": { "type": "string" }
+      },
+      "required": ["id", "dealId", "clientId", "lenderName", "status"]
+    },
     "StaffUser": {
       "title": "StaffUser",
       "description": "Internal team member and operational administrator",
@@ -230,6 +246,10 @@
     "/documents/{documentId}": {
       "schema": "DocumentMetadata",
       "description": "Document vault file metadata linked to Firebase Storage"
+    },
+    "/submissionPackages/{packageId}": {
+      "schema": "SubmissionPackage",
+      "description": "Commercial lender submission packages and cover sheets"
     },
     "/staff/{staffId}": {
       "schema": "StaffUser",

@@ -6,6 +6,7 @@ export type FieldSourceType =
   | 'VERIFICATION_FORM'
   | 'CLIENT_APPLICATION'
   | 'APPLICATION'
+  | 'BANK_STATEMENT'
   | 'AI_FILLED'
   | 'IMPORTED'
   | 'SYSTEM_CALCULATED'
@@ -660,6 +661,240 @@ export interface Client {
   dataHistory?: DataHistoryEntry[];
 }
 
+export interface RiskFlagItem {
+  id: string;
+  severity: 'CRITICAL' | 'HIGH' | 'MEDIUM' | 'LOW' | 'CLEAR';
+  code: string;
+  title: string;
+  reason: string;
+  source: string;
+  category: 'REVENUE' | 'BANKING' | 'DEBT_STACKING' | 'CREDIT' | 'DOCUMENTS' | 'BUSINESS' | 'CONFLICT' | string;
+  status: 'ACTIVE' | 'ACKNOWLEDGED' | 'MITIGATED' | 'WAIVED';
+  mitigationNotes?: string;
+  mitigatedBy?: string;
+  mitigatedAt?: string;
+  acknowledgedBy?: string;
+  acknowledgedAt?: string;
+  createdAt: string;
+  resolvedBy?: string;
+  resolvedAt?: string;
+}
+
+export interface ConflictSourceValue {
+  source: FieldSourceType;
+  sourceLabel: string;
+  value: any;
+  confidence?: number;
+  quote?: string;
+  docId?: string;
+  updatedAt?: string;
+}
+
+export interface ConflictItem {
+  id: string;
+  fieldKey: string;
+  fieldLabel: string;
+  section: string;
+  sources: ConflictSourceValue[];
+  resolvedValue?: any;
+  resolvedSource?: FieldSourceType;
+  resolvedBy?: string;
+  resolutionNote?: string;
+  resolutionNotes?: string;
+  status: 'UNRESOLVED' | 'RESOLVED' | 'DISMISSED' | 'WAIVED';
+  resolvedAt?: string;
+}
+
+export type UnderwritingChecklistSection =
+  | 'CLIENT_INFO'
+  | 'BUSINESS_INFO'
+  | 'VERIFICATION'
+  | 'DOCUMENTS'
+  | 'BANKING'
+  | 'FUNDING'
+  | 'OBLIGATIONS'
+  | 'UNDERWRITING'
+  | 'DEAL_INFO'
+  | 'CLOSING_REQUIREMENTS'
+  | string;
+
+export interface UnderwritingChecklistItem {
+  id: string;
+  section: UnderwritingChecklistSection;
+  sectionLabel: string;
+  label: string;
+  description?: string;
+  status: 'COMPLETE' | 'NEEDS_REVIEW' | 'MISSING' | 'CONFLICTING';
+  notes?: string;
+  lastCheckedAt?: string;
+  completedBy?: string;
+  fieldSource?: FieldSourceType;
+  isAutoCalculated?: boolean;
+}
+
+export interface RecurringAchObligation {
+  id: string;
+  lender: string;
+  amount: number;
+  frequency: 'Daily' | 'Weekly' | 'Bi-Weekly' | 'Monthly';
+  monthlyEquivalent: number;
+  detectedFrom?: string;
+  notes?: string;
+}
+
+export interface LargeTransactionItem {
+  id: string;
+  date: string;
+  amount: number;
+  type: 'DEPOSIT' | 'WITHDRAWAL';
+  description: string;
+  isFlagged?: boolean;
+  notes?: string;
+}
+
+export interface BankStatementAnalysisSummary {
+  statementPeriod: string;
+  bankName: string;
+  accountHolder: string;
+  beginningBalance: number;
+  endingBalance: number;
+  totalDeposits: number;
+  totalWithdrawals: number;
+  avgDailyBalance: number;
+  negativeBalanceDays: number;
+  nsfsCount: number;
+  overdraftsCount: number;
+  returnedItemsCount: number;
+  recurringAchObligations: RecurringAchObligation[];
+  financingDebitsTotalMonthly: number;
+  largeDeposits: LargeTransactionItem[];
+  largeWithdrawals: LargeTransactionItem[];
+  taxPaymentsTotal: number;
+  cashFlowConsistency: 'Consistent' | 'Fluctuating' | 'Seasonal' | 'Declining' | 'Rapidly Growing' | string;
+  depositVelocity: 'High' | 'Moderate' | 'Low' | string;
+  monthlyBreakdowns: BankMonthBreakdown[];
+  sourceDocIds?: string[];
+  lastAnalyzedAt?: string;
+}
+
+export type SubmissionStatusType =
+  | 'NOT_PREPARED'
+  | 'PREPARED'
+  | 'SUBMITTED'
+  | 'UNDER_REVIEW'
+  | 'APPROVED'
+  | 'CONDITIONS'
+  | 'DECLINED'
+  | 'CANCELLED'
+  | 'WITHDRAWN'
+  | 'FUNDED'
+  | string;
+
+export interface SubmissionPackageRecord {
+  id: string;
+  packageNumber: string; // e.g. "PKG-DEAL-000101-1"
+  dealId: string;
+  clientId: string;
+  clientName: string;
+  businessName: string;
+  product: FundingProductType;
+  requestedAmount: number;
+  lenderName: string;
+  lenderContact?: string;
+  lenderContactEmail?: string;
+  lenderProduct?: string;
+  targetAmount?: number;
+  targetTerm?: string;
+  targetFactorRate?: string;
+  submissionType?: 'EMAIL' | 'PORTAL' | 'API' | 'MANUAL' | string;
+  preparedDate: string;
+  preparedBy: string;
+  submittedDate?: string;
+  submittedBy?: string;
+  submittedAt?: string;
+  status: SubmissionStatusType;
+  includedDocumentIds?: string[];
+  includedDocIds?: string[];
+  driveFolderId?: string;
+  driveFolderName?: string;
+  driveFolderUrl?: string;
+  drivePackageUrl?: string;
+  coverSheetPdfUrl?: string;
+  summaryNotesPdfUrl?: string;
+  packageZipUrl?: string;
+  underwriterNotes?: string;
+  submissionNotes?: string;
+  conditionsNotes?: string;
+  createdAt: string;
+  updatedAt: string;
+  statusTimeline?: Array<{
+    status: string;
+    timestamp: string;
+    updatedBy: string;
+    notes?: string;
+  }>;
+}
+
+export interface FundingReadinessChecklistItem {
+  key: string;
+  label: string;
+  description: string;
+  isPassing: boolean;
+  isBlocking: boolean;
+  category: string;
+}
+
+export interface FundingReadinessSummary {
+  isReady: boolean;
+  readinessScore: number; // 0 - 100
+  checklist: FundingReadinessChecklistItem[];
+  blockingIssuesCount: number;
+  warningsCount: number;
+  commissionConfigured: boolean;
+}
+
+export interface CommissionItem {
+  id?: string;
+  dealId?: string;
+  clientId?: string;
+  percentage?: number;
+  amount?: number;
+  fee?: number;
+  status?: string;
+}
+
+export interface FundingReadinessChecklist {
+  lenderApprovalRecorded: boolean;
+  fundingAmountConfirmed: boolean;
+  termsAndFactorConfirmed: boolean;
+  allClosingDocsVerified: boolean;
+  clientAcceptanceConfirmed: boolean;
+  positionAndPayoffsVerified: boolean;
+  commissionManuallyEntered: boolean; // NEVER PREFILLED
+  dealStatusValid: boolean;
+}
+
+export interface ReadinessOverrideItem {
+  checkKey: keyof FundingReadinessChecklist | string;
+  reason: string;
+  overriddenBy: string;
+  timestamp: string;
+}
+
+export interface FundingReadinessRecord {
+  dealId: string;
+  isReadyToFund: boolean;
+  readinessStatus: 'NOT_READY' | 'READY_TO_FUND' | 'OVERRIDDEN' | 'FUNDED';
+  calculatedAt: string;
+  checkedBy: string;
+  checklist: FundingReadinessChecklist;
+  blockers: string[];
+  overrides?: ReadinessOverrideItem[];
+  markedReadyAt?: string;
+  markedReadyBy?: string;
+  notes?: string;
+}
+
 export interface FundingDeal {
   id: string;
   dealId?: string; // Canonical display ID (e.g. DEAL-000101)
@@ -701,6 +936,18 @@ export interface FundingDeal {
   // Status (Canonical Deal Status)
   status: CanonicalDealStatus | 'PROPOSED' | 'SUBMITTED' | 'PRE_APPROVED' | 'APPROVED' | 'CONDITIONS_MET' | 'FUNDED' | 'DECLINED' | 'WITHDRAWN' | 'UNDERWRITING' | string;
 
+  // Underwriting & Submission Hub State
+  underwritingStatus?: 'PENDING_REVIEW' | 'IN_REVIEW' | 'READY_FOR_SUBMISSION' | 'SUBMITTED' | 'APPROVED' | 'CONDITIONS' | 'DECLINED' | string;
+  submissionStatus?: SubmissionStatusType;
+  submissionPackageId?: string;
+  submissionPackages?: SubmissionPackageRecord[];
+  fundingReadiness?: FundingReadinessRecord;
+  riskFlags?: RiskFlagItem[];
+  conflicts?: ConflictItem[];
+  bankAnalysis?: BankStatementAnalysisSummary;
+  underwritingChecklist?: UnderwritingChecklistItem[];
+  underwriterAssigned?: string;
+
   // Dates & Milestones
   createdDate?: string;
   startDate?: string;
@@ -711,13 +958,14 @@ export interface FundingDeal {
   renewalStatus?: string;
   cancelledDate?: string;
 
-  // Commission & Fees
+  // Commission & Fees (CRITICAL: NEVER PREFILLED; MUST BE ENTERED MANUALLY)
   fee: number; // Origination / closing fee $
   percentage: number; // Commission percentage (e.g., 6.9%)
   commissionPoints?: number;
   commissionTotal?: number;
   commissionStatus: 'PENDING' | 'COLLECTED' | 'DISTRIBUTED' | 'PARTIALLY_DISTRIBUTED';
   commissionReceivedDate?: string;
+  commissionManuallyEntered?: boolean;
 
   // Rep & Referral
   assignedStaff: string;
@@ -1935,5 +2183,3 @@ export interface CommissionRule {
   createdAt?: string;
   updatedAt?: string;
 }
-
-

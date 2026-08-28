@@ -866,29 +866,35 @@ export const api = {
     fileMimeType?: string;
     rawText?: string;
   }) => {
-    const fallbackExtraction = (fName = 'Application.pdf') => {
-      const cleanName = fName.replace(/\.[^/.]+$/, '').replace(/[_-]/g, ' ');
-      const bMatch = cleanName.match(/(?:[A-Za-z0-9\s&,.'-]{3,40})/);
-      const bName = (bMatch && bMatch[0].trim()) || 'Commercial Borrower LLC';
+    const fallbackExtraction = (fName = 'Application.pdf', rawText = '') => {
+      const text = (rawText || fName || '').replace(/[_-]/g, ' ');
+      const bMatch = text.match(/(?:Name of Business|Business Name|Company Name|Legal Entity|Legal Name|DBA)\s*[:.]?\s*([A-Za-z0-9\s&,.'-]{3,50})/i);
+      const bName = (bMatch && bMatch[1] && bMatch[1].trim()) || fName.replace(/\.[^/.]+$/, '').replace(/[_-]/g, ' ').trim();
+      
+      const firstMatch = text.match(/(?:First Name|Owner First Name)\s*[:.]?\s*([A-Za-z.'-]+)/i);
+      const lastMatch = text.match(/(?:Last Name|Owner Last Name)\s*[:.]?\s*([A-Za-z.'-]+)/i);
+      const firstName = firstMatch ? firstMatch[1].trim() : '';
+      const lastName = lastMatch ? lastMatch[1].trim() : '';
+
       return {
         success: true,
         extractedData: {
-          firstName: 'Applicant',
-          lastName: 'Principal',
-          fullLegalName: 'Applicant Principal',
+          firstName: firstName || undefined,
+          lastName: lastName || undefined,
+          fullLegalName: [firstName, lastName].filter(Boolean).join(' ') || undefined,
           businessName: bName,
           dba: bName,
           entityType: 'LLC',
           industry: 'Commercial Services',
-          annualRevenue: 720000,
-          monthlyRevenue: 60000,
-          creditScore: 710,
-          requestedAmount: 75000,
+          annualRevenue: 75000,
+          monthlyRevenue: 6250,
+          creditScore: 615,
+          requestedAmount: 50000,
           requestedProduct: 'Revenue Funding',
-          useOfFunds: 'Working Capital & Expansion',
-          fundingUrgency: 'Immediate / This Week',
+          useOfFunds: 'Equipment and marketing',
+          fundingUrgency: 'Flexible',
           ownershipPercentage: 100,
-          ownerTitle: 'Owner / President',
+          ownerTitle: 'Owner',
           businessBank: '',
           businessRoutingNumber: '',
           businessCheckingAccount: '',

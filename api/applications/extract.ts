@@ -160,7 +160,8 @@ function isPlaceholder(val: string) {
 }
 
 function runHeuristicExtraction(fileName = '', rawText = ''): { extractedData: ExtractedData; application: any } {
-  const text = (rawText || fileName || '').replace(/[_-]/g, ' ');
+  // Use rawText directly if provided, or clean up fileName
+  const text = rawText || fileName.replace(/\.[^/.]+$/, '').replace(/[_-]/g, ' ');
 
   let businessText = text;
   let ownerText = text;
@@ -173,9 +174,20 @@ function runHeuristicExtraction(fileName = '', rawText = ''): { extractedData: E
 
   // Clean business name
   let businessName = '';
-  const bMatch = businessText.match(/(?:Name of Business|Business Name|Company Name|Legal Entity|Legal Name|DBA)\s*[:.]?\s*([A-Za-z0-9\s&,.'-]{3,50})/i);
+  let dba = '';
+  const bMatch = businessText.match(/(?:Name of Business|Business Name|Company Name|Legal Entity|Legal Name)\s*[:.]?\s*([A-Za-z0-9\s&,.'-]{3,50}?)(?:\r|\n|DBA|Email|Phone|$)/i);
   if (bMatch && bMatch[1] && !isPlaceholder(bMatch[1])) {
     businessName = bMatch[1].trim();
+  }
+  const dbaMatch = businessText.match(/(?:DBA|Doing Business As)\s*[:.]?\s*([A-Za-z0-9\s&,.'-]{3,50}?)(?:\r|\n|Email|Phone|Address|$)/i);
+  if (dbaMatch && dbaMatch[1] && !isPlaceholder(dbaMatch[1])) {
+    dba = dbaMatch[1].trim();
+  }
+  if (!businessName && dba) {
+    businessName = dba;
+  }
+  if (!dba && businessName) {
+    dba = businessName;
   }
 
   // Name extraction
@@ -235,13 +247,13 @@ function runHeuristicExtraction(fileName = '', rawText = ''): { extractedData: E
   const einMatch = businessText.match(/\b(\d{2}-\d{7})\b/) || businessText.match(/(?:Federal Tax ID|Tax ID|EIN|Federal ID)\s*[:.]?\s*(\d{2}-?\d{7})/i);
   const federalTaxId = einMatch ? einMatch[1] : '';
 
-  // Phone
-  const phoneMatch = businessText.match(/(?:\(?\d{3}\)?[-.\s]?\d{3}[-.\s]?\d{4})/);
-  const phone = phoneMatch ? phoneMatch[0] : '';
+  // Phone (supports +13802874879, (555) 234-5678, 555-234-5678)
+  const phoneMatch = businessText.match(/(?:\+?1\s*[-.]?)?\(?\d{3}\)?[-.\s]?\d{3}[-.\s]?\d{4}/);
+  const phone = phoneMatch ? phoneMatch[0].trim() : '';
 
   // Email
   const emailMatch = businessText.match(/([a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,})/);
-  const email = emailMatch ? emailMatch[1] : '';
+  const email = emailMatch ? emailMatch[1].trim() : '';
 
   // Address
   const addrMatch = businessText.match(/(?:Business Address|Address)\s*[:.]?\s*([A-Za-z0-9\s,.'#-]+?)(?:\r|\n|City|State|Postal|Zip|Industry|$)/i);
@@ -250,29 +262,29 @@ function runHeuristicExtraction(fileName = '', rawText = ''): { extractedData: E
   const cityMatch = businessText.match(/(?:City)\s*[:.]?\s*([A-Za-z\s.-]+?)(?:\r|\n|State|Postal|Zip|$)/i);
   const businessCity = cityMatch ? cityMatch[1].trim() : '';
 
-  const stateMatch = businessText.match(/(?:State of Incorporation or Organization|State)\s*[:.]?\s*([A-Za-z\s]+?)(?:\r|\n|Postal|Zip|EIN|Federal|$)/i);
+  const stateMatch = businessText.match(/(?:State of Incorporation or Organization|State of Organization|State)\s*[:.]?\s*([A-Za-z\s]+?)(?:\r|\n|Postal|Zip|EIN|Federal|Industry|$)/i);
   const businessState = stateMatch ? stateMatch[1].trim() : '';
 
-  const zipMatch = businessText.match(/(?:Postal Code|Zip Code|Zip)\s*[:.]?\s*(\d{5}(?:-\d{4})?)/i);
+  const zipMatch = businessText.match(/(?:Postal Code|Zip Code|ZIP|Zip)\s*[:.]?\s*(\d{5}(?:-\d{4})?)/i);
   const businessZip = zipMatch ? zipMatch[1].trim() : '';
 
   const indMatch = businessText.match(/(?:Industry type|Industry Type|Industry)\s*[:.]?\s*([A-Za-z0-9\s&,.'-]+?)(?:\r|\n|Business Start|Federal|$)/i);
   const industry = indMatch ? indMatch[1].trim() : '';
 
-  const bStartDateMatch = businessText.match(/(?:Business Start Date)\s*[:.]?\s*(\d{1,2}[-/.]\d{1,2}[-/.]\d{2,4})/i);
+  const bStartDateMatch = businessText.match(/(?:Business Start Date|Start Date)\s*[:.]?\s*(\d{4}[-/.]\d{1,2}[-/.]\d{1,2}|\d{1,2}[-/.]\d{1,2}[-/.]\d{2,4})/i);
   const businessStartDate = bStartDateMatch ? bStartDateMatch[1].trim() : '';
 
   // Revenue
-  const revMatch = businessText.match(/(?:Annual Revenue|Gross Sales|Annual Volume|Gross Revenue)\s*[:$]?\s*([0-9,]+)/i);
+  const revMatch = businessText.match(/(?:Annual Revenue|Gross Sales|Annual Volume|Gross Revenue)\s*[:.]?\s*\$?\s*([0-9,]+)/i);
   const annualRevenue = revMatch ? Math.round(parseFloat(revMatch[1].replace(/,/g, ''))) : undefined;
   const monthlyRevenue = annualRevenue ? Math.round(annualRevenue / 12) : undefined;
 
   // Requested funding
-  const reqMatch = businessText.match(/(?:How much capital do you need\?|Capital Needed|Requested Amount|Funding Amount)\s*[:$]?\s*([A-Za-z0-9$,.\s-]+?)(?:\r|\n|What will|Use of|$)/i);
+  const reqMatch = businessText.match(/(?:How much capital do you need\?|Capital Needed|Funding Request|Requested Amount|Funding Amount)\s*[:.]?\s*\$?\s*([A-Za-z0-9$,.\s-]+?)(?:\r|\n|What will|Use of|$)/i);
   const reqRange = reqMatch ? reqMatch[1].trim() : '';
 
   // Use of funds
-  const fundsMatch = businessText.match(/(?:What will the money be used for\?|Use of Funds|Purpose)\s*[:.]?\s*([A-Za-z0-9\s/&,.'-]+?)(?:\r|\n|Owner|Section|$)/i);
+  const fundsMatch = businessText.match(/(?:What will the money be used for\?|Use of Funds|Purpose of Funds|Purpose)\s*[:.]?\s*([A-Za-z0-9\s/&,.'-]+?)(?:\r|\n|Owner|Section|$)/i);
   const useOfFunds = fundsMatch ? fundsMatch[1].trim() : '';
 
   const application = {
@@ -379,20 +391,47 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   res.setHeader('Content-Type', 'application/json');
   res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate');
 
+  // Handle health/diagnostic GET requests gracefully
+  if (req.method === 'GET') {
+    return res.status(200).json({
+      success: true,
+      endpoint: 'applications-extract',
+      status: 'ready',
+      environment: process.env.NODE_ENV === 'production' ? 'production' : 'development',
+      aiConfigured: Boolean(process.env.GEMINI_API_KEY),
+      primaryModel: 'gemini-3.6-flash',
+      fallbackModel: 'gemini-3.1-pro-preview',
+      timestamp: new Date().toISOString(),
+    });
+  }
+
   if (req.method !== 'POST') {
     return res.status(200).json({
       success: false,
+      stage: 'REQUEST',
       error: 'Method Not Allowed. POST is required.',
     });
   }
 
+  let stage = 'FILE_UPLOAD';
+
   try {
-    const body = req.body || {};
+    let body = req.body;
+    if (typeof body === 'string') {
+      try {
+        body = JSON.parse(body);
+      } catch {
+        body = {};
+      }
+    }
+    body = body || {};
+
     const fileName = body.fileName || 'business_loan_application.pdf';
     const fileMimeType = body.fileMimeType || 'application/pdf';
     const fileBase64 = body.fileBase64;
     const rawText = body.rawText;
 
+    stage = 'FILE_PARSE';
     const heuristic = runHeuristicExtraction(fileName, rawText);
     let extractedData: ExtractedData = heuristic.extractedData;
     let application = heuristic.application;
@@ -401,9 +440,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     let summary = `Business loan application extracted for ${extractedData.businessName || 'Borrower'}.`;
 
     // Try Gemini AI if API Key is available
+    stage = 'AI_AUTH';
     const apiKey = process.env.GEMINI_API_KEY;
     if (apiKey && (fileBase64 || rawText || fileName)) {
       try {
+        stage = 'AI_EXTRACTION';
         const ai = new GoogleGenAI({
           apiKey,
           httpOptions: { headers: { 'User-Agent': 'aistudio-build' } },
@@ -430,8 +471,8 @@ Map BUSINESS INFORMATION only to business fields:
 - "Business Start Date" -> business.businessStartDate
 - "Federal Tax ID" -> business.federalTaxId
 - "State of Incorporation or Organization" -> business.stateOfOrganization
-- "Annual Revenue" -> business.annualRevenue (numeric)
-- "How much capital do you need?" -> business.requestedFundingRange (e.g. "$5K - $50K") and numeric business.requestedAmount
+- "Annual Revenue" -> business.annualRevenue (numeric dollar amount of gross annual revenue, e.g. "$75,000" -> 75000. Do NOT confuse with requested funding amount.)
+- "How much capital do you need?" -> business.requestedFundingRange (e.g. "$5K - $50K") and numeric business.requestedAmount (e.g. 50000)
 - "What will the money be used for?" -> business.useOfFunds
 
 Map OWNER INFORMATION only to owner fields:
@@ -508,10 +549,14 @@ CRITICAL EXTRACTION RULES:
         const candidateModels = ['gemini-3.6-flash', 'gemini-3.1-pro-preview'];
         for (const targetModel of candidateModels) {
           try {
-            const response = await ai.models.generateContent({
+            const apiCall = ai.models.generateContent({
               model: targetModel,
               contents,
             });
+            const timeoutPromise = new Promise<never>((_, reject) =>
+              setTimeout(() => reject(new Error(`Timeout on model ${targetModel}`)), 12000)
+            );
+            const response: any = await Promise.race([apiCall, timeoutPromise]);
 
             const text = response.text || '';
             const match = text.match(/\{[\s\S]*\}/);
@@ -521,14 +566,25 @@ CRITICAL EXTRACTION RULES:
               const biz = rawApp.business || {};
               const own = rawApp.owner || rawApp.applicant || {};
 
-              const cleanOwnerFirst = isPlaceholder(own.firstName) ? '' : (own.firstName || '').trim();
-              const cleanOwnerLast = isPlaceholder(own.lastName) ? '' : (own.lastName || '').trim();
-              const cleanBizName = isPlaceholder(biz.legalBusinessName || biz.businessName) ? '' : (biz.legalBusinessName || biz.businessName || '').trim();
+              const cleanOwnerFirst = isPlaceholder(own.firstName) ? (heuristic.extractedData.firstName || '') : (own.firstName || '').trim();
+              const cleanOwnerLast = isPlaceholder(own.lastName) ? (heuristic.extractedData.lastName || '') : (own.lastName || '').trim();
+              const cleanBizName = isPlaceholder(biz.legalBusinessName || biz.businessName) ? (heuristic.extractedData.businessName || '') : (biz.legalBusinessName || biz.businessName || '').trim();
 
-              const annualRev = biz.annualRevenue ? Number(biz.annualRevenue) : undefined;
-              const reqAmt = biz.requestedAmount ? Number(biz.requestedAmount) : undefined;
-              const cScore = own.creditScore ? Number(own.creditScore) : undefined;
-              const ownPct = own.ownershipPercentage !== undefined && own.ownershipPercentage !== null ? Number(own.ownershipPercentage) : 100;
+              const annualRev = (biz.annualRevenue && Number(biz.annualRevenue) >= 10000)
+                ? Number(biz.annualRevenue)
+                : (heuristic.extractedData.annualRevenue || (biz.annualRevenue ? Number(biz.annualRevenue) : undefined));
+
+              const reqAmt = biz.requestedAmount
+                ? Number(biz.requestedAmount)
+                : (heuristic.extractedData.requestedAmount || undefined);
+
+              const cScore = own.creditScore
+                ? Number(own.creditScore)
+                : (heuristic.extractedData.creditScore || undefined);
+
+              const ownPct = own.ownershipPercentage !== undefined && own.ownershipPercentage !== null
+                ? Number(own.ownershipPercentage)
+                : (heuristic.extractedData.ownershipPercentage !== undefined ? heuristic.extractedData.ownershipPercentage : 100);
 
               application = {
                 business: {
@@ -639,8 +695,11 @@ CRITICAL EXTRACTION RULES:
       }
     }
 
+    stage = 'VALIDATION';
+
     return res.status(200).json({
       success: true,
+      stage: 'SUCCESS',
       extractedData,
       application,
       duplicateMatches: [],
@@ -658,6 +717,7 @@ CRITICAL EXTRACTION RULES:
     const fallback = runHeuristicExtraction('application.pdf', '');
     return res.status(200).json({
       success: true,
+      stage: stage || 'FALLBACK',
       extractedData: fallback.extractedData,
       application: fallback.application,
       duplicateMatches: [],

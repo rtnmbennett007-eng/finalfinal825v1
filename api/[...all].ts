@@ -1,11 +1,10 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
-import { executeDriveDiagnostic, executeDriveTestConnection } from './drive-runtime';
 import app from './_server/app';
 
 /**
  * Single Authoritative Vercel API Catch-All Handler
  * Forwards other /api/* routes directly into the Express application.
- * Fast-paths dedicated endpoints safely with the standalone drive-runtime.
+ * Fast-paths pure health checks.
  */
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   res.setHeader('Content-Type', 'application/json');
@@ -41,7 +40,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       pathname = `/api${pathname.startsWith('/') ? '' : '/'}${pathname}`;
     }
 
-    // Dedicated fast paths using bundle-safe runtime (prevents any catch-all failures)
+    // Pure health check fast-path
     if (pathname === '/api/health' || pathname === '/health') {
       return res.status(200).json({
         ok: true,
@@ -50,30 +49,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         timestamp: new Date().toISOString(),
         version: '1.0.0',
       });
-    }
-
-    if (pathname === '/api/health/drive' || pathname === '/health/drive') {
-      const diagnostic = await executeDriveDiagnostic();
-      return res.status(200).json({
-        success: diagnostic.success || false,
-        api: 'ok',
-        environment: 'production',
-        driveAuthenticated: diagnostic.authenticated || false,
-        folderAccessible: diagnostic.folderAccessible || false,
-        diagnostic,
-        timestamp: new Date().toISOString(),
-        version: '1.0.0',
-      });
-    }
-
-    if (pathname === '/api/drive/diagnostic' || pathname === '/drive/diagnostic') {
-      const diag = await executeDriveDiagnostic();
-      return res.status(200).json(diag);
-    }
-
-    if (pathname === '/api/drive/test-connection' || pathname === '/drive/test-connection') {
-      const result = await executeDriveTestConnection();
-      return res.status(200).json(result);
     }
 
     // Clean up query string by removing Vercel internal 'all' parameter if present
@@ -103,5 +78,3 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }
   }
 }
-
-

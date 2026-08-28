@@ -1,5 +1,5 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
-import app from '../server/app.ts';
+import app from './_server/app.ts';
 
 /**
  * Single Authoritative Vercel API Catch-All Handler

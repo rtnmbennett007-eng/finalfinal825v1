@@ -174,20 +174,15 @@ export const GoogleDriveIntegrationSettings: React.FC = () => {
     loadStatus();
   }, []);
 
-  // Compute authoritative status directly from backend diagnostic / config responses
+  // Compute authoritative status strictly from real backend diagnostic responses
+  const hasDiagnosticResult = diagnostic !== null;
   const isServiceAccountActive = Boolean(
     diagnostic?.authenticated ||
-    (diagnostic?.hasPrivateKey && diagnostic?.hasClientEmail) ||
-    diagnostic?.serviceAccountConfigured ||
-    config?.serviceAccountConfigured ||
-    (config?.hasPrivateKey && config?.hasClientEmail) ||
-    config?.isConfigured
+    (diagnostic?.driveApiAuthenticated && diagnostic?.serviceAccountConfigured)
   );
 
   const isFolderAccessible = Boolean(
-    diagnostic?.folderAccessible ||
-    config?.folderAccessible ||
-    config?.isConnected
+    isServiceAccountActive && diagnostic?.folderAccessible
   );
 
   const credentialSource = diagnostic?.credentialSource || config?.credentialSource || (isServiceAccountActive ? 'GOOGLE_SERVICE_ACCOUNT_JSON' : 'none');
@@ -213,11 +208,17 @@ export const GoogleDriveIntegrationSettings: React.FC = () => {
                     Google Drive Document Vault
                   </h2>
                   <span className={`px-2.5 py-0.5 rounded-full text-[11px] font-semibold ${
-                    isServiceAccountActive
+                    isServiceAccountActive && isFolderAccessible
                       ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20'
+                      : isServiceAccountActive
+                      ? 'bg-blue-500/10 text-blue-400 border border-blue-500/20'
                       : 'bg-amber-500/10 text-amber-400 border border-amber-500/20'
                   }`}>
-                    {isServiceAccountActive ? 'Service Account Active' : 'Key Required'}
+                    {isServiceAccountActive && isFolderAccessible
+                      ? '🟢 Connected & Verified'
+                      : isServiceAccountActive
+                      ? '🔵 Authenticated'
+                      : '🔴 Unable to Verify'}
                   </span>
                 </div>
                 <p className="text-sm text-slate-400">
@@ -261,9 +262,11 @@ export const GoogleDriveIntegrationSettings: React.FC = () => {
             <div>
               <div className="text-xs text-slate-400 font-medium">Service Account Status</div>
               <div className="flex items-center gap-2 mt-1">
-                <span className={`w-2.5 h-2.5 rounded-full ${isServiceAccountActive ? 'bg-emerald-400 animate-pulse' : 'bg-amber-400'}`} />
+                <span className={`w-2.5 h-2.5 rounded-full ${
+                  isServiceAccountActive ? 'bg-emerald-400 animate-pulse' : 'bg-amber-400'
+                }`} />
                 <span className="text-sm font-semibold text-white">
-                  {isServiceAccountActive ? 'Active & Authenticated' : 'Key Required'}
+                  {isServiceAccountActive ? 'Active & Authenticated' : 'Unable to Verify'}
                 </span>
               </div>
               <div className="text-[10px] text-slate-400 mt-1 font-mono">
@@ -284,9 +287,9 @@ export const GoogleDriveIntegrationSettings: React.FC = () => {
               </div>
               <div className="text-[10px] text-slate-400 mt-1">
                 {isFolderAccessible ? (
-                  <span className="text-emerald-400 font-medium">Folder Accessible & Writable</span>
+                  <span className="text-emerald-400 font-medium">Accessible & Writable</span>
                 ) : (
-                  <span className="text-amber-400 font-medium">Permission Check Ready</span>
+                  <span className="text-amber-400 font-medium">Unable to Verify Access</span>
                 )}
               </div>
             </div>

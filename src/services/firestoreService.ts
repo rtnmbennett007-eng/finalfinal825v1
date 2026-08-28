@@ -48,6 +48,7 @@ import {
   UnderwritingEvaluationRecord,
   UserProfile,
   UserRole,
+  ProductionErrorRecord,
 } from '../types';
 import { MASTER_FUNDING_PRODUCTS } from '../data/productCatalog';
 
@@ -210,6 +211,7 @@ interface LocalDataset {
   notifications: AppNotification[];
   discordConfig: DiscordConfig | null;
   ghlConfig: GhlConfig | null;
+  productionErrors: ProductionErrorRecord[];
 }
 
 export const DEFAULT_GHL_CONFIG: GhlConfig = {
@@ -1123,6 +1125,7 @@ function getInitialDataset(): LocalDataset {
     notifications,
     discordConfig: null,
     ghlConfig: DEFAULT_GHL_CONFIG,
+    productionErrors: [],
   };
 }
 
@@ -1538,6 +1541,21 @@ export const firestoreService = {
   // ==========================================
   subscribeClients(callback: (clients: Client[]) => void): Unsubscribe {
     return createSafeSubscription<Client>('clients', 'clients', callback);
+  },
+
+  async getClients(): Promise<Client[]> {
+    const db = getDb();
+    if (db) {
+      try {
+        const snap = await getDocs(collection(db, 'clients'));
+        const list: Client[] = [];
+        snap.forEach((d) => list.push({ id: d.id, ...(d.data() as any) }));
+        return list;
+      } catch (err: any) {
+        console.debug('getClients Firestore notice:', err?.code || err?.message || err);
+      }
+    }
+    return localStore.getDataset().clients || [];
   },
 
   async getClient(id: string): Promise<Client | null> {
@@ -3927,5 +3945,158 @@ export const firestoreService = {
         details: 'Local reactive store operational with initial dataset.',
       };
     }
+  },
+
+  // ==========================================
+  // PRODUCTION ERROR & DIAGNOSTICS LOGGING
+  // Durable persistence with reactive synchronization
+  // ==========================================
+
+  subscribeProductionErrors(callback: (errors: ProductionErrorRecord[]) => void): Unsubscribe {
+    return createSafeSubscription<ProductionErrorRecord>(
+      'productionErrors',
+      'productionErrors',
+      callback,
+      (db) => query(collection(db, 'productionErrors'), orderBy('timestamp', 'desc'), limit(150))
+    );
+  },
+
+  async getDocuments(): Promise<DocumentItem[]> {
+    const db = getDb();
+    if (db) {
+      try {
+        const snap = await getDocs(collection(db, 'documents'));
+        const list: DocumentItem[] = [];
+        snap.forEach((d) => list.push({ id: d.id, ...(d.data() as any) }));
+        return list;
+      } catch (err: any) {
+        console.debug('getDocuments Firestore notice:', err?.code || err?.message || err);
+      }
+    }
+    return localStore.getDataset().documents || [];
+  },
+
+  async getProductionErrors(): Promise<ProductionErrorRecord[]> {
+    const db = getDb();
+    if (db) {
+      try {
+        const q = query(collection(db, 'productionErrors'), orderBy('timestamp', 'desc'), limit(150));
+        const snap = await getDocs(q);
+        const errors: ProductionErrorRecord[] = [];
+        snap.forEach((docSnap) => {
+          errors.push({ id: docSnap.id, ...(docSnap.data() as any) });
+        });
+        return errors;
+      } catch (err: any) {
+        console.debug('getProductionErrors Firestore notice:', err?.code || err?.message || err);
+      }
+    }
+    return localStore.getDataset().productionErrors || [];
+  },
+
+  async createProductionError(data: Partial<ProductionErrorRecord>): Promise<ProductionErrorRecord> {
+    const newId = data.id || `err-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+    const newRecord: ProductionErrorRecord = {
+      id: newId,
+      timestamp: data.timestamp || new Date().toISOString(),
+      module: data.module || 'Unknown Module',
+      endpoint: data.endpoint || '/api/unknown',
+      method: data.method || 'POST',
+      httpStatus: data.httpStatus || 500,
+      stage: data.stage || 'UNKNOWN',
+      errorCode: data.errorCode || 'UNSPECIFIED_ERROR',
+      message: data.message || 'An unexpected production error occurred.',
+      requestId: data.requestId || `req-${Date.now()}`,
+      severity: data.severity || 'CRITICAL',
+      environment: 'production',
+      isResolved: Boolean(data.isResolved),
+      retryCount: data.retryCount || 0,
+      userId: data.userId,
+      userName: data.userName,
+      clientId: data.clientId,
+      clientName: data.clientName,
+      dealId: data.dealId,
+      documentId: data.documentId,
+      documentName: data.documentName,
+      fileName: data.fileName,
+      fileType: data.fileType,
+      fileSize: data.fileSize,
+      aiModel: data.aiModel,
+      resolvedBy: data.resolvedBy,
+      resolvedAt: data.resolvedAt,
+      resolutionNote: data.resolutionNote,
+      processingTrace: data.processingTrace,
+    };
+
+    localStore.updateDataset((ds) => {
+      const current = ds.productionErrors || [];
+      ds.productionErrors = [newRecord, ...current.filter((e) => e.id !== newId)].slice(0, 150);
+    }, ['productionErrors']);
+
+    const db = getDb();
+    if (db) {
+      try {
+        await setDoc(doc(db, 'productionErrors', newId), sanitizeDoc(newRecord), { merge: true });
+      } catch (err: any) {
+        console.debug('createProductionError Firestore notice:', err?.code || err?.message || err);
+      }
+    }
+
+    // Also attempt to sync to the serverless/express memory cache
+    try {
+      fetch('/api/diagnostics/errors', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(newRecord),
+      }).catch(() => {});
+    } catch {
+      // Ignored non-critical sync
+    }
+
+    return newRecord;
+  },
+
+  async resolveProductionError(id: string, resolutionNote?: string, resolvedBy: string = 'Authorized Staff'): Promise<boolean> {
+    const now = new Date().toISOString();
+    let updatedRecord: ProductionErrorRecord | null = null;
+
+    localStore.updateDataset((ds) => {
+      const list = ds.productionErrors || [];
+      ds.productionErrors = list.map((err) => {
+        if (err.id === id) {
+          updatedRecord = {
+            ...err,
+            isResolved: true,
+            resolvedBy,
+            resolvedAt: now,
+            resolutionNote: resolutionNote !== undefined ? resolutionNote : err.resolutionNote,
+          };
+          return updatedRecord;
+        }
+        return err;
+      });
+    }, ['productionErrors']);
+
+    const db = getDb();
+    if (db && updatedRecord) {
+      try {
+        await setDoc(doc(db, 'productionErrors', id), sanitizeDoc(updatedRecord), { merge: true });
+      } catch (err: any) {
+        console.debug('resolveProductionError Firestore notice:', err?.code || err?.message || err);
+      }
+    }
+
+    // Sync to backend endpoint
+    try {
+      fetch('/api/diagnostics/errors', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id, isResolved: true, resolvedBy, resolutionNote }),
+      }).catch(() => {});
+    } catch {
+      // Ignored
+    }
+
+    return true;
   },
 };

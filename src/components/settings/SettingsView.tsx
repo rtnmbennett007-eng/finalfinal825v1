@@ -36,10 +36,12 @@ import { DiscordConfig } from '../../types';
 import { GhlIntegrationSettings } from './GhlIntegrationSettings';
 import { FirebaseIntegrationSettings } from './FirebaseIntegrationSettings';
 import { GoogleDriveIntegrationSettings } from './GoogleDriveIntegrationSettings';
+import { ProductionErrorCenter } from '../diagnostics/ProductionErrorCenter';
 
 export const SettingsView: React.FC = () => {
   const { currentUser, staffList } = useAuth();
   const {
+    productionErrors,
     leadSources,
     createLeadSource,
     deleteLeadSource,
@@ -50,7 +52,7 @@ export const SettingsView: React.FC = () => {
     refreshAll,
   } = useData();
 
-  const [activeTab, setActiveTab] = useState<'google-drive' | 'integrations' | 'firebase' | 'discord' | 'team' | 'leads-partners' | 'all'>('google-drive');
+  const [activeTab, setActiveTab] = useState<'google-drive' | 'production-errors' | 'integrations' | 'firebase' | 'discord' | 'team' | 'leads-partners' | 'all'>('google-drive');
   const [isProfileModalOpen, setIsProfileModalOpen] = useState(false);
   const [newSourceName, setNewSourceName] = useState('');
   const [newPartnerForm, setNewPartnerForm] = useState({
@@ -250,6 +252,25 @@ export const SettingsView: React.FC = () => {
         </button>
 
         <button
+          id="settings-tab-production-errors"
+          type="button"
+          onClick={() => setActiveTab('production-errors')}
+          className={`px-4 py-2 rounded-xl flex items-center gap-2 transition-all shrink-0 ${
+            activeTab === 'production-errors'
+              ? 'bg-rose-600 text-white font-bold shadow-md shadow-rose-600/30'
+              : 'text-rose-300 hover:text-white hover:bg-rose-950/40 bg-[#12080e] border border-rose-900/60'
+          }`}
+        >
+          <AlertCircle className="w-4 h-4 text-rose-400" />
+          <span>PRODUCTION ERROR CENTER</span>
+          {productionErrors.filter((e) => !e.resolved).length > 0 && (
+            <span className="px-1.5 py-0.2 bg-rose-500 text-slate-950 text-[10px] font-black rounded-full">
+              {productionErrors.filter((e) => !e.resolved).length}
+            </span>
+          )}
+        </button>
+
+        <button
           id="settings-tab-firebase"
           type="button"
           onClick={() => setActiveTab('firebase')}
@@ -338,6 +359,13 @@ export const SettingsView: React.FC = () => {
       {(activeTab === 'google-drive' || activeTab === 'all') && (
         <div className="space-y-6" id="settings-section-google-drive">
           <GoogleDriveIntegrationSettings />
+        </div>
+      )}
+
+      {/* 0.5 PRODUCTION ERROR CENTER SECTION */}
+      {(activeTab === 'production-errors' || activeTab === 'all') && (
+        <div className="space-y-6" id="settings-section-production-errors">
+          <ProductionErrorCenter />
         </div>
       )}
 

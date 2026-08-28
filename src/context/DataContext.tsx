@@ -23,6 +23,7 @@ import {
   StaffUser,
   TimelineEvent,
   UserRole,
+  ProductionErrorRecord,
 } from '../types';
 import { firestoreService, sanitizeDoc } from '../services/firestoreService';
 import { MASTER_FUNDING_PRODUCTS } from '../data/productCatalog';
@@ -55,6 +56,7 @@ interface DataContextType {
   firebaseConfig: FirebaseClientConfig | null;
   timelineEvents: TimelineEvent[];
   documents: DocumentItem[];
+  productionErrors: ProductionErrorRecord[];
 
   selectedClientId: string | null;
   selectedClientData: any | null;
@@ -168,6 +170,10 @@ interface DataContextType {
 
   // Migration Runner
   runDbMigration: (force?: boolean) => Promise<{ success: boolean; recordsImported: number; details: string }>;
+
+  // Production Error & Diagnostics Telemetry
+  recordProductionError: (data: Partial<ProductionErrorRecord>) => Promise<ProductionErrorRecord>;
+  resolveProductionError: (id: string, note?: string, resolvedBy?: string) => Promise<boolean>;
 }
 
 const DataContext = createContext<DataContextType | undefined>(undefined);
@@ -191,6 +197,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [firebaseConfig, setFirebaseConfig] = useState<FirebaseClientConfig | null>(null);
   const [timelineEvents, setTimelineEvents] = useState<TimelineEvent[]>([]);
   const [documents, setDocuments] = useState<DocumentItem[]>([]);
+  const [productionErrors, setProductionErrors] = useState<ProductionErrorRecord[]>([]);
 
   const [selectedClientId, setSelectedClientId] = useState<string | null>(null);
   const [selectedClientData, setSelectedClientData] = useState<any | null>(null);
@@ -248,6 +255,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
       unsubs.push(firestoreService.subscribeProducts((items) => setProducts(items)));
       unsubs.push(firestoreService.subscribeTimeline(undefined, (items) => setTimelineEvents(items)));
       unsubs.push(firestoreService.subscribeDocuments(undefined, (items) => setDocuments(items)));
+      unsubs.push(firestoreService.subscribeProductionErrors((items) => setProductionErrors(items)));
 
       // Load static settings
       firestoreService.getDiscordConfig().then(setDiscordConfig).catch(() => {});
@@ -1406,6 +1414,24 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
+  // Production Error & Diagnostics Telemetry
+  const recordProductionError = async (data: Partial<ProductionErrorRecord>): Promise<ProductionErrorRecord> => {
+    return firestoreService.createProductionError(data);
+  };
+
+  const resolveProductionError = async (id: string, note?: string, resolvedBy?: string): Promise<boolean> => {
+    try {
+      const ok = await firestoreService.resolveProductionError(id, note, resolvedBy || currentUser?.name || 'Staff');
+      if (ok) {
+        addToast('success', 'Error Resolved', 'Diagnostic record marked as resolved.');
+      }
+      return ok;
+    } catch (err: any) {
+      addToast('error', 'Resolution Failed', err.message || 'Could not resolve error');
+      return false;
+    }
+  };
+
   return (
     <DataContext.Provider
       value={{
@@ -1426,6 +1452,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
         firebaseConfig,
         timelineEvents,
         documents,
+        productionErrors,
 
         selectedClientId,
         selectedClientData,
@@ -1519,6 +1546,9 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
         resetProductsToDefault,
 
         runDbMigration,
+
+        recordProductionError,
+        resolveProductionError,
       }}
     >
       {children}

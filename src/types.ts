@@ -2335,3 +2335,117 @@ export interface CommissionRule {
   createdAt?: string;
   updatedAt?: string;
 }
+
+// ==========================================
+// PRODUCTION ERROR & DIAGNOSTICS TYPES
+// ==========================================
+
+export type ErrorStage =
+  | 'REQUEST'
+  | 'FILE_UPLOAD'
+  | 'FILE_PARSE'
+  | 'DOCUMENT_CLASSIFICATION'
+  | 'AI_AUTH'
+  | 'AI_MODEL'
+  | 'AI_EXTRACTION'
+  | 'VALIDATION'
+  | 'CLIENT_MATCH'
+  | 'DATABASE'
+  | 'GOOGLE_DRIVE'
+  | 'PERSISTENCE'
+  | 'UNKNOWN';
+
+export type ErrorSeverity = 'CRITICAL' | 'WARNING' | 'INFO';
+
+export interface ProcessingTraceStep {
+  stepNumber: number;
+  name: string;
+  status: 'PASS' | 'FAIL' | 'SKIPPED';
+  timestamp: string;
+  durationMs?: number;
+  details?: string;
+  error?: {
+    code: string;
+    message: string;
+  };
+}
+
+export interface ProductionErrorRecord {
+  id: string;
+  timestamp: string;
+  module: string;
+  endpoint: string;
+  method: string;
+  httpStatus: number;
+  stage: ErrorStage;
+  errorCode: string;
+  message: string;
+  requestId: string;
+  severity: ErrorSeverity;
+  userId?: string;
+  userName?: string;
+  clientId?: string;
+  clientName?: string;
+  dealId?: string;
+  documentId?: string;
+  documentName?: string;
+  fileName?: string;
+  fileType?: string;
+  fileSize?: string;
+  aiModel?: string;
+  environment: 'production' | 'development';
+  retryCount?: number;
+  isResolved: boolean;
+  resolved?: boolean;
+  resolvedBy?: string;
+  resolvedAt?: string;
+  resolutionNote?: string;
+  context?: Record<string, any>;
+  payload?: any;
+  processingTrace?: ProcessingTraceStep[];
+}
+
+export interface LiveSystemStatusItem {
+  key: string;
+  label: string;
+  status: 'GREEN' | 'YELLOW' | 'RED';
+  endpoint: string;
+  latencyMs?: number;
+  message: string;
+  lastChecked: string;
+  details?: Record<string, any>;
+}
+
+export interface LiveSystemStatus {
+  api: 'GREEN' | 'YELLOW' | 'RED';
+  googleDrive: 'GREEN' | 'YELLOW' | 'RED';
+  geminiAi: 'GREEN' | 'YELLOW' | 'RED';
+  applications: 'GREEN' | 'YELLOW' | 'RED';
+  documents: 'GREEN' | 'YELLOW' | 'RED';
+  database: 'GREEN' | 'YELLOW' | 'RED';
+  authentication: 'GREEN' | 'YELLOW' | 'RED';
+  ghl: 'GREEN' | 'YELLOW' | 'RED';
+  reports: 'GREEN' | 'YELLOW' | 'RED';
+  lastCheckTime: string;
+  items: LiveSystemStatusItem[];
+}
+
+export interface FullDiagnosticReport {
+  overall: 'PASS' | 'WARN' | 'FAIL';
+  timestamp: string;
+  environment: string;
+  totalDurationMs: number;
+  steps: Array<{
+    name: string;
+    module: string;
+    status: 'PASS' | 'WARN' | 'FAIL';
+    latencyMs: number;
+    message: string;
+    endpoint?: string;
+    details?: any;
+    error?: {
+      code: string;
+      message: string;
+    };
+  }>;
+}

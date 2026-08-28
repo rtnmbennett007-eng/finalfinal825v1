@@ -460,9 +460,9 @@ export const UploadApplicationModal: React.FC<UploadApplicationModalProps> = ({
       isUnderwritten: false,
     };
 
-    try {
-      const isMerge = duplicateResolution === 'MERGE_EXISTING' && Boolean(selectedDuplicateClientId);
+    const isMerge = duplicateResolution === 'MERGE_EXISTING' && Boolean(selectedDuplicateClientId);
 
+    try {
       const result = await api.createClientFromApplication({
         clientData: clientPayload,
         duplicateAction: isMerge ? 'merge' : 'create',
@@ -499,6 +499,22 @@ export const UploadApplicationModal: React.FC<UploadApplicationModalProps> = ({
       onClose();
     } catch (err: any) {
       console.error('Error finalizing client file creation:', err);
+      const stage = isMerge ? 'MERGE' : 'SAVE_CLIENT';
+      api.recordProductionError({
+        module: 'Business Loan Applications',
+        stage: stage as any,
+        errorCode: 'CLIENT_SAVE_FAILED',
+        message: err.message || 'Failed to create or merge client master 360 record.',
+        severity: 'CRITICAL',
+        clientName: formData.businessName || `${formData.firstName} ${formData.lastName}`,
+        fileName: selectedFile?.name,
+        context: {
+          businessName: formData.businessName,
+          applicantName: `${formData.firstName} ${formData.lastName}`,
+          isMerge,
+          errorStack: err.stack,
+        },
+      }).catch(() => {});
       setErrorMsg(err.message || 'Failed to create client file. Please verify details and try again.');
       setStep('REVIEW');
     }

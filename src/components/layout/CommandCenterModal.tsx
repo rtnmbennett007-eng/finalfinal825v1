@@ -23,6 +23,8 @@ import {
   PhoneCall,
   Layers,
   Award,
+  Activity,
+  AlertOctagon,
 } from 'lucide-react';
 import { useData } from '../../context/DataContext';
 import { Client, FundingDeal, DocumentItem } from '../../types';
@@ -669,6 +671,17 @@ export const CommandCenterModal: React.FC<CommandCenterModalProps> = ({
                     <FolderLock className="w-4 h-4 text-purple-400 mb-1.5 group-hover:scale-110 transition-transform" />
                     <div className="text-xs font-bold text-slate-100">OPEN DOCUMENT VAULT</div>
                     <div className="text-[10px] text-slate-400 mt-0.5">Secure client file repository</div>
+                  </button>
+
+                  {/* Production Diagnostics */}
+                  <button
+                    type="button"
+                    onClick={() => navigateToTab('settings')}
+                    className="p-3 bg-rose-950/40 hover:bg-rose-900/50 border border-rose-800/80 rounded-xl text-left transition-all hover:border-rose-400 group"
+                  >
+                    <Activity className="w-4 h-4 text-rose-400 mb-1.5 group-hover:scale-110 transition-transform" />
+                    <div className="text-xs font-bold text-rose-200">PRODUCTION DIAGNOSTICS</div>
+                    <div className="text-[10px] text-rose-300/80 mt-0.5">Live Vercel & AI Error Center</div>
                   </button>
                 </div>
               </div>

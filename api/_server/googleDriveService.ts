@@ -192,10 +192,11 @@ export function loadServiceAccountCredentials(): CredentialLoadResult {
     if (parsed) {
       const hasEmail = Boolean(parsed.client_email && typeof parsed.client_email === 'string');
       const hasKey = Boolean(parsed.private_key && typeof parsed.private_key === 'string');
+      const isServiceAccountType = !parsed.type || parsed.type === 'service_account';
       const projectId = parsed.project_id || DEDICATED_PROJECT_ID;
       const clientEmail = parsed.client_email || DEDICATED_ACCOUNT_EMAIL;
 
-      if (hasEmail && hasKey) {
+      if (hasEmail && hasKey && isServiceAccountType) {
         inMemoryServiceAccount = parsed;
         return {
           isValid: true,
@@ -221,7 +222,9 @@ export function loadServiceAccountCredentials(): CredentialLoadResult {
           projectId,
           serviceAccountEmail: clientEmail,
           folderId: targetFolderId,
-          parseError: 'GOOGLE_SERVICE_ACCOUNT_JSON is missing client_email or private_key.',
+          parseError: !isServiceAccountType
+            ? 'GOOGLE_SERVICE_ACCOUNT_JSON type must be "service_account".'
+            : 'GOOGLE_SERVICE_ACCOUNT_JSON is missing client_email or private_key.',
         };
       }
     } else {

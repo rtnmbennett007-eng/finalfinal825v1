@@ -19,7 +19,9 @@ import {
   AlertTriangle,
   FileSpreadsheet,
   CheckCircle,
+  FileText
 } from 'lucide-react';
+import { DocumentAiReviewModal } from '../documents/DocumentAiReviewModal';
 
 interface BankStatementAnalysisTabProps {
   deal: FundingDeal;
@@ -41,6 +43,7 @@ export const BankStatementAnalysisTab: React.FC<BankStatementAnalysisTabProps> =
   const [isEditing, setIsEditing] = useState(false);
   const [formData, setFormData] = useState<BankStatementAnalysisSummary>(bankAnalysis);
   const [saving, setSaving] = useState(false);
+  const [activeReviewDoc, setActiveReviewDoc] = useState<DocumentItem | null>(null);
 
   const bankDocs = documents.filter((d) => (d.category || '').toLowerCase().includes('bank'));
 
@@ -92,7 +95,25 @@ export const BankStatementAnalysisTab: React.FC<BankStatementAnalysisTabProps> =
           </div>
         </div>
 
-        <div className="flex items-center gap-2 w-full md:w-auto justify-end">
+        <div className="flex items-center gap-2 w-full md:w-auto justify-end flex-wrap">
+          <button
+            type="button"
+            id="open-bank-doc-analyzer-btn"
+            onClick={() => {
+              const docToReview = bankDocs.find((d) => Boolean(d.aiExtraction)) || bankDocs[0] || documents[0];
+              if (docToReview) {
+                setActiveReviewDoc(docToReview);
+              } else if (onTriggerAiScan) {
+                onTriggerAiScan();
+              }
+            }}
+            className="px-3.5 py-2 text-xs font-bold rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white shadow-md shadow-indigo-600/20 transition-all flex items-center gap-1.5 cursor-pointer"
+            title="Open Financial Document Analyzer to review extracted bank metrics"
+          >
+            <Sparkles className="w-3.5 h-3.5 text-amber-300" />
+            <span>⚡ Financial Document Analyzer</span>
+          </button>
+
           {onTriggerAiScan && (
             <button
               onClick={onTriggerAiScan}
@@ -423,6 +444,25 @@ export const BankStatementAnalysisTab: React.FC<BankStatementAnalysisTabProps> =
           </div>
         </div>
       </div>
+
+      {/* Financial Document Analyzer Modal */}
+      {activeReviewDoc && (
+        <DocumentAiReviewModal
+          isOpen={Boolean(activeReviewDoc)}
+          onClose={() => setActiveReviewDoc(null)}
+          document={activeReviewDoc}
+          availableDocuments={documents}
+          onSelectDocument={(doc) => setActiveReviewDoc(doc)}
+          clientId={client.id}
+          clientName={`${client.firstName} ${client.lastName}`}
+          businessName={client.businessName}
+          onVerificationUpdated={async () => {
+            if (onTriggerAiScan) {
+              onTriggerAiScan();
+            }
+          }}
+        />
+      )}
     </div>
   );
 };

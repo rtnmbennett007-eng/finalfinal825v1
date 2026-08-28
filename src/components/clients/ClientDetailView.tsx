@@ -49,6 +49,7 @@ import { firestoreService } from '../../services/firestoreService';
 import { StatusBadge, ProductBadge } from '../common/StatusBadge';
 import { SsnViewer } from '../common/SsnViewer';
 import { ConfirmModal } from '../common/ConfirmModal';
+import { ReadyForUnderwritingModal } from '../underwriting/ReadyForUnderwritingModal';
 import {
   Client,
   CommissionParticipant,
@@ -170,8 +171,9 @@ export const ClientDetailView: React.FC<ClientDetailViewProps> = ({
   const [newDealForm, setNewDealForm] = useState<Partial<FundingDeal>>({
     product: 'Revenue Funding',
     fundingAmount: 50000,
-    fee: 1495,
-    percentage: 6.9,
+    fee: undefined,
+    percentage: undefined,
+    commissionPoints: undefined,
     termLength: '24 Months',
     status: 'PROPOSED',
     lenderStatus: 'PENDING',
@@ -190,6 +192,7 @@ export const ClientDetailView: React.FC<ClientDetailViewProps> = ({
 
   // PDF Export Modal State
   const [showDownloadModal, setShowDownloadModal] = useState(false);
+  const [showReadyForUnderwritingModal, setShowReadyForUnderwritingModal] = useState(false);
 
   // Document Management States
   const [showUploadDocModal, setShowUploadDocModal] = useState(false);
@@ -656,6 +659,15 @@ export const ClientDetailView: React.FC<ClientDetailViewProps> = ({
 
           {/* Header Action Buttons */}
           <div className="flex items-center space-x-2 shrink-0">
+            <button
+              onClick={() => setShowReadyForUnderwritingModal(true)}
+              className="flex items-center space-x-1.5 px-3.5 py-2 bg-gradient-to-r from-amber-500/20 to-amber-600/20 hover:from-amber-500/30 hover:to-amber-600/30 text-amber-300 border border-amber-500/40 rounded-xl text-xs font-bold transition-all shadow-md cursor-pointer"
+              title="Run Underwriting Prerequisite Audit & Advance Deal"
+            >
+              <Scale className="w-3.5 h-3.5 text-amber-400" />
+              <span>Ready for Underwriting</span>
+            </button>
+
             <button
               onClick={() => setIsEditingClient(true)}
               className="flex items-center space-x-1.5 px-3.5 py-2 bg-slate-900 hover:bg-slate-800 text-slate-200 border border-blue-900/60 rounded-xl text-xs font-semibold transition-all"
@@ -1679,6 +1691,18 @@ export const ClientDetailView: React.FC<ClientDetailViewProps> = ({
         isLoading={isDeletingClient}
         type="danger"
       />
+
+      {/* Ready for Underwriting Prerequisite Modal */}
+      {client && (
+        <ReadyForUnderwritingModal
+          isOpen={showReadyForUnderwritingModal}
+          onClose={() => setShowReadyForUnderwritingModal(false)}
+          client={client}
+          deal={safeDeals[0]}
+          onSuccess={loadClientDetails}
+          onNavigateToTab={setActiveTab}
+        />
+      )}
     </div>
   );
 };

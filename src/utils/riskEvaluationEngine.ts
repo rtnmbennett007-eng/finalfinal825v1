@@ -848,3 +848,104 @@ export const generateRiskFlags = generateDealRiskFlags;
 export const detectDataConflicts = detectDealConflicts;
 export const calculateUnderwritingChecklist = generateUnderwritingChecklist;
 
+/**
+ * Evaluates whether a client/deal qualifies for "Ready for Underwriting"
+ * Requirement 7:
+ * - Identification
+ * - 3–4 months bank statements
+ * - Application completed & signed
+ * - Verification Call completed
+ * - Voided Check / Bank Letter
+ * - No unresolved critical data conflicts
+ */
+export function evaluateReadyForUnderwriting(
+  client: Client,
+  deal?: FundingDeal,
+  documents: DocumentItem[] = [],
+  conflicts: ConflictItem[] = []
+): {
+  isEligible: boolean;
+  blockers: string[];
+  passedPrerequisites: string[];
+} {
+  const blockers: string[] = [];
+  const passedPrerequisites: string[] = [];
+
+  const clientDocs = documents.filter((d) => d.clientId === client.id);
+
+  // 1. Identification
+  const hasId = clientDocs.some((d) => {
+    const cat = (d.category || '').toLowerCase();
+    const title = (d.title || d.fileName || '').toLowerCase();
+    return cat.includes('id') || cat.includes('license') || cat.includes('passport') || title.includes('license') || title.includes('id');
+  });
+  if (hasId) {
+    passedPrerequisites.push('Identification (Government Photo ID)');
+  } else {
+    blockers.push('Missing: Government Photo ID / Driver License');
+  }
+
+  // 2. 3-4 months bank statements
+  const bankStatements = clientDocs.filter((d) => {
+    const cat = (d.category || '').toLowerCase();
+    const title = (d.title || d.fileName || '').toLowerCase();
+    return cat.includes('bank') || title.includes('bank') || title.includes('statement');
+  });
+  if (bankStatements.length >= 4) {
+    passedPrerequisites.push(`4-Month Bank Statements (${bankStatements.length} statements in vault)`);
+  } else if (bankStatements.length === 3) {
+    blockers.push('Missing: 4th Month Bank Statement (Found 3 months, 4th required for prime underwrite)');
+  } else {
+    blockers.push(`Missing: 3-4 Months Bank Statements (Only ${bankStatements.length} statement(s) found in vault)`);
+  }
+
+  // 3. Application completed & signed
+  const hasAppDoc = clientDocs.some((d) => {
+    const cat = (d.category || '').toLowerCase();
+    const title = (d.title || d.fileName || '').toLowerCase();
+    return cat.includes('application') || title.includes('application') || title.includes('app');
+  });
+  const isAppComplete = hasAppDoc || (client as any).isApplicationComplete || (client.businessName && client.monthlyRevenue && client.federalTaxId);
+  if (isAppComplete) {
+    passedPrerequisites.push('Application completed & signed');
+  } else {
+    blockers.push('Missing: Signed Commercial Financing Application');
+  }
+
+  // 4. Verification Call completed
+  const isCallVerified = client.isVerified || client.currentStatus === 'KYC Verified & Ready for Underwriting' || client.verificationCallOutcome === 'Verified — Ready for Underwriting';
+  if (isCallVerified) {
+    passedPrerequisites.push('Borrower Phone Verification Call Signed-Off');
+  } else {
+    blockers.push('Missing: Verification Call Sign-Off');
+  }
+
+  // 5. Voided Check / Bank Letter
+  const hasVoidedCheck = clientDocs.some((d) => {
+    const cat = (d.category || '').toLowerCase();
+    const title = (d.title || d.fileName || '').toLowerCase();
+    return cat.includes('check') || title.includes('check') || cat.includes('void') || title.includes('bank letter') || cat.includes('bank letter');
+  }) || Boolean(client.routingNumber && client.accountNumber);
+  if (hasVoidedCheck) {
+    passedPrerequisites.push('Voided Check / Official Bank Depository Letter');
+  } else {
+    blockers.push('Missing: Voided Check or Bank Verification Letter');
+  }
+
+  // 6. No unresolved critical data conflicts
+  const activeConflicts = conflicts.filter((c) => c.status === 'UNRESOLVED');
+  if (activeConflicts.length > 0) {
+    activeConflicts.forEach((c) => {
+      blockers.push(`Conflict: ${c.fieldLabel || c.fieldKey} (Discrepancy across Application vs Bank Statement)`);
+    });
+  } else {
+    passedPrerequisites.push('Zero Unresolved Critical Data Conflicts');
+  }
+
+  return {
+    isEligible: blockers.length === 0,
+    blockers,
+    passedPrerequisites,
+  };
+}
+

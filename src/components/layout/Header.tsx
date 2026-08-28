@@ -19,6 +19,7 @@ import {
   LogOut,
   ChevronDown,
   ShieldCheck,
+  Zap,
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { useData } from '../../context/DataContext';
@@ -32,6 +33,7 @@ interface HeaderProps {
   onOpenNewLeadModal: () => void;
   onOpenNewClientModal: () => void;
   setActiveTab: (tab: string) => void;
+  onOpenCommandCenter?: () => void;
 }
 
 export const Header: React.FC<HeaderProps> = ({
@@ -39,6 +41,7 @@ export const Header: React.FC<HeaderProps> = ({
   onOpenNewLeadModal,
   onOpenNewClientModal,
   setActiveTab,
+  onOpenCommandCenter,
 }) => {
   const { currentUser, logout } = useAuth();
   const [isProfileModalOpen, setIsProfileModalOpen] = useState(false);
@@ -382,6 +385,17 @@ export const Header: React.FC<HeaderProps> = ({
             </div>
           )}
         </div>
+
+        {/* Prominent Global Command Center Trigger */}
+        <button
+          onClick={onOpenCommandCenter}
+          id="global-header-command-center-btn"
+          className="flex items-center space-x-1.5 px-3.5 py-1.5 rounded-xl bg-gradient-to-r from-amber-500 via-amber-400 to-amber-500 hover:from-amber-400 hover:to-amber-300 text-slate-950 text-xs font-black tracking-wider uppercase transition-all shadow-md shadow-amber-500/20 border border-amber-300/80 active:scale-95 group shrink-0"
+          title="Open Global Command Center (Search & Core Actions)"
+        >
+          <Zap className="w-3.5 h-3.5 fill-slate-950 text-slate-950 group-hover:scale-110 transition-transform" />
+          <span className="font-black tracking-tight">⚡ COMMAND CENTER</span>
+        </button>
 
         {/* Quick Action Buttons */}
         <button

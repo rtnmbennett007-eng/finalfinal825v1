@@ -11,6 +11,8 @@ import {
 } from 'lucide-react';
 import { useData } from '../../context/DataContext';
 import { StatusBadge } from '../common/StatusBadge';
+import { VerificationCallWorkspace } from './VerificationCallWorkspace';
+import { Client } from '../../types';
 
 interface VerificationHubProps {
   setActiveTab: (tab: string) => void;
@@ -20,6 +22,7 @@ export const VerificationHub: React.FC<VerificationHubProps> = ({ setActiveTab }
   const { clients, setSelectedClientId } = useData();
   const [searchQuery, setSearchQuery] = useState('');
   const [filter, setFilter] = useState<'ALL' | 'PENDING' | 'VERIFIED'>('PENDING');
+  const [selectedClient, setSelectedClient] = useState<Client | null>(null);
 
   const verificationList = clients.filter((c) => {
     const matchesSearch =
@@ -33,10 +36,27 @@ export const VerificationHub: React.FC<VerificationHubProps> = ({ setActiveTab }
     return matchesSearch;
   });
 
-  const handleOpenClient = (clientId: string) => {
+  const handleOpenClient = (client: Client) => {
+    setSelectedClient(client);
+  };
+
+  const handleNavigateToClient360 = (clientId: string) => {
     setSelectedClientId(clientId);
     setActiveTab('clients');
   };
+
+  if (selectedClient) {
+    // Keep updated client reference from clients list if updated
+    const liveClient = clients.find((c) => c.id === selectedClient.id) || selectedClient;
+    return (
+      <VerificationCallWorkspace
+        client={liveClient}
+        onBack={() => setSelectedClient(null)}
+        onClientUpdated={(updated) => setSelectedClient(updated)}
+        onNavigateToClient360={handleNavigateToClient360}
+      />
+    );
+  }
 
   return (
     <div className="space-y-6 pb-12">
@@ -172,11 +192,11 @@ export const VerificationHub: React.FC<VerificationHubProps> = ({ setActiveTab }
                 </span>
 
                 <button
-                  onClick={() => handleOpenClient(client.id)}
-                  className="flex items-center space-x-1 px-3 py-1.5 bg-blue-600 hover:bg-blue-500 text-white rounded-xl text-xs font-bold transition-all shadow-md shadow-blue-600/20"
+                  onClick={() => handleOpenClient(client)}
+                  className="flex items-center space-x-1 px-3 py-1.5 bg-blue-600 hover:bg-blue-500 text-white rounded-xl text-xs font-bold transition-all shadow-md shadow-blue-600/20 cursor-pointer"
                 >
                   <PhoneCall className="w-3.5 h-3.5" />
-                  <span>Open Call Script</span>
+                  <span>Open Call Script & Checklist</span>
                 </button>
               </div>
             </div>

@@ -59,7 +59,7 @@ const STAGE_THEMES: Record<
     accent: 'text-slate-400',
     dot: 'bg-slate-400',
   },
-  'Appointment Set': {
+  'Application Received': {
     border: 'border-sky-900/50',
     bgHeader: 'bg-sky-950/40',
     badgeBg: 'bg-sky-900/50',
@@ -67,47 +67,31 @@ const STAGE_THEMES: Record<
     accent: 'text-sky-400',
     dot: 'bg-sky-400',
   },
-  'No Show': {
-    border: 'border-amber-900/50',
-    bgHeader: 'bg-amber-950/40',
-    badgeBg: 'bg-amber-900/50',
-    badgeText: 'text-amber-300',
+  'Credit Pulled': {
+    border: 'border-indigo-900/50',
+    bgHeader: 'bg-indigo-950/40',
+    badgeBg: 'bg-indigo-900/50',
+    badgeText: 'text-indigo-300',
+    accent: 'text-indigo-400',
+    dot: 'bg-indigo-400',
+  },
+  'Documents Pending': {
+    border: 'border-amber-900/60',
+    bgHeader: 'bg-amber-950/50',
+    badgeBg: 'bg-amber-900/60',
+    badgeText: 'text-amber-200',
     accent: 'text-amber-400',
     dot: 'bg-amber-400',
   },
-  'Showed – Need Follow Up': {
-    border: 'border-blue-900/50',
-    bgHeader: 'bg-blue-950/40',
-    badgeBg: 'bg-blue-900/50',
-    badgeText: 'text-blue-300',
-    accent: 'text-blue-400',
-    dot: 'bg-blue-400',
+  'Documents Received': {
+    border: 'border-teal-900/50',
+    bgHeader: 'bg-teal-950/40',
+    badgeBg: 'bg-teal-900/50',
+    badgeText: 'text-teal-300',
+    accent: 'text-teal-400',
+    dot: 'bg-teal-400',
   },
-  'Credit Repair': {
-    border: 'border-violet-900/50',
-    bgHeader: 'bg-violet-950/40',
-    badgeBg: 'bg-violet-900/50',
-    badgeText: 'text-violet-300',
-    accent: 'text-violet-400',
-    dot: 'bg-violet-400',
-  },
-  'Showed – Not Interested': {
-    border: 'border-slate-800',
-    bgHeader: 'bg-slate-900/80',
-    badgeBg: 'bg-slate-800',
-    badgeText: 'text-slate-400',
-    accent: 'text-slate-500',
-    dot: 'bg-slate-500',
-  },
-  'Showed – DQ': {
-    border: 'border-rose-950/60',
-    bgHeader: 'bg-rose-950/40',
-    badgeBg: 'bg-rose-900/40',
-    badgeText: 'text-rose-300',
-    accent: 'text-rose-400',
-    dot: 'bg-rose-400',
-  },
-  'Showed – Document Sent': {
+  'Pre-Approved': {
     border: 'border-cyan-900/50',
     bgHeader: 'bg-cyan-950/40',
     badgeBg: 'bg-cyan-900/50',
@@ -115,13 +99,21 @@ const STAGE_THEMES: Record<
     accent: 'text-cyan-400',
     dot: 'bg-cyan-400',
   },
-  'Docs Pending': {
-    border: 'border-amber-900/60',
-    bgHeader: 'bg-amber-950/50',
-    badgeBg: 'bg-amber-900/60',
-    badgeText: 'text-amber-200',
-    accent: 'text-amber-400',
-    dot: 'bg-amber-400',
+  'Verification Call': {
+    border: 'border-blue-900/60',
+    bgHeader: 'bg-blue-950/50',
+    badgeBg: 'bg-blue-900/60',
+    badgeText: 'text-blue-200',
+    accent: 'text-blue-400',
+    dot: 'bg-blue-400',
+  },
+  'KYC Verified & Ready for Underwriting': {
+    border: 'border-emerald-900/60',
+    bgHeader: 'bg-emerald-950/50',
+    badgeBg: 'bg-emerald-900/60',
+    badgeText: 'text-emerald-200',
+    accent: 'text-emerald-400',
+    dot: 'bg-emerald-400',
   },
   'Underwriting': {
     border: 'border-purple-900/60',
@@ -131,29 +123,109 @@ const STAGE_THEMES: Record<
     accent: 'text-purple-400',
     dot: 'bg-purple-400',
   },
-  'Funded': {
-    border: 'border-emerald-900/60',
+  'Ready for Lender / Stacking': {
+    border: 'border-violet-900/60',
+    bgHeader: 'bg-violet-950/50',
+    badgeBg: 'bg-violet-900/60',
+    badgeText: 'text-violet-200',
+    accent: 'text-violet-400',
+    dot: 'bg-violet-400',
+  },
+  'Submitted': {
+    border: 'border-blue-800/60',
+    bgHeader: 'bg-blue-950/40',
+    badgeBg: 'bg-blue-800/60',
+    badgeText: 'text-blue-100',
+    accent: 'text-blue-300',
+    dot: 'bg-blue-300',
+  },
+  'Approved': {
+    border: 'border-emerald-800/70',
     bgHeader: 'bg-emerald-950/50',
-    badgeBg: 'bg-emerald-900/60',
+    badgeBg: 'bg-emerald-800/60',
     badgeText: 'text-emerald-200',
     accent: 'text-emerald-400',
     dot: 'bg-emerald-400',
   },
-  'Commission Received': {
+  'Pre-Closing Checklist': {
+    border: 'border-yellow-900/60',
+    bgHeader: 'bg-yellow-950/40',
+    badgeBg: 'bg-yellow-900/60',
+    badgeText: 'text-yellow-200',
+    accent: 'text-yellow-400',
+    dot: 'bg-yellow-400',
+  },
+  'Closing Docs Signed': {
+    border: 'border-emerald-900/70',
+    bgHeader: 'bg-emerald-950/60',
+    badgeBg: 'bg-emerald-900/70',
+    badgeText: 'text-emerald-100',
+    accent: 'text-emerald-300',
+    dot: 'bg-emerald-300',
+  },
+  'Ready to Fund': {
+    border: 'border-lime-900/70',
+    bgHeader: 'bg-lime-950/50',
+    badgeBg: 'bg-lime-900/60',
+    badgeText: 'text-lime-200',
+    accent: 'text-lime-400',
+    dot: 'bg-lime-400',
+  },
+  'Funded': {
     border: 'border-emerald-800/80',
+    bgHeader: 'bg-emerald-950/70',
+    badgeBg: 'bg-emerald-700/80',
+    badgeText: 'text-white',
+    accent: 'text-emerald-300',
+    dot: 'bg-emerald-400',
+  },
+  'Commission Pending': {
+    border: 'border-amber-800/70',
+    bgHeader: 'bg-amber-950/40',
+    badgeBg: 'bg-amber-800/60',
+    badgeText: 'text-amber-100',
+    accent: 'text-amber-300',
+    dot: 'bg-amber-400',
+  },
+  'Commission Received': {
+    border: 'border-emerald-700/80',
     bgHeader: 'bg-emerald-900/40',
     badgeBg: 'bg-emerald-800/60',
     badgeText: 'text-emerald-100',
     accent: 'text-emerald-300',
     dot: 'bg-emerald-300',
   },
-  'LOST': {
-    border: 'border-rose-900/60',
+  'Not Qualified': {
+    border: 'border-rose-950/60',
+    bgHeader: 'bg-rose-950/40',
+    badgeBg: 'bg-rose-900/40',
+    badgeText: 'text-rose-300',
+    accent: 'text-rose-400',
+    dot: 'bg-rose-400',
+  },
+  'Declined': {
+    border: 'border-rose-900/70',
     bgHeader: 'bg-rose-950/50',
     badgeBg: 'bg-rose-900/60',
     badgeText: 'text-rose-200',
     accent: 'text-rose-400',
     dot: 'bg-rose-400',
+  },
+  'Withdrawn': {
+    border: 'border-slate-800',
+    bgHeader: 'bg-slate-900/80',
+    badgeBg: 'bg-slate-800',
+    badgeText: 'text-slate-400',
+    accent: 'text-slate-500',
+    dot: 'bg-slate-500',
+  },
+  'Lost': {
+    border: 'border-slate-900',
+    bgHeader: 'bg-slate-950/60',
+    badgeBg: 'bg-slate-900',
+    badgeText: 'text-slate-500',
+    accent: 'text-slate-500',
+    dot: 'bg-slate-600',
   },
 };
 
@@ -174,21 +246,10 @@ export const ClientsKanbanView: React.FC<ClientsKanbanViewProps> = ({
 
   // Group clients by canonical pipeline stage
   const columnsData = React.useMemo(() => {
-    const stageMap: Record<CanonicalPipelineStage, Client[]> = {
-      'No Set – Follow Up': [],
-      'Appointment Set': [],
-      'No Show': [],
-      'Showed – Need Follow Up': [],
-      'Credit Repair': [],
-      'Showed – Not Interested': [],
-      'Showed – DQ': [],
-      'Showed – Document Sent': [],
-      'Docs Pending': [],
-      'Underwriting': [],
-      'Funded': [],
-      'Commission Received': [],
-      'LOST': [],
-    };
+    const stageMap = {} as Record<CanonicalPipelineStage, Client[]>;
+    CANONICAL_PIPELINE_STAGES.forEach((st) => {
+      stageMap[st] = [];
+    });
 
     clients.forEach((client) => {
       const activeStage = optimisticStages[client.id] || normalizePipelineStage(client.currentStatus);
@@ -275,6 +336,42 @@ export const ClientsKanbanView: React.FC<ClientsKanbanViewProps> = ({
         return next;
       });
       setDraggedItem(null);
+    }
+  };
+
+  const handleMoveStage = async (client: Client, targetStage: CanonicalPipelineStage) => {
+    const prevStage = optimisticStages[client.id] || normalizePipelineStage(client.currentStatus);
+    if (prevStage === targetStage) return;
+
+    setOptimisticStages((prev) => ({ ...prev, [client.id]: targetStage }));
+    setSavingClientIds((prev) => ({ ...prev, [client.id]: true }));
+
+    try {
+      await updateClient(client.id, {
+        currentStatus: targetStage as PipelineStage,
+      });
+      addToast(
+        'success',
+        'Pipeline Stage Updated',
+        `${client.firstName} ${client.lastName} moved to "${targetStage}".`
+      );
+    } catch (err: any) {
+      setOptimisticStages((prev) => {
+        const next = { ...prev };
+        delete next[client.id];
+        return next;
+      });
+      addToast(
+        'error',
+        'Stage Update Failed',
+        err?.message || 'Could not persist pipeline stage change.'
+      );
+    } finally {
+      setSavingClientIds((prev) => {
+        const next = { ...prev };
+        delete next[client.id];
+        return next;
+      });
     }
   };
 
@@ -419,16 +516,28 @@ export const ClientsKanbanView: React.FC<ClientsKanbanViewProps> = ({
                             </div>
                           </div>
 
-                          {/* Contact Info */}
-                          <div className="mt-2 space-y-0.5 text-[10px] text-slate-400">
+                          {/* Contact & Deal Overview */}
+                          <div className="mt-2 space-y-1 text-[10px]">
+                            {/* Product & Requested / Deal Amount */}
+                            <div className="flex items-center justify-between gap-1 bg-slate-900/80 px-2 py-1 rounded border border-slate-800">
+                              <span className="text-amber-400 font-semibold truncate max-w-[120px]">
+                                {client.requestedProduct || clientDeals[0]?.product || 'Revenue Funding'}
+                              </span>
+                              <span className="font-mono font-bold text-emerald-400">
+                                {client.requestedAmount
+                                  ? `$${Number(client.requestedAmount).toLocaleString()}`
+                                  : (totalVolume > 0 ? `$${totalVolume.toLocaleString()}` : '$0')}
+                              </span>
+                            </div>
+
                             {client.email && (
-                              <div className="flex items-center gap-1.5 truncate">
+                              <div className="flex items-center gap-1.5 truncate text-slate-400">
                                 <Mail className="w-3 h-3 text-slate-500 flex-shrink-0" />
                                 <span className="truncate">{client.email}</span>
                               </div>
                             )}
                             {client.phone && (
-                              <div className="flex items-center gap-1.5 truncate">
+                              <div className="flex items-center gap-1.5 truncate text-slate-400">
                                 <Phone className="w-3 h-3 text-slate-500 flex-shrink-0" />
                                 <span>{client.phone}</span>
                               </div>
@@ -436,7 +545,7 @@ export const ClientsKanbanView: React.FC<ClientsKanbanViewProps> = ({
                           </div>
 
                           {/* Metrics Grid: Revenue & Active Funding */}
-                          <div className="mt-2.5 pt-2 border-t border-slate-800/80 grid grid-cols-2 gap-2 text-[10px]">
+                          <div className="mt-2 pt-2 border-t border-slate-800/80 grid grid-cols-2 gap-2 text-[10px]">
                             <div>
                               <span className="text-slate-500 block text-[9px] uppercase font-mono">
                                 Annual Rev
@@ -458,7 +567,7 @@ export const ClientsKanbanView: React.FC<ClientsKanbanViewProps> = ({
                           </div>
 
                           {/* Verification & Staff */}
-                          <div className="mt-2.5 flex items-center justify-between gap-1 text-[10px] pt-2 border-t border-slate-800/60">
+                          <div className="mt-2 flex items-center justify-between gap-1 text-[10px] pt-2 border-t border-slate-800/60">
                             {client.isVerified ? (
                               <span className="inline-flex items-center gap-1 text-[9px] px-1.5 py-0.5 rounded bg-emerald-500/10 text-emerald-300 border border-emerald-500/20 font-medium">
                                 <CheckCircle2 className="w-2.5 h-2.5 text-emerald-400" />
@@ -476,33 +585,46 @@ export const ClientsKanbanView: React.FC<ClientsKanbanViewProps> = ({
                             </span>
                           </div>
 
-                          {/* Next Task or Last Activity */}
+                          {/* Next Task & Date Added */}
                           <div className="mt-2 pt-2 border-t border-slate-800/60 flex items-center justify-between text-[9px] text-slate-500">
-                            <span className="flex items-center gap-1 truncate max-w-[140px]" title={nextTask?.title || 'No pending tasks'}>
+                            <span className="flex items-center gap-1 truncate max-w-[130px]" title={nextTask?.title || 'No pending tasks'}>
                               <ListTodo className="w-2.5 h-2.5 text-blue-400 flex-shrink-0" />
                               <span className="truncate">
                                 {nextTask ? nextTask.title : 'No pending task'}
                               </span>
                             </span>
 
-                            <span className="flex items-center gap-1 flex-shrink-0">
+                            <span className="flex items-center gap-1 flex-shrink-0" title={`Added: ${new Date(client.createdAt).toLocaleDateString()}`}>
                               <Clock className="w-2.5 h-2.5" />
-                              {formatActivityDate(client.updatedAt || client.createdAt)}
+                              <span>Added {new Date(client.createdAt).toLocaleDateString()}</span>
                             </span>
                           </div>
 
-                          {/* Open 360 File Action Button */}
-                          <div className="mt-3 pt-2 border-t border-slate-800/80">
+                          {/* Move Stage Selector & Open 360 File */}
+                          <div className="mt-2.5 pt-2 border-t border-slate-800/80 flex items-center gap-1.5" onClick={(e) => e.stopPropagation()}>
+                            <select
+                              value={client.currentStatus}
+                              onChange={(e) => handleMoveStage(client, e.target.value as CanonicalPipelineStage)}
+                              className="flex-1 bg-slate-900 border border-slate-700 text-slate-300 text-[10px] rounded px-1.5 py-1 focus:outline-none focus:border-blue-500 font-medium truncate"
+                              title="Move stage"
+                            >
+                              {CANONICAL_PIPELINE_STAGES.map((st) => (
+                                <option key={st} value={st}>
+                                  Move to: {st}
+                                </option>
+                              ))}
+                            </select>
+
                             <button
                               type="button"
                               onClick={(e) => {
                                 e.stopPropagation();
                                 onSelectClient(client.id);
                               }}
-                              className="w-full py-1.5 px-2.5 bg-slate-800/90 hover:bg-blue-600 hover:text-white text-slate-300 rounded-lg text-[11px] font-bold transition-all border border-slate-700 flex items-center justify-center gap-1.5 shadow-xs"
+                              className="py-1 px-2 bg-blue-600 hover:bg-blue-500 text-white rounded text-[10px] font-bold transition-all flex items-center gap-1 shrink-0"
                             >
-                              <span>Open 360 File</span>
-                              <ArrowRight className="w-3 h-3" />
+                              <span>360</span>
+                              <ArrowRight className="w-2.5 h-2.5" />
                             </button>
                           </div>
                         </div>

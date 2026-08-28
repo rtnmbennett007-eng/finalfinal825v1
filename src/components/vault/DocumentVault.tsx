@@ -215,9 +215,24 @@ export const DocumentVault: React.FC<DocumentVaultProps> = ({ setActiveTab }) =>
           </p>
         </div>
 
-        {/* Quick Filter for Conflicts */}
-        {totalConflictDocsCount > 0 && (
-          <div className="flex items-center gap-2">
+        {/* Actions & Filters */}
+        <div className="flex items-center gap-2 flex-wrap">
+          <button
+            id="open-vault-doc-analyzer-btn"
+            onClick={() => {
+              const doc = allDocs.find((d) => Boolean(d.aiExtraction)) || allDocs[0];
+              if (doc) {
+                setActiveAiReviewDoc(doc);
+              }
+            }}
+            className="px-3.5 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-xs font-bold transition-all shadow-md shadow-indigo-600/20 flex items-center gap-1.5 cursor-pointer"
+            title="Open Financial Document Analyzer"
+          >
+            <Sparkles className="w-3.5 h-3.5 text-amber-300" />
+            <span>⚡ Financial Document Analyzer</span>
+          </button>
+
+          {totalConflictDocsCount > 0 && (
             <button
               onClick={() => setConflictOnlyFilter(!conflictOnlyFilter)}
               className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 border ${
@@ -229,8 +244,8 @@ export const DocumentVault: React.FC<DocumentVaultProps> = ({ setActiveTab }) =>
               <ShieldAlert className="w-3.5 h-3.5" />
               <span>{conflictOnlyFilter ? 'Showing Conflicts Only' : `Filter Conflicts (${totalConflictDocsCount})`}</span>
             </button>
-          </div>
-        )}
+          )}
+        </div>
       </div>
 
       {/* Filters */}

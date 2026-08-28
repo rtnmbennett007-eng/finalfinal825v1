@@ -19,6 +19,7 @@ import { ConflictCenterTab } from './ConflictCenterTab';
 import { UnderwritingChecklistTab } from './UnderwritingChecklistTab';
 import { SubmissionPackageTab } from './SubmissionPackageTab';
 import { ReadyToFundTab } from './ReadyToFundTab';
+import { ReadyForUnderwritingModal } from './ReadyForUnderwritingModal';
 import {
   generateRiskFlags,
   detectDataConflicts,
@@ -112,6 +113,7 @@ export const UnderwritingCommandCenter: React.FC<UnderwritingCommandCenterProps>
   const [evaluation, setEvaluation] = useState<UnderwritingEvaluationRecord | null>(null);
   const [submissionPackages, setSubmissionPackages] = useState<SubmissionPackageRecord[]>([]);
   const [documents, setDocuments] = useState<DocumentItem[]>([]);
+  const [showReadyForUnderwritingModal, setShowReadyForUnderwritingModal] = useState(false);
 
   // Fetch full state from backend
   const fetchCommandCenterData = async () => {
@@ -389,6 +391,15 @@ export const UnderwritingCommandCenter: React.FC<UnderwritingCommandCenterProps>
               </select>
             </div>
           )}
+
+          <button
+            onClick={() => setShowReadyForUnderwritingModal(true)}
+            className="px-3 py-2 text-xs font-black rounded-lg bg-amber-500 hover:bg-amber-400 text-slate-950 transition-all flex items-center gap-1.5 shadow-md shadow-amber-500/20 cursor-pointer shrink-0"
+            title="Check Underwriting Prerequisites & Advance Deal"
+          >
+            <Scale className="w-3.5 h-3.5" />
+            <span>READY FOR UNDERWRITING</span>
+          </button>
 
           <button
             onClick={fetchCommandCenterData}
@@ -699,6 +710,15 @@ export const UnderwritingCommandCenter: React.FC<UnderwritingCommandCenterProps>
           />
         )}
       </div>
+
+      <ReadyForUnderwritingModal
+        isOpen={showReadyForUnderwritingModal}
+        onClose={() => setShowReadyForUnderwritingModal(false)}
+        client={client}
+        deal={deal}
+        onSuccess={fetchCommandCenterData}
+        onNavigateToTab={setActiveTab}
+      />
     </div>
   );
 };

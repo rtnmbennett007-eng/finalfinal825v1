@@ -291,18 +291,27 @@ export interface UserRole {
 
 export const CANONICAL_PIPELINE_STAGES = [
   'No Set – Follow Up',
-  'Appointment Set',
-  'No Show',
-  'Showed – Need Follow Up',
-  'Credit Repair',
-  'Showed – Not Interested',
-  'Showed – DQ',
-  'Showed – Document Sent',
-  'Docs Pending',
+  'Application Received',
+  'Credit Pulled',
+  'Documents Pending',
+  'Documents Received',
+  'Pre-Approved',
+  'Verification Call',
+  'KYC Verified & Ready for Underwriting',
   'Underwriting',
+  'Ready for Lender / Stacking',
+  'Submitted',
+  'Approved',
+  'Pre-Closing Checklist',
+  'Closing Docs Signed',
+  'Ready to Fund',
   'Funded',
+  'Commission Pending',
   'Commission Received',
-  'LOST',
+  'Not Qualified',
+  'Declined',
+  'Withdrawn',
+  'Lost',
 ] as const;
 
 export type CanonicalPipelineStage = typeof CANONICAL_PIPELINE_STAGES[number];
@@ -318,19 +327,28 @@ export function normalizePipelineStage(stage?: string | null): CanonicalPipeline
 
   const upper = trimmed.toUpperCase().replace(/[_\s-]+/g, ' ');
 
-  if (upper.includes('APPOINTMENT SET')) return 'Appointment Set';
-  if (upper.includes('NO SHOW')) return 'No Show';
-  if (upper.includes('NEED FOLLOW UP') || upper.includes('NEED FOLLOWUP')) return 'Showed – Need Follow Up';
-  if (upper.includes('CREDIT REPAIR')) return 'Credit Repair';
-  if (upper.includes('NOT INTERESTED')) return 'Showed – Not Interested';
-  if (upper.includes('DQ') || upper.includes('DISQUALIFIED') || upper.includes('NOT QUALIFIED')) return 'Showed – DQ';
-  if (upper.includes('DOCUMENT SENT') || upper.includes('DOC SENT') || upper.includes('APPLICATION SENT')) return 'Showed – Document Sent';
-  if (upper.includes('DOCS PENDING') || upper.includes('DOCUMENTS PENDING') || upper.includes('DOCUMENT REQUEST') || upper.includes('DOCUMENTS REQUEST') || upper.includes('PENDING DOCS')) return 'Docs Pending';
-  if (upper.includes('UNDERWRITING') || upper.includes('READY FOR LENDER') || upper.includes('SUBMITTED TO LENDER') || upper.includes('PRE APPROVED') || upper.includes('PRE_APPROVED') || upper.includes('IN REVIEW')) return 'Underwriting';
-  if (upper.includes('FUNDED') || upper.includes('APPROVED') || upper.includes('CONDITIONS MET')) return 'Funded';
-  if (upper.includes('COMMISSION RECEIVED') || upper.includes('COMMISSION COLLECTED') || upper.includes('COMMISSION PENDING') || upper.includes('COMMISSION')) return 'Commission Received';
-  if (upper.includes('LOST') || upper.includes('DECLINED') || upper.includes('WITHDRAWN')) return 'LOST';
-  if (upper.includes('NO SET') || upper.includes('NEW LEAD') || upper.includes('SALES CONTACT') || upper.includes('APPLICATION RECEIVED')) return 'No Set – Follow Up';
+  if (upper.includes('NO SET') || upper.includes('NEW LEAD') || upper.includes('SALES CONTACT')) return 'No Set – Follow Up';
+  if (upper.includes('APP RECEIVED') || upper.includes('APPLICATION RECEIVED') || upper.includes('APPLICATION SUBMITTED')) return 'Application Received';
+  if (upper.includes('CREDIT PULLED') || upper.includes('CREDIT REPORT') || upper.includes('CREDIT CHECK')) return 'Credit Pulled';
+  if (upper.includes('DOCS PENDING') || upper.includes('DOCUMENTS PENDING') || upper.includes('PENDING DOCS') || upper.includes('DOC REQUEST')) return 'Documents Pending';
+  if (upper.includes('DOCS RECEIVED') || upper.includes('DOCUMENTS RECEIVED') || upper.includes('DOCS IN')) return 'Documents Received';
+  if (upper.includes('PRE APPROVED') || upper.includes('PRE APPROVAL')) return 'Pre-Approved';
+  if (upper.includes('VERIFICATION CALL') || upper.includes('CALL VERIFICATION') || upper.includes('VERIF CALL') || upper.includes('IN VERIFICATION')) return 'Verification Call';
+  if (upper.includes('KYC') || upper.includes('READY FOR UNDERWRITING') || upper.includes('VERIFIED READY')) return 'KYC Verified & Ready for Underwriting';
+  if (upper.includes('READY FOR LENDER') || upper.includes('STACKING') || upper.includes('LENDER STACK')) return 'Ready for Lender / Stacking';
+  if (upper.includes('SUBMITTED TO LENDER') || upper.includes('SUBMITTED')) return 'Submitted';
+  if (upper.includes('PRE CLOSING') || upper.includes('CLOSING CHECKLIST')) return 'Pre-Closing Checklist';
+  if (upper.includes('CLOSING DOCS') || upper.includes('DOCS SIGNED') || upper.includes('CONTRACT SIGNED')) return 'Closing Docs Signed';
+  if (upper.includes('READY TO FUND') || upper.includes('CLEAR TO CLOSE')) return 'Ready to Fund';
+  if (upper.includes('COMMISSION PENDING') || upper.includes('UNCOLLECTED COMMISSION')) return 'Commission Pending';
+  if (upper.includes('COMMISSION RECEIVED') || upper.includes('COMMISSION COLLECTED') || upper.includes('PAID COMMISSION')) return 'Commission Received';
+  if (upper.includes('NOT QUALIFIED') || upper.includes('DQ') || upper.includes('DISQUALIFIED')) return 'Not Qualified';
+  if (upper.includes('DECLINED') || upper.includes('REJECTED')) return 'Declined';
+  if (upper.includes('WITHDRAWN') || upper.includes('CANCELLED')) return 'Withdrawn';
+  if (upper.includes('LOST') || upper.includes('NOT INTERESTED') || upper.includes('NO SHOW')) return 'Lost';
+  if (upper.includes('UNDERWRITING') || upper.includes('IN REVIEW')) return 'Underwriting';
+  if (upper.includes('FUNDED')) return 'Funded';
+  if (upper.includes('APPROVED')) return 'Approved';
 
   return 'No Set – Follow Up';
 }
@@ -643,6 +661,21 @@ export interface Client {
   verifiedBy?: string;
   verificationDate?: string;
   verificationSummary?: string;
+  verificationCallDate?: string;
+  verificationCallTime?: string;
+  borrowerSpokenWith?: string;
+  verificationCallOutcome?: string;
+  verificationCallNotes?: string;
+  verificationNotes?: string;
+  verifiedAt?: string;
+  readyForUnderwritingAt?: string;
+  readyForUnderwritingBy?: string;
+  fieldVerifications?: Record<string, any>;
+  avgDailyBalance?: number;
+  existingDebt?: number;
+  positionRequested?: string;
+  routingNumber?: string;
+  accountNumber?: string;
 
   // Underwriting summaries
   isUnderwritten?: boolean;

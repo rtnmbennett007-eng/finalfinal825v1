@@ -2565,8 +2565,8 @@ app.post('/api/clients', (req, res) => {
     businessName: newClient.businessName,
     product: newClient.requestedProduct,
     fundingAmount: newClient.requestedAmount || 0,
-    fee: Number(clientData.fee || 0),
-    percentage: Number(clientData.percentage || 0),
+    fee: clientData.fee !== undefined && clientData.fee !== '' && clientData.fee !== null ? Number(clientData.fee) : undefined,
+    percentage: clientData.percentage !== undefined && clientData.percentage !== '' && clientData.percentage !== null ? Number(clientData.percentage) : undefined,
     termLength: clientData.termLength || '24 Months',
     status: 'PROPOSED',
     assignedStaff: newClient.assignedStaff,
@@ -2759,10 +2759,10 @@ app.post('/api/deals', (req, res) => {
     cancelledDate: dealData.cancelledDate || '',
 
     // Commissions
-    fee: Number(dealData.fee || 0),
-    percentage: Number(dealData.percentage || 0),
-    commissionPoints: Number(dealData.commissionPoints || dealData.percentage || 0),
-    commissionTotal: Number(dealData.commissionTotal || ((finalFundingAmount * Number(dealData.percentage || 0)) / 100 + Number(dealData.fee || 0))),
+    fee: dealData.fee !== undefined && dealData.fee !== '' && dealData.fee !== null ? Number(dealData.fee) : undefined,
+    percentage: dealData.percentage !== undefined && dealData.percentage !== '' && dealData.percentage !== null ? Number(dealData.percentage) : undefined,
+    commissionPoints: dealData.commissionPoints !== undefined && dealData.commissionPoints !== '' && dealData.commissionPoints !== null ? Number(dealData.commissionPoints) : (dealData.percentage !== undefined && dealData.percentage !== '' && dealData.percentage !== null ? Number(dealData.percentage) : undefined),
+    commissionTotal: ((dealData.percentage !== undefined && dealData.percentage !== '' && dealData.percentage !== null) || (dealData.fee !== undefined && dealData.fee !== '' && dealData.fee !== null)) ? (((finalFundingAmount * Number(dealData.percentage || 0)) / 100) + Number(dealData.fee || 0)) : undefined,
     commissionStatus: dealData.commissionStatus || 'PENDING',
     commissionReceivedDate: dealData.commissionReceivedDate || '',
 
@@ -4812,6 +4812,28 @@ app.post('/api/documents/:docId/apply-to-verification', (req, res) => {
             if (key === 'dob') client.dob = String(value);
             if (key === 'address') client.address = String(value);
             if (key === 'primaryBank') client.businessBank = String(value);
+            if (key === 'averageDailyBalance') client.avgDailyBalance = Number(value) || client.avgDailyBalance;
+            if (key === 'accountNumberLast4') client.accountNumber = String(value);
+            if (key === 'dailyAchDebits') client.existingDebt = Number(value) || client.existingDebt;
+            if (key === 'accountHolder') {
+              if (!client.businessName || client.businessName === 'Pending Business Name') {
+                client.businessName = String(value);
+              }
+            }
+
+            // Track field-level source metadata
+            if (!client.fieldSources) client.fieldSources = {};
+            client.fieldSources[key] = {
+              value,
+              source: defaultIncomingSource,
+              sourceDocumentId: docId,
+              sourceDocumentName: docTitle,
+              confidence: confidence || 0.95,
+              updatedAt: new Date().toISOString(),
+              updatedBy: appliedBy || 'Staff Underwriter',
+              verificationStatus: 'UNVERIFIED',
+              verified: false,
+            };
             client.updatedAt = new Date().toISOString();
           }
         }
@@ -4886,6 +4908,25 @@ app.post('/api/documents/:docId/verify-field', (req, res) => {
         if (key === 'monthlyRevenue') client.monthlyRevenue = Number(val) || client.monthlyRevenue;
         if (key === 'dob') client.dob = String(val);
         if (key === 'primaryBank') client.businessBank = String(val);
+        if (key === 'averageDailyBalance') client.avgDailyBalance = Number(val) || client.avgDailyBalance;
+        if (key === 'accountNumberLast4') client.accountNumber = String(val);
+        if (key === 'dailyAchDebits') client.existingDebt = Number(val) || client.existingDebt;
+        if (key === 'accountHolder' && (!client.businessName || client.businessName === 'Pending Business Name')) {
+          client.businessName = String(val);
+        }
+
+        if (!client.fieldSources) client.fieldSources = {};
+        client.fieldSources[key] = {
+          value: val,
+          source: 'CALL_VERIFIED',
+          sourceDocumentId: docId,
+          sourceDocumentName: doc ? (doc.title || doc.fileName) : 'Verified Document',
+          confidence: 1.0,
+          updatedAt: new Date().toISOString(),
+          updatedBy: verifiedBy || 'Staff Underwriter',
+          verificationStatus: 'VERIFIED',
+          verified: true,
+        };
         client.updatedAt = new Date().toISOString();
       }
     }

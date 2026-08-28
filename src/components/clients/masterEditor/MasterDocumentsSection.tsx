@@ -251,14 +251,34 @@ export const MasterDocumentsSection: React.FC<MasterDocumentsSectionProps> = ({
               Client Document Vault ({documents.length} Files)
             </h4>
           </div>
-          <button
-            type="button"
-            onClick={() => setShowUploadModal(true)}
-            className="px-3 py-1.5 bg-amber-500 hover:bg-amber-400 text-slate-950 rounded-xl text-xs font-bold transition-all shadow-md shadow-amber-500/20 flex items-center gap-1.5"
-          >
-            <Upload className="w-3.5 h-3.5" />
-            <span>+ Upload File</span>
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              id="open-doc-analyzer-btn"
+              onClick={() => {
+                if (documents.length > 0) {
+                  const docToReview = documents.find((d) => Boolean(d.aiExtraction)) || documents[0];
+                  setActiveReviewDoc(docToReview);
+                } else {
+                  setShowUploadModal(true);
+                }
+              }}
+              className="px-3 py-1.5 bg-indigo-600/30 hover:bg-indigo-600/50 text-indigo-200 border border-indigo-500/50 rounded-xl text-xs font-bold transition-all shadow-md flex items-center gap-1.5 cursor-pointer"
+              title="Open Financial Document Analyzer"
+            >
+              <Sparkles className="w-3.5 h-3.5 text-amber-400" />
+              <span>⚡ Financial Document Analyzer</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setShowUploadModal(true)}
+              className="px-3 py-1.5 bg-amber-500 hover:bg-amber-400 text-slate-950 rounded-xl text-xs font-bold transition-all shadow-md shadow-amber-500/20 flex items-center gap-1.5"
+            >
+              <Upload className="w-3.5 h-3.5" />
+              <span>+ Upload File</span>
+            </button>
+          </div>
         </div>
 
         {documents.length === 0 ? (
@@ -386,6 +406,8 @@ export const MasterDocumentsSection: React.FC<MasterDocumentsSectionProps> = ({
           isOpen={Boolean(activeReviewDoc)}
           onClose={() => setActiveReviewDoc(null)}
           document={activeReviewDoc}
+          availableDocuments={documents}
+          onSelectDocument={(doc) => setActiveReviewDoc(doc)}
           clientId={clientId}
           clientName={clientName}
           businessName={businessName}

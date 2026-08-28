@@ -16,10 +16,12 @@ import { DocumentVault } from './components/vault/DocumentVault';
 import { OperationsReports } from './components/reports/OperationsReports';
 import { SettingsView } from './components/settings/SettingsView';
 import { LoginView } from './components/auth/LoginView';
+import { CommandCenterModal } from './components/layout/CommandCenterModal';
 
 const MainLayout: React.FC = () => {
   const { isAuthenticated, isLoading } = useAuth();
   const [activeTab, setActiveTab] = useState('dashboard');
+  const [isCommandCenterOpen, setIsCommandCenterOpen] = useState(false);
   const [reportFilters, setReportFilters] = useState<{
     view?: any;
     stage?: string;
@@ -29,6 +31,18 @@ const MainLayout: React.FC = () => {
   const [isNewLeadModalOpen, setIsNewLeadModalOpen] = useState(false);
   const [isNewClientModalOpen, setIsNewClientModalOpen] = useState(false);
   const { setSelectedClientId } = useData();
+
+  // Listen for Cmd+K / Ctrl+K keyboard shortcut
+  React.useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
+        e.preventDefault();
+        setIsCommandCenterOpen((prev) => !prev);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, []);
 
   if (isLoading) {
     return (
@@ -83,6 +97,7 @@ const MainLayout: React.FC = () => {
           setActiveTab={setActiveTab}
           onOpenNewLeadModal={handleOpenNewLeadModal}
           onOpenNewClientModal={handleOpenNewClientModal}
+          onOpenCommandCenter={() => setIsCommandCenterOpen(true)}
         />
 
         <main className="flex-1 overflow-y-auto p-5 lg:p-7 bg-[#070e22]">
@@ -160,6 +175,15 @@ const MainLayout: React.FC = () => {
           }}
         />
       )}
+
+      {/* Global Command Center Workspace */}
+      <CommandCenterModal
+        isOpen={isCommandCenterOpen}
+        onClose={() => setIsCommandCenterOpen(false)}
+        setActiveTab={setActiveTab}
+        onOpenNewClientModal={handleOpenNewClientModal}
+        onOpenNewLeadModal={handleOpenNewLeadModal}
+      />
     </div>
   );
 };

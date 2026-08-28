@@ -2649,12 +2649,28 @@ app.post('/api/clients/:id/audit-ssn-view', (req, res) => {
   res.json({ success: true });
 });
 
-// FUNDING DEALS CRUD
+// FUNDING DEALS CRUD (True Independent Deal Records)
 app.get('/api/deals', (req, res) => {
-  res.json(db.fundingDeals);
+  res.json(db.fundingDeals || []);
+});
+
+app.get('/api/deals/:id', (req, res) => {
+  const { id } = req.params;
+  const deal = db.fundingDeals.find((d) => d.id === id || d.dealId === id);
+  if (!deal) return res.status(404).json({ error: 'Funding deal not found' });
+  const client = db.clients.find((c) => c.id === deal.clientId);
+  const participants = db.commissionParticipants.filter((cp) => cp.dealId === deal.id);
+  const documents = db.documents.filter((doc) => doc.dealId === deal.id || (doc.clientId === deal.clientId && !doc.dealId));
+  res.json({ deal, client, participants, documents });
 });
 
 app.get('/api/deals/client/:clientId', (req, res) => {
+  const { clientId } = req.params;
+  const deals = db.fundingDeals.filter((d) => d.clientId === clientId);
+  res.json(deals);
+});
+
+app.get('/api/clients/:clientId/deals', (req, res) => {
   const { clientId } = req.params;
   const deals = db.fundingDeals.filter((d) => d.clientId === clientId);
   res.json(deals);
@@ -2667,27 +2683,101 @@ app.post('/api/deals', (req, res) => {
 
   const existingDeals = db.fundingDeals.filter((d) => d.clientId === dealData.clientId);
   const isStacked = existingDeals.length > 0;
+  const dealIndex = (db.fundingDeals.length + 101);
+  const canonicalDealId = dealData.dealId || `DEAL-${String(dealIndex).padStart(6, '0')}`;
+  const rawId = dealData.id || `deal-${Date.now()}-${Math.floor(Math.random() * 10000)}`;
+
+  const reqAmt = Number(dealData.requestedAmount !== undefined ? dealData.requestedAmount : (dealData.fundingAmount || 0));
+  const appAmt = Number(dealData.approvedAmount !== undefined ? dealData.approvedAmount : (dealData.status === 'APPROVED' || dealData.status === 'FUNDED' ? reqAmt : 0));
+  const fndAmt = Number(dealData.fundedAmount !== undefined ? dealData.fundedAmount : (dealData.status === 'FUNDED' ? (appAmt || reqAmt) : 0));
+  const finalFundingAmount = fndAmt > 0 ? fndAmt : (appAmt > 0 ? appAmt : reqAmt);
+
+  const initialActivity = [
+    {
+      id: `act-${Date.now()}-1`,
+      dealId: rawId,
+      timestamp: now,
+      user: dealData.createdBy || dealData.assignedStaff || 'Staff',
+      action: 'Deal Created',
+      newValue: dealData.status || 'Draft',
+      notes: `Deal position created with requested amount $${reqAmt.toLocaleString()}.`,
+    },
+  ];
 
   const newDeal = {
-    id: `deal-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
+    id: rawId,
+    dealId: canonicalDealId,
     clientId: dealData.clientId,
     clientName: client ? `${client.firstName} ${client.lastName}` : dealData.clientName || 'Client',
     businessName: client ? client.businessName : dealData.businessName || 'Business',
+    applicationId: dealData.applicationId || null,
     product: dealData.product || 'Revenue Funding',
-    fundingAmount: Number(dealData.fundingAmount || 0),
+    otherProductType: dealData.otherProductType || '',
+    otherProductDescription: dealData.otherProductDescription || '',
+    
+    // Amounts
+    requestedAmount: reqAmt,
+    approvedAmount: appAmt,
+    fundedAmount: fndAmt,
+    fundingAmount: finalFundingAmount,
+
+    // Lender / Funder
+    lenderName: dealData.lenderName || 'Maple Direct Capital',
+    funder: dealData.funder || dealData.lenderName || 'Maple Direct Capital',
+    lenderStatus: dealData.lenderStatus || 'PENDING',
+    lenderContact: dealData.lenderContact || 'underwriting@mapledirect.com',
+    submissionDate: dealData.submissionDate || dealData.submittedDate || now.split('T')[0],
+    submittedDate: dealData.submittedDate || dealData.submissionDate || now.split('T')[0],
+    approvalDate: dealData.approvalDate || '',
+    declineDate: dealData.declineDate || '',
+    declineReason: dealData.declineReason || '',
+
+    // Terms
+    factorRate: dealData.factorRate || '',
+    rate: dealData.rate || '',
+    term: dealData.term || dealData.termLength || '24 Months',
+    termLength: dealData.termLength || dealData.term || '24 Months',
+    paymentAmount: Number(dealData.paymentAmount || 0),
+    paymentFrequency: dealData.paymentFrequency || 'Monthly',
+    position: dealData.position || (isStacked ? `Position #${existingDeals.length + 1}` : '1st Position'),
+    isStacked,
+
+    // Status
+    status: dealData.status || 'Draft',
+
+    // Dates
+    createdDate: dealData.createdDate || now.split('T')[0],
+    startDate: dealData.startDate || '',
+    fundingDate: dealData.fundingDate || (dealData.status === 'FUNDED' ? now.split('T')[0] : ''),
+    payoffDate: dealData.payoffDate || '',
+    payoffAmount: Number(dealData.payoffAmount || 0),
+    renewalDate: dealData.renewalDate || '',
+    renewalStatus: dealData.renewalStatus || '',
+    cancelledDate: dealData.cancelledDate || '',
+
+    // Commissions
     fee: Number(dealData.fee || 0),
     percentage: Number(dealData.percentage || 0),
-    termLength: dealData.termLength || '24 Months',
-    status: dealData.status || 'PROPOSED',
+    commissionPoints: Number(dealData.commissionPoints || dealData.percentage || 0),
+    commissionTotal: Number(dealData.commissionTotal || ((finalFundingAmount * Number(dealData.percentage || 0)) / 100 + Number(dealData.fee || 0))),
+    commissionStatus: dealData.commissionStatus || 'PENDING',
+    commissionReceivedDate: dealData.commissionReceivedDate || '',
+
+    // Staff
     assignedStaff: dealData.assignedStaff || (client ? client.assignedStaff : 'Dana'),
-    lenderStatus: dealData.lenderStatus || 'PENDING',
-    lenderName: dealData.lenderName || 'Maple Direct Capital',
-    lenderContact: dealData.lenderContact || 'underwriting@mapledirect.com',
-    commissionStatus: 'PENDING',
+    assignedRep: dealData.assignedRep || dealData.assignedStaff || (client ? client.assignedStaff : 'Dana'),
+    broker: dealData.broker || '',
+    referralPartner: dealData.referralPartner || (client ? client.referralPartner : ''),
+    referralPartnerSplit: Number(dealData.referralPartnerSplit || 0),
+
+    // Notes & Activity
     notes: dealData.notes || '',
+    internalNotes: dealData.internalNotes || '',
+    activityHistory: Array.isArray(dealData.activityHistory) ? dealData.activityHistory : initialActivity,
     createdAt: now,
     updatedAt: now,
-    isStacked,
+    createdBy: dealData.createdBy || 'Staff',
+    updatedBy: dealData.updatedBy || 'Staff',
   };
 
   db.fundingDeals.unshift(newDeal);
@@ -2713,7 +2803,7 @@ app.post('/api/deals', (req, res) => {
 
   addTimelineEvent(
     dealData.clientId,
-    `Funding Deal Added (${isStacked ? 'Stacked Deal' : 'Primary Deal'})`,
+    `Funding Deal Added (${newDeal.dealId})`,
     `Deal for ${newDeal.product} ($${newDeal.fundingAmount.toLocaleString()} @ ${newDeal.percentage}%) created.`,
     newDeal.assignedStaff,
     'FUNDING',
@@ -2726,34 +2816,87 @@ app.post('/api/deals', (req, res) => {
 
 app.put('/api/deals/:id', (req, res) => {
   const { id } = req.params;
-  const idx = db.fundingDeals.findIndex((d) => d.id === id);
+  const idx = db.fundingDeals.findIndex((d) => d.id === id || d.dealId === id);
   if (idx === -1) return res.status(404).json({ error: 'Funding deal not found' });
 
   const prev = db.fundingDeals[idx];
+  const reqAmt = Number(req.body.requestedAmount !== undefined ? req.body.requestedAmount : (prev.requestedAmount || prev.fundingAmount || 0));
+  const appAmt = Number(req.body.approvedAmount !== undefined ? req.body.approvedAmount : (prev.approvedAmount || 0));
+  const fndAmt = Number(req.body.fundedAmount !== undefined ? req.body.fundedAmount : (prev.fundedAmount || 0));
+  const finalFundingAmount = Number(req.body.fundingAmount !== undefined ? req.body.fundingAmount : (fndAmt > 0 ? fndAmt : (appAmt > 0 ? appAmt : reqAmt)));
+
+  // Activity tracking
+  const newActivities = Array.isArray(prev.activityHistory) ? [...prev.activityHistory] : [];
+  const actor = req.body.updatedBy || req.body.assignedStaff || 'Staff';
+  const now = new Date().toISOString();
+
+  if (req.body.status && req.body.status !== prev.status) {
+    newActivities.unshift({
+      id: `act-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`,
+      dealId: prev.id,
+      timestamp: now,
+      user: actor,
+      action: 'Status Changed',
+      field: 'status',
+      previousValue: prev.status,
+      newValue: req.body.status,
+      notes: req.body.statusNote || `Deal status updated from ${prev.status} to ${req.body.status}.`,
+    });
+  }
+
+  if (req.body.fundingAmount !== undefined && Number(req.body.fundingAmount) !== Number(prev.fundingAmount)) {
+    newActivities.unshift({
+      id: `act-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`,
+      dealId: prev.id,
+      timestamp: now,
+      user: actor,
+      action: 'Amount Updated',
+      field: 'fundingAmount',
+      previousValue: prev.fundingAmount,
+      newValue: req.body.fundingAmount,
+      notes: `Funding amount updated to $${Number(req.body.fundingAmount).toLocaleString()}.`,
+    });
+  }
+
+  if (req.body.lenderName && req.body.lenderName !== prev.lenderName) {
+    newActivities.unshift({
+      id: `act-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`,
+      dealId: prev.id,
+      timestamp: now,
+      user: actor,
+      action: 'Lender Changed',
+      field: 'lenderName',
+      previousValue: prev.lenderName,
+      newValue: req.body.lenderName,
+      notes: `Lender assigned changed to ${req.body.lenderName}.`,
+    });
+  }
+
   const updated = {
     ...prev,
     ...req.body,
-    fundingAmount: Number(req.body.fundingAmount !== undefined ? req.body.fundingAmount : prev.fundingAmount),
+    requestedAmount: reqAmt,
+    approvedAmount: appAmt,
+    fundedAmount: fndAmt,
+    fundingAmount: finalFundingAmount,
     fee: Number(req.body.fee !== undefined ? req.body.fee : prev.fee),
     percentage: Number(req.body.percentage !== undefined ? req.body.percentage : prev.percentage),
-    updatedAt: new Date().toISOString(),
+    activityHistory: newActivities,
+    updatedAt: now,
   };
 
   db.fundingDeals[idx] = updated;
 
   // Recalculate participant dollar amounts
-  const participants = db.commissionParticipants.filter((cp) => cp.dealId === id);
+  const participants = db.commissionParticipants.filter((cp) => cp.dealId === id || cp.dealId === prev.id);
   for (const p of participants) {
     p.dollarAmount = (updated.fundingAmount * p.points) / 100;
-    p.updatedAt = new Date().toISOString();
+    p.updatedAt = now;
   }
 
   if (updated.status === 'FUNDED' && prev.status !== 'FUNDED') {
-    updated.fundingDate = new Date().toISOString();
-    const client = db.clients.find((c) => c.id === updated.clientId);
-    if (client) {
-      client.currentStatus = 'FUNDED';
-      client.updatedAt = new Date().toISOString();
+    if (!updated.fundingDate) {
+      updated.fundingDate = now.split('T')[0];
     }
 
     sendDiscordNotification('clientFunded', 'CLIENT DEAL FUNDED SUCCESSFULLY!', {
@@ -2764,11 +2907,12 @@ app.put('/api/deals/:id', (req, res) => {
       amount: `$${updated.fundingAmount?.toLocaleString()}`,
       product: updated.product,
       lender: updated.lenderName,
+      dealId: updated.dealId || updated.id,
     });
 
     addTimelineEvent(
       updated.clientId,
-      'Deal Funded!',
+      `Deal Funded (${updated.dealId || 'Deal'})`,
       `${updated.product} ($${updated.fundingAmount.toLocaleString()}) funded successfully via ${updated.lenderName}. Commission pending collection.`,
       updated.assignedStaff,
       'FUNDING',
@@ -2780,15 +2924,135 @@ app.put('/api/deals/:id', (req, res) => {
   res.json(updated);
 });
 
+app.patch('/api/deals/:id/status', (req, res) => {
+  const { id } = req.params;
+  const { status, note, user } = req.body;
+  const idx = db.fundingDeals.findIndex((d) => d.id === id || d.dealId === id);
+  if (idx === -1) return res.status(404).json({ error: 'Funding deal not found' });
+
+  const prev = db.fundingDeals[idx];
+  const now = new Date().toISOString();
+  const activities = Array.isArray(prev.activityHistory) ? [...prev.activityHistory] : [];
+
+  activities.unshift({
+    id: `act-${Date.now()}`,
+    dealId: prev.id,
+    timestamp: now,
+    user: user || 'Staff',
+    action: 'Status Updated',
+    field: 'status',
+    previousValue: prev.status,
+    newValue: status,
+    notes: note || `Deal status transitioned to ${status}.`,
+  });
+
+  const updates: any = {
+    status,
+    activityHistory: activities,
+    updatedAt: now,
+  };
+
+  if (status === 'FUNDED' && !prev.fundingDate) {
+    updates.fundingDate = now.split('T')[0];
+  }
+
+  db.fundingDeals[idx] = { ...prev, ...updates };
+  saveDb();
+  res.json(db.fundingDeals[idx]);
+});
+
+app.post('/api/deals/:id/activity', (req, res) => {
+  const { id } = req.params;
+  const { action, field, previousValue, newValue, notes, user } = req.body;
+  const idx = db.fundingDeals.findIndex((d) => d.id === id || d.dealId === id);
+  if (idx === -1) return res.status(404).json({ error: 'Funding deal not found' });
+
+  const prev = db.fundingDeals[idx];
+  const now = new Date().toISOString();
+  const activities = Array.isArray(prev.activityHistory) ? [...prev.activityHistory] : [];
+
+  const newActivity = {
+    id: `act-${Date.now()}`,
+    dealId: prev.id,
+    timestamp: now,
+    user: user || 'Staff',
+    action: action || 'Note Added',
+    field,
+    previousValue,
+    newValue,
+    notes: notes || '',
+  };
+
+  activities.unshift(newActivity);
+  db.fundingDeals[idx].activityHistory = activities;
+  db.fundingDeals[idx].updatedAt = now;
+
+  saveDb();
+  res.status(201).json(newActivity);
+});
+
+app.post('/api/deals/:id/duplicate', (req, res) => {
+  const { id } = req.params;
+  const source = db.fundingDeals.find((d) => d.id === id || d.dealId === id);
+  if (!source) return res.status(404).json({ error: 'Source deal not found' });
+
+  const now = new Date().toISOString();
+  const dealIndex = (db.fundingDeals.length + 101);
+  const newCanonicalId = `DEAL-${String(dealIndex).padStart(6, '0')}`;
+  const newRawId = `deal-${Date.now()}-${Math.floor(Math.random() * 10000)}`;
+
+  const overrides = req.body || {};
+  const duplicatedDeal = {
+    ...source,
+    id: newRawId,
+    dealId: newCanonicalId,
+    status: overrides.status || 'Draft',
+    fundingDate: '',
+    approvalDate: '',
+    declineDate: '',
+    declineReason: '',
+    commissionStatus: 'PENDING',
+    commissionReceivedDate: '',
+    isStacked: true,
+    activityHistory: [
+      {
+        id: `act-${Date.now()}-1`,
+        dealId: newRawId,
+        timestamp: now,
+        user: overrides.user || 'Staff',
+        action: 'Deal Cloned',
+        notes: `Duplicated from deal ${source.dealId || source.id}.`,
+      },
+    ],
+    createdAt: now,
+    updatedAt: now,
+    ...overrides,
+  };
+
+  db.fundingDeals.unshift(duplicatedDeal);
+
+  addTimelineEvent(
+    duplicatedDeal.clientId,
+    `Funding Deal Cloned (${duplicatedDeal.dealId})`,
+    `New deal duplicated from ${source.dealId || 'original deal'}.`,
+    duplicatedDeal.assignedStaff,
+    'FUNDING',
+    duplicatedDeal.id
+  );
+
+  saveDb();
+  res.status(201).json(duplicatedDeal);
+});
+
 app.delete('/api/deals/:id', (req, res) => {
   const { id } = req.params;
-  const deal = db.fundingDeals.find((d) => d.id === id);
+  const deal = db.fundingDeals.find((d) => d.id === id || d.dealId === id);
   if (deal) {
-    db.fundingDeals = db.fundingDeals.filter((d) => d.id !== id);
-    db.commissionParticipants = db.commissionParticipants.filter((cp) => cp.dealId !== id);
+    db.fundingDeals = db.fundingDeals.filter((d) => d.id !== deal.id && d.dealId !== deal.dealId);
+    db.commissionParticipants = db.commissionParticipants.filter((cp) => cp.dealId !== deal.id);
     addTimelineEvent(
       deal.clientId,
-      'Funding Deal Removed',
+      `Funding Deal Removed (${deal.dealId || 'Deal'})`,
       `Deal ${deal.product} ($${deal.fundingAmount.toLocaleString()}) removed by staff.`,
       'Staff',
       'FUNDING'

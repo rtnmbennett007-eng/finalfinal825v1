@@ -360,6 +360,60 @@ export type PipelineStage =
   | 'LOST'
   | 'WITHDRAWN';
 
+export const CANONICAL_DEAL_STATUSES = [
+  'Draft',
+  'Submitted',
+  'Underwriting',
+  'Approved',
+  'Conditions',
+  'Funded',
+  'Paid Off',
+  'Renewed',
+  'Declined',
+  'Lost',
+  'Cancelled',
+] as const;
+
+export type CanonicalDealStatus = typeof CANONICAL_DEAL_STATUSES[number];
+
+export function normalizeDealStatus(status?: string | null): CanonicalDealStatus {
+  if (!status) return 'Draft';
+  const trimmed = status.trim();
+
+  // Exact canonical match
+  if ((CANONICAL_DEAL_STATUSES as readonly string[]).includes(trimmed)) {
+    return trimmed as CanonicalDealStatus;
+  }
+
+  const upper = trimmed.toUpperCase().replace(/[_\s-]+/g, ' ');
+
+  if (upper.includes('DRAFT') || upper.includes('PROPOSED') || upper.includes('INITIAL')) return 'Draft';
+  if (upper.includes('SUBMITTED') || upper.includes('SENT TO LENDER')) return 'Submitted';
+  if (upper.includes('UNDERWRITING') || upper.includes('IN REVIEW') || upper.includes('PRE APPROVED') || upper.includes('PRE_APPROVED')) return 'Underwriting';
+  if (upper.includes('APPROVED')) return 'Approved';
+  if (upper.includes('CONDITIONS') || upper.includes('STIPS') || upper.includes('DOCS PENDING')) return 'Conditions';
+  if (upper.includes('FUNDED') || upper.includes('CLOSED')) return 'Funded';
+  if (upper.includes('PAID OFF') || upper.includes('PAID_OFF') || upper.includes('SETTLED')) return 'Paid Off';
+  if (upper.includes('RENEWED') || upper.includes('RENEWAL')) return 'Renewed';
+  if (upper.includes('DECLINED') || upper.includes('REJECTED') || upper.includes('NOT QUALIFIED')) return 'Declined';
+  if (upper.includes('LOST') || upper.includes('WITHDRAWN')) return 'Lost';
+  if (upper.includes('CANCELLED') || upper.includes('CANCELED')) return 'Cancelled';
+
+  return 'Draft';
+}
+
+export interface DealActivityItem {
+  id: string;
+  dealId: string;
+  timestamp: string;
+  user: string;
+  action: string;
+  field?: string;
+  previousValue?: any;
+  newValue?: any;
+  notes?: string;
+}
+
 export type ProductCategory =
   | 'Business / Commercial Funding'
   | 'Credit / Card Funding'
@@ -608,6 +662,7 @@ export interface Client {
 
 export interface FundingDeal {
   id: string;
+  dealId?: string; // Canonical display ID (e.g. DEAL-000101)
   clientId: string;
   clientName: string;
   businessName: string;
@@ -615,22 +670,73 @@ export interface FundingDeal {
   product: FundingProductType;
   otherProductType?: string;
   otherProductDescription?: string;
-  fundingAmount: number;
-  fee: number; // e.g. Origination / closing fee $
-  percentage: number; // Commission percentage (e.g., 6.9%)
-  termLength: string; // e.g., "12 Months", "24 Months", "60 Months"
-  status: 'PROPOSED' | 'SUBMITTED' | 'PRE_APPROVED' | 'APPROVED' | 'CONDITIONS_MET' | 'FUNDED' | 'DECLINED' | 'WITHDRAWN' | 'UNDERWRITING';
-  assignedStaff: string;
-  lenderStatus: 'PENDING' | 'SUBMITTED' | 'PRE_APPROVED' | 'APPROVED' | 'NOT_QUALIFIED' | 'ADDITIONAL_INFO_REQUESTED';
+  
+  // Independent amounts
+  requestedAmount?: number;
+  approvedAmount?: number;
+  fundedAmount?: number;
+  fundingAmount: number; // Backward compatibility / primary amount
+
+  // Funder / Lender details
   lenderName: string;
-  lenderContact: string;
+  funder?: string;
+  lenderStatus?: string;
+  lenderContact?: string;
+  submissionDate?: string;
+  submittedDate?: string;
+  approvalDate?: string;
+  declineDate?: string;
+  declineReason?: string;
+
+  // Terms & Position
+  factorRate?: number | string;
+  rate?: number | string;
+  term?: string;
+  termLength: string; // e.g. "12 Months"
+  paymentAmount?: number;
+  paymentFrequency?: 'Daily' | 'Weekly' | 'Biweekly' | 'Monthly' | 'Other' | string;
+  position?: string; // e.g. "1st Position", "2nd Position", "3rd Position"
+  isStacked?: boolean;
+
+  // Status (Canonical Deal Status)
+  status: CanonicalDealStatus | 'PROPOSED' | 'SUBMITTED' | 'PRE_APPROVED' | 'APPROVED' | 'CONDITIONS_MET' | 'FUNDED' | 'DECLINED' | 'WITHDRAWN' | 'UNDERWRITING' | string;
+
+  // Dates & Milestones
+  createdDate?: string;
+  startDate?: string;
   fundingDate?: string;
+  payoffDate?: string;
+  payoffAmount?: number;
+  renewalDate?: string;
+  renewalStatus?: string;
+  cancelledDate?: string;
+
+  // Commission & Fees
+  fee: number; // Origination / closing fee $
+  percentage: number; // Commission percentage (e.g., 6.9%)
+  commissionPoints?: number;
+  commissionTotal?: number;
   commissionStatus: 'PENDING' | 'COLLECTED' | 'DISTRIBUTED' | 'PARTIALLY_DISTRIBUTED';
   commissionReceivedDate?: string;
+
+  // Rep & Referral
+  assignedStaff: string;
+  assignedRep?: string;
+  broker?: string;
+  referralPartner?: string;
+  referralPartnerSplit?: number;
+
+  // Notes & Documents
   notes?: string;
+  internalNotes?: string;
+  documents?: DocumentItem[];
+  activityHistory?: DealActivityItem[];
+
+  // Metadata
   createdAt: string;
   updatedAt: string;
-  isStacked?: boolean;
+  createdBy?: string;
+  updatedBy?: string;
 }
 
 export type CommissionParticipantType =

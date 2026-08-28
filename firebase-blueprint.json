@@ -39,22 +39,66 @@
     },
     "FundingDeal": {
       "title": "FundingDeal",
-      "description": "Commercial loan, line of credit, 0% card, or SBA deal",
+      "description": "Independent first-class commercial funding deal position and multi-stack structure",
       "type": "object",
       "properties": {
         "id": { "type": "string" },
+        "dealId": { "type": "string" },
         "clientId": { "type": "string" },
         "clientName": { "type": "string" },
+        "businessName": { "type": "string" },
         "product": { "type": "string" },
+        "otherProductType": { "type": "string" },
+        "position": { "type": "string" },
+        "isStacked": { "type": "boolean" },
+        "requestedAmount": { "type": "number" },
+        "approvedAmount": { "type": "number" },
+        "fundedAmount": { "type": "number" },
         "fundingAmount": { "type": "number" },
         "percentage": { "type": "number" },
+        "fee": { "type": "number" },
+        "factorRate": { "type": "string" },
+        "rate": { "type": "string" },
+        "termLength": { "type": "string" },
+        "term": { "type": "string" },
+        "paymentFrequency": { "type": "string" },
+        "paymentAmount": { "type": "number" },
         "status": { "type": "string" },
+        "funder": { "type": "string" },
         "lenderName": { "type": "string" },
+        "lenderContact": { "type": "string" },
+        "assignedRep": { "type": "string" },
+        "assignedStaff": { "type": "string" },
+        "submissionDate": { "type": "string" },
+        "approvalDate": { "type": "string" },
+        "fundingDate": { "type": "string" },
+        "declineDate": { "type": "string" },
+        "declineReason": { "type": "string" },
+        "payoffDate": { "type": "string" },
+        "renewalDate": { "type": "string" },
         "commissionStatus": { "type": "string" },
+        "commissionPoints": { "type": "number" },
+        "commissionTotal": { "type": "number" },
+        "activityHistory": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": { "type": "string" },
+              "timestamp": { "type": "string" },
+              "action": { "type": "string" },
+              "user": { "type": "string" },
+              "previousValue": { "type": "string" },
+              "newValue": { "type": "string" },
+              "notes": { "type": "string" }
+            }
+          }
+        },
+        "notes": { "type": "string" },
         "createdAt": { "type": "string" },
         "updatedAt": { "type": "string" }
       },
-      "required": ["id", "clientId", "product", "fundingAmount", "percentage", "status"]
+      "required": ["id", "clientId", "product", "fundingAmount", "status"]
     },
     "InternalTask": {
       "title": "InternalTask",
@@ -165,7 +209,7 @@
     },
     "/deals/{dealId}": {
       "schema": "FundingDeal",
-      "description": "Funding deals and commission tracking"
+      "description": "First-class commercial funding deals and multi-stack positions"
     },
     "/tasks/{taskId}": {
       "schema": "InternalTask",

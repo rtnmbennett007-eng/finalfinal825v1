@@ -1765,37 +1765,92 @@ export const firestoreService = {
 
   async createDeal(data: Partial<FundingDeal>): Promise<FundingDeal> {
     const db = getDb();
-    const id = data.id || `deal-${Date.now()}`;
+    const id = data.id || `deal-${Date.now()}-${Math.floor(Math.random() * 10000)}`;
     const now = new Date().toISOString();
-    const fundingAmount = data.fundingAmount || 25000;
-    const percentage = data.percentage || 7.0;
-    const fee = data.fee || 995;
+    const ds = localStore.getDataset();
+    const dealSeq = (ds.deals.length + 101);
+    const canonicalDealId = data.dealId || `DEAL-${String(dealSeq).padStart(6, '0')}`;
+
+    const reqAmt = Number(data.requestedAmount !== undefined ? data.requestedAmount : (data.fundingAmount || 25000));
+    const appAmt = Number(data.approvedAmount !== undefined ? data.approvedAmount : (data.status === 'APPROVED' || data.status === 'FUNDED' ? reqAmt : 0));
+    const fndAmt = Number(data.fundedAmount !== undefined ? data.fundedAmount : (data.status === 'FUNDED' ? (appAmt || reqAmt) : 0));
+    const fundingAmount = fndAmt > 0 ? fndAmt : (appAmt > 0 ? appAmt : reqAmt);
+    const percentage = Number(data.percentage !== undefined ? data.percentage : 7.0);
+    const fee = Number(data.fee !== undefined ? data.fee : 995);
+
+    const initialActivity = [
+      {
+        id: `act-${Date.now()}-1`,
+        dealId: id,
+        timestamp: now,
+        user: data.createdBy || data.assignedStaff || 'Staff',
+        action: 'Deal Created',
+        newValue: data.status || 'Draft',
+        notes: `Deal position created with requested amount $${reqAmt.toLocaleString()}.`,
+      },
+    ];
 
     const deal: FundingDeal = {
       id,
+      dealId: canonicalDealId,
       clientId: data.clientId || '',
       clientName: data.clientName || 'Client Applicant',
       businessName: data.businessName || 'Business Entity',
+      applicationId: data.applicationId,
       product: data.product || 'Revenue Funding',
+      otherProductType: data.otherProductType,
+      otherProductDescription: data.otherProductDescription,
+      requestedAmount: reqAmt,
+      approvedAmount: appAmt,
+      fundedAmount: fndAmt,
       fundingAmount,
       fee,
       percentage,
-      termLength: data.termLength || '12 Months',
-      status: data.status || 'UNDERWRITING',
+      commissionPoints: Number(data.commissionPoints || percentage),
+      commissionTotal: Number(data.commissionTotal || ((fundingAmount * percentage) / 100 + fee)),
+      termLength: data.termLength || data.term || '12 Months',
+      term: data.term || data.termLength || '12 Months',
+      factorRate: data.factorRate,
+      rate: data.rate,
+      paymentAmount: data.paymentAmount,
+      paymentFrequency: data.paymentFrequency || 'Monthly',
+      position: data.position || '1st Position',
+      status: data.status || 'Draft',
       assignedStaff: data.assignedStaff || 'Dana',
+      assignedRep: data.assignedRep || data.assignedStaff || 'Dana',
+      broker: data.broker,
+      referralPartner: data.referralPartner,
+      referralPartnerSplit: data.referralPartnerSplit,
       lenderStatus: data.lenderStatus || 'SUBMITTED',
       lenderName: data.lenderName || 'Maple Direct Capital',
+      funder: data.funder || data.lenderName || 'Maple Direct Capital',
       lenderContact: data.lenderContact || 'underwriting@mapledirect.com',
+      submissionDate: data.submissionDate || now.split('T')[0],
+      submittedDate: data.submittedDate || now.split('T')[0],
+      approvalDate: data.approvalDate,
+      fundingDate: data.fundingDate || (data.status === 'FUNDED' ? now.split('T')[0] : ''),
+      declineDate: data.declineDate,
+      declineReason: data.declineReason,
+      payoffDate: data.payoffDate,
+      payoffAmount: data.payoffAmount,
+      renewalDate: data.renewalDate,
+      renewalStatus: data.renewalStatus,
+      cancelledDate: data.cancelledDate,
       commissionStatus: data.commissionStatus || 'PENDING',
+      commissionReceivedDate: data.commissionReceivedDate,
       notes: data.notes || '',
+      internalNotes: data.internalNotes,
+      activityHistory: Array.isArray(data.activityHistory) ? data.activityHistory : initialActivity,
       createdAt: data.createdAt || now,
       updatedAt: now,
+      createdBy: data.createdBy || 'Staff',
+      updatedBy: data.updatedBy || 'Staff',
       isStacked: data.isStacked !== undefined ? data.isStacked : false,
       ...data,
     };
 
-    localStore.updateDataset((ds) => {
-      ds.deals.push(deal);
+    localStore.updateDataset((dataset) => {
+      dataset.deals.push(deal);
     }, ['deals']);
 
     if (db) {
@@ -1806,19 +1861,12 @@ export const firestoreService = {
       }
     }
 
-    // Auto calculate initial commission distributions
-    try {
-      await firestoreService.recalculateAndSaveCommissionDistribution(deal);
-    } catch {
-      // ignore
-    }
-
     // Timeline event
     try {
       await firestoreService.createTimelineEvent({
         clientId: deal.clientId,
         dealId: id,
-        title: `Funding Deal Created (${deal.product} - $${deal.fundingAmount.toLocaleString()})`,
+        title: `Funding Deal Created (${deal.dealId || deal.product} - $${deal.fundingAmount.toLocaleString()})`,
         description: `New ${deal.product} deal opened with target lender ${deal.lenderName}.`,
         staffMember: deal.assignedStaff || 'Staff',
         type: 'STATUS_CHANGE',
@@ -1834,14 +1882,36 @@ export const firestoreService = {
     const db = getDb();
     const now = new Date().toISOString();
     let finalDeal: FundingDeal | null = null;
+    const existing = localStore.getDataset().deals.find((d) => d.id === id || d.dealId === id);
+
+    const activities = Array.isArray(existing?.activityHistory) ? [...existing.activityHistory] : [];
+    if (existing && data.status && data.status !== existing.status) {
+      activities.unshift({
+        id: `act-${Date.now()}`,
+        dealId: existing.id,
+        timestamp: now,
+        user: data.updatedBy || data.assignedStaff || 'Staff',
+        action: 'Status Changed',
+        field: 'status',
+        previousValue: existing.status,
+        newValue: data.status,
+        notes: `Deal status updated to ${data.status}.`,
+      });
+    }
+
+    const payload = {
+      ...data,
+      activityHistory: activities,
+      updatedAt: now,
+    };
 
     localStore.updateDataset((ds) => {
-      const idx = ds.deals.findIndex((d) => d.id === id);
+      const idx = ds.deals.findIndex((d) => d.id === id || d.dealId === id);
       if (idx !== -1) {
-        ds.deals[idx] = { ...ds.deals[idx], ...data, updatedAt: now };
+        ds.deals[idx] = { ...ds.deals[idx], ...payload };
         finalDeal = ds.deals[idx];
       } else {
-        const d = { id, ...data, updatedAt: now } as FundingDeal;
+        const d = { id, ...payload } as FundingDeal;
         ds.deals.push(d);
         finalDeal = d;
       }
@@ -1849,19 +1919,24 @@ export const firestoreService = {
 
     if (db) {
       try {
-        await setDoc(doc(db, 'deals', id), sanitizeDoc({ id, ...data, updatedAt: now }), { merge: true });
+        await setDoc(doc(db, 'deals', id), sanitizeDoc({ id, ...payload }), { merge: true });
       } catch (err: any) {
         console.debug('updateDeal Firestore notice:', err?.code || err?.message || err);
       }
     }
 
     if (finalDeal) {
-      if (data.fundingAmount !== undefined || data.percentage !== undefined || data.product !== undefined) {
-        try {
-          await firestoreService.recalculateAndSaveCommissionDistribution(finalDeal);
-        } catch {
-          // ignore
-        }
+      // If funding amount changed, scale existing participants
+      if (data.fundingAmount !== undefined && existing && Number(data.fundingAmount) !== Number(existing.fundingAmount)) {
+        const newAmt = Number(data.fundingAmount);
+        localStore.updateDataset((ds) => {
+          ds.commissions.forEach((c) => {
+            if (c.dealId === id || c.dealId === existing.id) {
+              c.dollarAmount = Number(((c.points / 100) * newAmt).toFixed(2));
+              c.updatedAt = now;
+            }
+          });
+        }, ['commissions']);
       }
       return finalDeal;
     }

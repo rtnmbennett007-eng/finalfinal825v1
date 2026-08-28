@@ -85,6 +85,9 @@ interface DataContextType {
   createDeal: (data: Partial<FundingDeal>) => Promise<FundingDeal>;
   updateDeal: (id: string, data: Partial<FundingDeal>) => Promise<FundingDeal>;
   deleteDeal: (id: string) => Promise<void>;
+  updateDealStatus: (id: string, status: string, note?: string) => Promise<FundingDeal>;
+  duplicateDeal: (id: string, overrides?: Partial<FundingDeal>) => Promise<FundingDeal>;
+  addDealActivity: (dealId: string, action: string, notes?: string, field?: string, prevVal?: any, newVal?: any) => Promise<void>;
 
   // Commissions & Rules
   saveCommissionRule: (rule: Partial<CommissionRule>) => Promise<CommissionRule>;
@@ -572,6 +575,109 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
       throw err;
     } finally {
       setIsSaving(false);
+    }
+  };
+
+  const updateDealStatus = async (id: string, status: string, note?: string): Promise<FundingDeal> => {
+    setIsSaving(true);
+    try {
+      const deal = deals.find((d) => d.id === id || d.dealId === id);
+      const prevStatus = deal?.status || 'Draft';
+      const updated = await firestoreService.updateDeal(id, {
+        status,
+        updatedBy: currentUser?.name || 'Staff',
+      });
+
+      if (note || status !== prevStatus) {
+        await addDealActivity(
+          updated.id,
+          'Status Changed',
+          note || `Status changed from ${prevStatus} to ${status}`,
+          'status',
+          prevStatus,
+          status
+        );
+      }
+
+      addToast('success', 'Status Updated', `Deal ${updated.dealId || updated.product} moved to ${status}.`);
+      if (updated.clientId && selectedClientId === updated.clientId) {
+        refreshClientDetail(updated.clientId);
+      }
+      return updated;
+    } catch (err: any) {
+      addToast('error', 'Status Update Failed', err.message || 'Could not update deal status');
+      throw err;
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const duplicateDeal = async (id: string, overrides: Partial<FundingDeal> = {}): Promise<FundingDeal> => {
+    setIsSaving(true);
+    try {
+      const source = deals.find((d) => d.id === id || d.dealId === id);
+      if (!source) throw new Error('Source deal not found to clone');
+
+      const cloned = await firestoreService.createDeal({
+        ...source,
+        id: undefined,
+        dealId: undefined,
+        status: overrides.status || 'Draft',
+        fundingDate: '',
+        approvalDate: '',
+        declineDate: '',
+        declineReason: '',
+        commissionStatus: 'PENDING',
+        commissionReceivedDate: '',
+        isStacked: true,
+        createdBy: currentUser?.name || 'Staff',
+        notes: `Cloned from deal ${source.dealId || source.id}. ${overrides.notes || ''}`,
+        ...overrides,
+      });
+
+      addToast('success', 'Deal Cloned', `Cloned deal ${cloned.dealId || cloned.id} created successfully.`);
+      if (cloned.clientId && selectedClientId === cloned.clientId) {
+        refreshClientDetail(cloned.clientId);
+      }
+      return cloned;
+    } catch (err: any) {
+      addToast('error', 'Clone Failed', err.message || 'Could not clone deal');
+      throw err;
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const addDealActivity = async (
+    dealId: string,
+    action: string,
+    notes?: string,
+    field?: string,
+    prevVal?: any,
+    newVal?: any
+  ): Promise<void> => {
+    try {
+      const deal = deals.find((d) => d.id === dealId || d.dealId === dealId);
+      if (!deal) return;
+
+      const newActivity = {
+        id: `act-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`,
+        dealId: deal.id,
+        timestamp: new Date().toISOString(),
+        user: currentUser?.name || 'Staff',
+        action,
+        field,
+        previousValue: prevVal,
+        newValue: newVal,
+        notes: notes || '',
+      };
+
+      const existingActivities = Array.isArray(deal.activityHistory) ? deal.activityHistory : [];
+      await firestoreService.updateDeal(deal.id, {
+        activityHistory: [newActivity, ...existingActivities],
+      });
+    } catch (err) {
+      console.warn('Failed to add deal activity log:', err);
     }
   };
 
@@ -1346,6 +1452,9 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
         createDeal,
         updateDeal,
         deleteDeal,
+        updateDealStatus,
+        duplicateDeal,
+        addDealActivity,
 
         saveCommissionRule,
         deleteCommissionRule,

@@ -231,7 +231,7 @@ Output STRICT JSON ONLY:
       }
 
       const response = await ai.models.generateContent({
-        model: 'gemini-2.5-flash',
+        model: 'gemini-3.6-flash',
         contents,
       });
 
@@ -683,11 +683,11 @@ export async function analyzeDocumentWithAi(params: {
   let confidenceScore = classification.confidenceScore;
   let documentSummary = '';
   let extractedFields: ExtractedFieldItem[] = [];
-  let modelUsed = 'gemini-2.5-flash (Simulated/Fallback)';
+  let modelUsed = 'gemini-3.6-flash (Simulated/Fallback)';
 
   // Step 2: Extract with Gemini AI if available
   if (ai && (fileBase64 || rawText || fileName)) {
-    const candidateModels = ['gemini-2.5-flash', 'gemini-2.5-pro'];
+    const candidateModels = ['gemini-3.6-flash', 'gemini-3.1-pro-preview'];
     let geminiSuccess = false;
 
     const defaultSourceType: FieldSourceType =
@@ -876,7 +876,7 @@ Valid sections for extracted fields:
 }
 
 export interface ExtractedApplicationProfile {
-  // Client Info
+  // Client / Owner Info
   firstName: string;
   middleName?: string;
   lastName: string;
@@ -908,12 +908,14 @@ export interface ExtractedApplicationProfile {
 
   // Business Info
   businessName: string;
+  legalBusinessName?: string;
   dba?: string;
   federalTaxId: string;
   stateOfOrganization?: string;
   entityType?: string;
   industry?: string;
   businessStartDate?: string;
+  businessStartDateUnderCurrentOwnership?: string;
   timeInBusiness?: string;
   ownershipPercentage?: number;
   ownerTitle?: string;
@@ -926,6 +928,7 @@ export interface ExtractedApplicationProfile {
   businessCity?: string;
   businessState?: string;
   businessZip?: string;
+  homeAddressSameAsBusinessAddress?: boolean;
 
   // Revenue & Financials
   annualRevenue?: number;
@@ -934,6 +937,7 @@ export interface ExtractedApplicationProfile {
 
   // Funding Request & Loan Product
   requestedAmount?: number;
+  requestedFundingRange?: string;
   requestedProduct?: string;
   useOfFunds?: string;
   fundingUrgency?: string;
@@ -949,6 +953,59 @@ export interface ExtractedApplicationProfile {
   lenderBalances?: string;
   existingDebt?: number;
 
+  // Structured Application Object with strict business and owner separation
+  application?: {
+    business: {
+      businessName: string | null;
+      legalBusinessName: string | null;
+      dba: string | null;
+      email: string | null;
+      businessEmail: string | null;
+      phone: string | null;
+      businessPhone: string | null;
+      address: string | null;
+      businessAddress: string | null;
+      city: string | null;
+      businessCity: string | null;
+      state: string | null;
+      businessState: string | null;
+      zip: string | null;
+      businessZip: string | null;
+      industry: string | null;
+      businessStartDate: string | null;
+      federalTaxId: string | null;
+      ein: string | null;
+      stateOfOrganization: string | null;
+      entityStructure: string | null;
+      annualRevenue: number | null;
+      requestedFundingRange: string | null;
+      requestedAmount: number | null;
+      useOfFunds: string | null;
+    };
+    owner: {
+      firstName: string | null;
+      lastName: string | null;
+      ownerFirstName: string | null;
+      ownerLastName: string | null;
+      dateOfBirth: string | null;
+      ownerDateOfBirth: string | null;
+      title: string | null;
+      ownerTitle: string | null;
+      ownershipPercentage: number | null;
+      currentOwnershipStartDate: string | null;
+      businessStartDateCurrentOwnership: string | null;
+      homeAddressSameAsBusinessAddress: boolean | null;
+      ssn: string | null;
+      creditScore: number | null;
+      personalIncome: number | null;
+    };
+  };
+
+  // Source Tracking Metadata
+  source?: string;
+  aiFilled?: boolean;
+  callVerified?: boolean;
+
   // Metadata
   confidence: number;
   summary: string;
@@ -956,6 +1013,182 @@ export interface ExtractedApplicationProfile {
   extractedFieldsList: ExtractedFieldItem[];
   fieldStatuses: Record<string, { source: string; status: string; confidence: number; isMissing?: boolean }>;
   unfoundFields: string[];
+}
+
+/**
+ * Sanitizes and validates extracted application data to prevent placeholder pollution
+ * and enforce strict separation between Business Information and Owner Information.
+ */
+function validateAndSanitizeApplicationData(appData: any) {
+  const business = appData?.business || {};
+  const owner = appData?.owner || {};
+
+  const cleanVal = (v: any) => {
+    if (v === undefined || v === null) return '';
+    const str = String(v).trim();
+    return str;
+  };
+
+  const isPlaceholder = (val: string) => {
+    if (!val) return true;
+    const lower = val.toLowerCase().trim();
+    return (
+      lower === 'applicant' ||
+      lower === 'name' ||
+      lower === 'applicant name' ||
+      lower === 'applicant / name' ||
+      lower === 'owner' ||
+      lower === 'owner name' ||
+      lower === 'borrower' ||
+      lower === 'borrower name' ||
+      lower === 'principal' ||
+      lower === 'principal name' ||
+      lower === 'first name' ||
+      lower === 'last name' ||
+      lower === 'first' ||
+      lower === 'last' ||
+      lower === 'unknown' ||
+      lower === 'n/a' ||
+      lower === 'na' ||
+      lower === 'none' ||
+      lower === 'null' ||
+      lower === 'undefined' ||
+      lower === 'commercial enterprise llc' ||
+      lower === 'commercial borrower llc' ||
+      lower === 'business name' ||
+      lower === 'company name' ||
+      lower === 'legal entity'
+    );
+  };
+
+  // 1. Owner names
+  let ownerFirst = cleanVal(owner.firstName || owner.ownerFirstName || '');
+  let ownerLast = cleanVal(owner.lastName || owner.ownerLastName || '');
+
+  if (isPlaceholder(ownerFirst)) ownerFirst = '';
+  if (isPlaceholder(ownerLast)) ownerLast = '';
+
+  // 2. Business name
+  let bName = cleanVal(business.legalBusinessName || business.businessName || '');
+  if (isPlaceholder(bName)) bName = '';
+
+  // 3. Rule: Business name must not equal owner name if document contains separate names
+  if (bName && ownerFirst && ownerLast) {
+    const ownerFullName = `${ownerFirst} ${ownerLast}`.toLowerCase();
+    if (bName.toLowerCase() === ownerFullName) {
+      if (business.dba && !isPlaceholder(business.dba) && business.dba.toLowerCase() !== ownerFullName) {
+        bName = business.dba;
+      }
+    }
+  }
+
+  // 4. Ownership Percentage
+  let ownershipPct: number | null = null;
+  const rawPct = owner.ownershipPercentage;
+  if (rawPct !== undefined && rawPct !== null && String(rawPct).trim() !== '') {
+    const parsedPct = Number(String(rawPct).replace(/[^0-9.]/g, ''));
+    if (!isNaN(parsedPct)) ownershipPct = parsedPct;
+  }
+
+  // 5. Annual Revenue
+  let annualRev: number | null = null;
+  const rawRev = business.annualRevenue;
+  if (rawRev !== undefined && rawRev !== null && String(rawRev).trim() !== '') {
+    const parsedRev = Number(String(rawRev).replace(/[^0-9.]/g, ''));
+    if (!isNaN(parsedRev)) annualRev = Math.round(parsedRev);
+  }
+
+  // 6. Credit Score
+  let cScore: number | null = null;
+  const rawScore = owner.creditScore;
+  if (rawScore !== undefined && rawScore !== null && String(rawScore).trim() !== '') {
+    const parsedScore = Number(String(rawScore).replace(/[^0-9]/g, ''));
+    if (!isNaN(parsedScore) && parsedScore >= 300 && parsedScore <= 850) cScore = parsedScore;
+  }
+
+  // 7. Requested Amount
+  let reqAmount: number | null = null;
+  const rawAmt = business.requestedAmount;
+  if (rawAmt !== undefined && rawAmt !== null && String(rawAmt).trim() !== '') {
+    const parsedAmt = Number(String(rawAmt).replace(/[^0-9.]/g, ''));
+    if (!isNaN(parsedAmt)) reqAmount = Math.round(parsedAmt);
+  } else if (business.requestedFundingRange) {
+    const numbers = String(business.requestedFundingRange).match(/\d+/g);
+    if (numbers && numbers.length > 0) {
+      const lastNum = Number(numbers[numbers.length - 1]);
+      if (String(business.requestedFundingRange).toLowerCase().includes('k')) {
+        reqAmount = lastNum * 1000;
+      } else {
+        reqAmount = lastNum;
+      }
+    }
+  }
+
+  // 8. Federal Tax ID / EIN
+  let fedTaxId = cleanVal(business.federalTaxId || business.ein || '');
+  if (isPlaceholder(fedTaxId)) fedTaxId = '';
+
+  // 9. Home address same as business address boolean
+  let homeSame: boolean | null = null;
+  const rawHomeSame = owner.homeAddressSameAsBusinessAddress;
+  if (typeof rawHomeSame === 'boolean') {
+    homeSame = rawHomeSame;
+  } else if (typeof rawHomeSame === 'string') {
+    const s = rawHomeSame.toLowerCase().trim();
+    if (s === 'yes' || s === 'true' || s === 'y') homeSame = true;
+    else if (s === 'no' || s === 'false' || s === 'n') homeSame = false;
+  }
+
+  // Clean SSN
+  let ssnVal = cleanVal(owner.ssn || '');
+  if (isPlaceholder(ssnVal)) ssnVal = '';
+
+  return {
+    business: {
+      businessName: bName || null,
+      legalBusinessName: bName || null,
+      dba: cleanVal(business.dba) || bName || null,
+      email: cleanVal(business.businessEmail || business.email) || null,
+      businessEmail: cleanVal(business.businessEmail || business.email) || null,
+      phone: cleanVal(business.businessPhone || business.phone) || null,
+      businessPhone: cleanVal(business.businessPhone || business.phone) || null,
+      address: cleanVal(business.businessAddress || business.address) || null,
+      businessAddress: cleanVal(business.businessAddress || business.address) || null,
+      city: cleanVal(business.businessCity || business.city) || null,
+      businessCity: cleanVal(business.businessCity || business.city) || null,
+      state: cleanVal(business.businessState || business.state) || null,
+      businessState: cleanVal(business.businessState || business.state) || null,
+      zip: cleanVal(business.businessZip || business.zip) || null,
+      businessZip: cleanVal(business.businessZip || business.zip) || null,
+      industry: cleanVal(business.industry) || null,
+      businessStartDate: cleanVal(business.businessStartDate) || null,
+      federalTaxId: fedTaxId || null,
+      ein: fedTaxId || null,
+      stateOfOrganization: cleanVal(business.stateOfOrganization || business.businessState || business.state) || null,
+      entityStructure: cleanVal(business.entityStructure) || 'LLC',
+      annualRevenue: annualRev,
+      requestedFundingRange: cleanVal(business.requestedFundingRange) || null,
+      requestedAmount: reqAmount,
+      useOfFunds: cleanVal(business.useOfFunds) || null,
+    },
+    owner: {
+      firstName: ownerFirst || null,
+      lastName: ownerLast || null,
+      ownerFirstName: ownerFirst || null,
+      ownerLastName: ownerLast || null,
+      dateOfBirth: cleanVal(owner.dateOfBirth || owner.ownerDateOfBirth || owner.dob) || null,
+      ownerDateOfBirth: cleanVal(owner.dateOfBirth || owner.ownerDateOfBirth || owner.dob) || null,
+      title: cleanVal(owner.title || owner.ownerTitle) || null,
+      ownerTitle: cleanVal(owner.title || owner.ownerTitle) || null,
+      ownershipPercentage: ownershipPct,
+      currentOwnershipStartDate: cleanVal(owner.businessStartDateCurrentOwnership || owner.currentOwnershipStartDate) || null,
+      businessStartDateCurrentOwnership: cleanVal(owner.businessStartDateCurrentOwnership || owner.currentOwnershipStartDate) || null,
+      homeAddressSameAsBusinessAddress: homeSame,
+      ssn: ssnVal || null,
+      creditScore: cScore,
+      personalIncome: null,
+    },
+  };
 }
 
 /**
@@ -974,20 +1207,6 @@ export async function extractBusinessLoanApplicationData(params: {
   const defaultSource = 'Business Loan Application';
   const defaultStatus = 'Not Verified';
 
-  let extractedData: Partial<ExtractedApplicationProfile> = {
-    firstName: '',
-    lastName: '',
-    businessName: '',
-    email: '',
-    phone: '',
-    federalTaxId: '',
-    state: '',
-    stateOfOrganization: '',
-    entityType: 'LLC',
-    ownershipPercentage: 100,
-    requestedProduct: 'Revenue Funding',
-  };
-
   let confidence = 0.95;
   let summary = 'Business Loan Application processed.';
   let modelUsed = 'Maple X AI Intelligence';
@@ -995,11 +1214,13 @@ export async function extractBusinessLoanApplicationData(params: {
   const fieldStatuses: Record<string, { source: string; status: string; confidence: number; isMissing?: boolean }> = {};
   const unfoundFields: string[] = [];
 
+  let rawParsedApp: any = null;
+
   const addExtractedField = (
     key: string,
     label: string,
     section: ExtractedFieldItem['section'],
-    value: string | number | boolean | undefined,
+    value: string | number | boolean | undefined | null,
     fieldConf = 0.95,
     quote = ''
   ) => {
@@ -1033,88 +1254,86 @@ export async function extractBusinessLoanApplicationData(params: {
 
   // Try Gemini AI first if configured
   if (ai && (fileBase64 || rawText || fileName)) {
-    const candidateModels = ['gemini-2.5-flash', 'gemini-2.5-pro'];
+    const candidateModels = ['gemini-3.6-flash', 'gemini-3.1-pro-preview'];
     let geminiSuccess = false;
 
-    const prompt = `You are the Lead Commercial Underwriting Document Intelligence Engine for Maple X Financial.
-Analyze this uploaded Business Loan Application form with extreme financial precision.
-Extract all borrower, business, contact, revenue, banking, ownership, and funding request data.
+    const prompt = `You are extracting structured data from a Business Loan Application.
 
-CRITICAL ANTI-HALLUCINATION RULES:
-1. NEVER guess or invent missing values. If a field is not present in the application, omit it or set it to null.
-2. Mark the source for all extracted fields as "Business Loan Application".
-3. Mark status as "Not Verified".
+This document contains separate BUSINESS INFORMATION and OWNER INFORMATION sections.
 
-Output STRICT, VALID JSON ONLY (no markdown formatting, no conversational filler):
+Never confuse section labels with actual values.
+
+Extract only information explicitly present in the document.
+Do not infer or invent information.
+
+Map BUSINESS INFORMATION only to business fields:
+- "Name of Business" -> business.legalBusinessName (and business.businessName)
+- "Email" (in Business section) -> business.businessEmail
+- "Phone" (in Business section) -> business.businessPhone
+- "Address" (in Business section) -> business.businessAddress
+- "City" (in Business section) -> business.businessCity
+- "State" (in Business section) -> business.businessState
+- "Postal Code" (in Business section) -> business.businessZip
+- "Industry type" -> business.industry
+- "Business Start Date" -> business.businessStartDate
+- "Federal Tax ID" -> business.federalTaxId
+- "State of Incorporation or Organization" -> business.stateOfOrganization
+- "Annual Revenue" -> business.annualRevenue (numeric)
+- "How much capital do you need?" -> business.requestedFundingRange (e.g. "$5K - $50K") and numeric business.requestedAmount
+- "What will the money be used for?" -> business.useOfFunds
+
+Map OWNER INFORMATION only to owner fields:
+- "First Name" (in Owner section) -> owner.firstName
+- "Last Name" (in Owner section) -> owner.lastName
+- "Date of Birth" (in Owner section) -> owner.dateOfBirth
+- "Title" (in Owner section) -> owner.title
+- "Ownership Percentage" (in Owner section) -> owner.ownershipPercentage (numeric, e.g. 100)
+- "Business start date under current ownership" -> owner.businessStartDateCurrentOwnership
+- "Is Home Address same as Business Address?" -> owner.homeAddressSameAsBusinessAddress (boolean: true/false)
+- "SSN" (in Owner section) -> owner.ssn
+- "CREDIT SCORE" (in Owner section) -> owner.creditScore (numeric)
+
+CRITICAL EXTRACTION RULES:
+1. The text 'Applicant Name', 'Applicant', 'Name', or similar labels must NEVER be interpreted as the person's first name or last name.
+2. If a field is not explicitly present in the document, return null. NEVER guess, invent, or substitute placeholder values like 'Applicant', 'Unknown', 'N/A', or 'Commercial Enterprise LLC'.
+3. Do not mark any extracted information as verified.
+4. Output STRICT, VALID JSON ONLY (no markdown backticks, no conversational text):
+
 {
   "confidenceScore": 0.98,
-  "summary": "Commercial borrower application submitted for [Business Name] by [Applicant Name].",
-  "applicant": {
-    "firstName": "Michael",
-    "middleName": null,
-    "lastName": "Vance",
-    "fullLegalName": "Michael Thomas Vance",
-    "ssn": "123-45-6789",
-    "dob": "1982-06-14",
-    "phone": "(555) 234-5678",
-    "altPhone": null,
-    "email": "mvance@vancetech.com",
-    "altEmail": null,
-    "address": "742 Evergreen Terrace",
-    "city": "Springfield",
-    "state": "IL",
-    "zip": "62704",
-    "personalAnnualIncome": 160000,
-    "personalMonthlyIncome": 13333,
-    "housingStatus": "Homeowner",
-    "monthlyHousingPayment": 2800,
-    "driversLicenseNumber": "V12345678",
-    "driversLicenseState": "IL",
-    "citizenship": "US Citizen",
-    "maritalStatus": "Married"
-  },
-  "business": {
-    "businessName": "Vance Technology Solutions LLC",
-    "dba": "Vance Tech",
-    "federalTaxId": "36-9876543",
-    "stateOfOrganization": "IL",
-    "entityType": "LLC",
-    "industry": "Information Technology / Managed Services",
-    "businessStartDate": "2018-04-15",
-    "timeInBusiness": "6 Years",
-    "ownershipPercentage": 100,
-    "ownerTitle": "President / CEO",
-    "numberOfEmployees": 8,
-    "website": "https://vancetech.com",
-    "businessDescription": "Cloud infrastructure, enterprise IT managed services, and cybersecurity consulting.",
-    "businessAddress": "100 N Riverside Plaza, Suite 1400",
-    "businessCity": "Chicago",
-    "businessState": "IL",
-    "businessZip": "60606",
-    "businessPhone": "(312) 555-0199",
-    "businessEmail": "info@vancetech.com"
-  },
-  "financials": {
-    "annualRevenue": 1250000,
-    "monthlyRevenue": 104166,
-    "creditScore": 720
-  },
-  "fundingRequest": {
-    "requestedAmount": 150000,
-    "requestedProduct": "Revenue Funding",
-    "useOfFunds": "Working capital for hiring 3 senior engineers and server hardware expansion",
-    "fundingUrgency": "This Week"
-  },
-  "banking": {
-    "businessBank": "Chase Commercial Banking",
-    "businessRoutingNumber": "071000013",
-    "businessCheckingAccount": "482910492"
-  },
-  "existingDebts": {
-    "existingLoans": "None",
-    "existingMcas": "None",
-    "lenderBalances": "$0",
-    "existingDebt": 0
+  "summary": "Commercial loan application extracted for [Business Name] owned by [Owner Name].",
+  "application": {
+    "business": {
+      "legalBusinessName": string | null,
+      "businessName": string | null,
+      "dba": string | null,
+      "businessEmail": string | null,
+      "businessPhone": string | null,
+      "businessAddress": string | null,
+      "businessCity": string | null,
+      "businessState": string | null,
+      "businessZip": string | null,
+      "industry": string | null,
+      "businessStartDate": string | null,
+      "federalTaxId": string | null,
+      "stateOfOrganization": string | null,
+      "entityStructure": string | null,
+      "annualRevenue": number | null,
+      "requestedFundingRange": string | null,
+      "requestedAmount": number | null,
+      "useOfFunds": string | null
+    },
+    "owner": {
+      "firstName": string | null,
+      "lastName": string | null,
+      "dateOfBirth": string | null,
+      "title": string | null,
+      "ownershipPercentage": number | null,
+      "businessStartDateCurrentOwnership": string | null,
+      "homeAddressSameAsBusinessAddress": boolean | null,
+      "ssn": string | null,
+      "creditScore": number | null
+    }
   }
 }`;
 
@@ -1147,82 +1366,9 @@ Output STRICT, VALID JSON ONLY (no markdown formatting, no conversational filler
         if (jsonMatch) {
           const parsed = JSON.parse(jsonMatch[0]);
           confidence = parsed.confidenceScore || 0.96;
-          summary = parsed.summary || `Commercial loan application extracted for ${parsed.business?.businessName || parsed.applicant?.fullLegalName || 'Borrower'}.`;
+          summary = parsed.summary || 'Commercial loan application extracted successfully.';
           modelUsed = targetModel;
-
-          const app = parsed.applicant || {};
-          const biz = parsed.business || {};
-          const fin = parsed.financials || {};
-          const req = parsed.fundingRequest || {};
-          const bnk = parsed.banking || {};
-          const dbt = parsed.existingDebts || {};
-
-          extractedData = {
-            firstName: app.firstName || '',
-            middleName: app.middleName || undefined,
-            lastName: app.lastName || '',
-            fullLegalName: app.fullLegalName || `${app.firstName || ''} ${app.lastName || ''}`.trim(),
-            ssn: app.ssn || undefined,
-            dob: app.dob || undefined,
-            personalAnnualIncome: fin.personalAnnualIncome || app.personalAnnualIncome || undefined,
-            personalMonthlyIncome: fin.personalMonthlyIncome || app.personalMonthlyIncome || undefined,
-            housingStatus: app.housingStatus || undefined,
-            monthlyHousingPayment: app.monthlyHousingPayment || undefined,
-            driversLicenseNumber: app.driversLicenseNumber || undefined,
-            driversLicenseState: app.driversLicenseState || undefined,
-            citizenship: app.citizenship || undefined,
-            maritalStatus: app.maritalStatus || undefined,
-
-            phone: app.phone || biz.businessPhone || '',
-            altPhone: app.altPhone || undefined,
-            email: app.email || biz.businessEmail || '',
-            altEmail: app.altEmail || undefined,
-            businessPhone: biz.businessPhone || app.phone || undefined,
-            businessEmail: biz.businessEmail || app.email || undefined,
-
-            address: app.address || '',
-            city: app.city || '',
-            state: app.state || biz.businessState || '',
-            zip: app.zip || '',
-
-            businessName: biz.businessName || '',
-            dba: biz.dba || undefined,
-            federalTaxId: biz.federalTaxId || '',
-            stateOfOrganization: biz.stateOfOrganization || biz.businessState || app.state || '',
-            entityType: biz.entityType || 'LLC',
-            industry: biz.industry || 'Commercial Services',
-            businessStartDate: biz.businessStartDate || undefined,
-            timeInBusiness: biz.timeInBusiness || undefined,
-            ownershipPercentage: biz.ownershipPercentage !== undefined ? Number(biz.ownershipPercentage) : 100,
-            ownerTitle: biz.ownerTitle || 'Owner / President',
-            numberOfEmployees: biz.numberOfEmployees ? Number(biz.numberOfEmployees) : undefined,
-            website: biz.website || undefined,
-            businessDescription: biz.businessDescription || undefined,
-
-            businessAddress: biz.businessAddress || app.address || undefined,
-            businessCity: biz.businessCity || app.city || undefined,
-            businessState: biz.businessState || biz.stateOfOrganization || app.state || undefined,
-            businessZip: biz.businessZip || app.zip || undefined,
-
-            annualRevenue: fin.annualRevenue ? Number(fin.annualRevenue) : undefined,
-            monthlyRevenue: fin.monthlyRevenue ? Number(fin.monthlyRevenue) : fin.annualRevenue ? Math.round(Number(fin.annualRevenue) / 12) : undefined,
-            creditScore: fin.creditScore ? Number(fin.creditScore) : undefined,
-
-            requestedAmount: req.requestedAmount ? Number(req.requestedAmount) : undefined,
-            requestedProduct: req.requestedProduct || 'Revenue Funding',
-            useOfFunds: req.useOfFunds || undefined,
-            fundingUrgency: req.fundingUrgency || 'Flexible',
-
-            businessBank: bnk.businessBank || undefined,
-            businessRoutingNumber: bnk.businessRoutingNumber || undefined,
-            businessCheckingAccount: bnk.businessCheckingAccount || undefined,
-
-            existingLoans: dbt.existingLoans || undefined,
-            existingMcas: dbt.existingMcas || undefined,
-            lenderBalances: dbt.lenderBalances || undefined,
-            existingDebt: dbt.existingDebt !== undefined ? Number(dbt.existingDebt) : undefined,
-          };
-
+          rawParsedApp = parsed.application || parsed;
           geminiSuccess = true;
           break;
         }
@@ -1232,169 +1378,234 @@ Output STRICT, VALID JSON ONLY (no markdown formatting, no conversational filler
     }
   }
 
-  // Deterministic Fallback if Gemini unavailable or not returned
-  if (!extractedData.businessName && !extractedData.firstName) {
+  // Deterministic OCR Parsing if Gemini was not available or did not return
+  if (!rawParsedApp || (!rawParsedApp.business?.legalBusinessName && !rawParsedApp.owner?.firstName)) {
     const textToSearch = rawText || fileName;
-    
-    // Heuristic extraction
-    const bNameMatch = textToSearch.match(/(?:Business Name|Company Name|Legal Entity|Legal Name)\s*[:.]?\s*([A-Za-z0-9\s&,.'-]+?)(?:\r|\n|EIN|Tax ID|Phone|$)/i);
-    const businessName = bNameMatch ? bNameMatch[1].trim() : fileName.replace(/\.[^/.]+$/, '').replace(/[_-]/g, ' ');
 
-    const nameMatch = textToSearch.match(/(?:Owner Name|Applicant Name|Borrower Name|Contact Name|Full Name)\s*[:.]?\s*([A-Za-z\s.'-]+?)(?:\r|\n|Phone|Email|SSN|$)/i);
-    const fullName = nameMatch ? nameMatch[1].trim() : 'Applicant Name';
-    const nameParts = fullName.split(' ');
-    const firstName = nameParts[0] || 'Applicant';
-    const lastName = nameParts.length > 1 ? nameParts.slice(1).join(' ') : 'Principal';
+    // Separate business section and owner section if present in OCR text
+    let businessText = textToSearch;
+    let ownerText = textToSearch;
 
-    const einMatch = textToSearch.match(/(?:EIN|Tax ID|Federal Tax ID|Federal ID)\s*[:.]?\s*(\d{2}-?\d{7})/i);
-    const federalTaxId = einMatch ? einMatch[1] : '';
+    const ownerSectionMatch = textToSearch.match(/OWNER(?:\s+INFORMATION|\s+DETAILS|\s+SECTION)?([\s\S]*)/i);
+    if (ownerSectionMatch) {
+      ownerText = ownerSectionMatch[1];
+      businessText = textToSearch.substring(0, ownerSectionMatch.index);
+    }
 
-    const emailMatch = textToSearch.match(/([a-zA-Z0-9._-]+@[a-zA-Z0-9._-]+\.[a-zA-Z0-9._-]+)/i);
-    const email = emailMatch ? emailMatch[1] : '';
+    // Business Name
+    const bNameMatch = businessText.match(/(?:Name of Business|Business Name|Legal Entity|Legal Name|Company Name)\s*[:.]?\s*([A-Za-z0-9\s&,.'-]+?)(?:\r|\n|Email|Phone|Address|Industry|Federal|EIN|Owner|$)/i);
+    const bName = bNameMatch ? bNameMatch[1].trim() : '';
 
-    const phoneMatch = textToSearch.match(/(?:\(?\d{3}\)?[-.\s]?\d{3}[-.\s]?\d{4})/);
-    const phone = phoneMatch ? phoneMatch[0] : '';
+    // Business Email
+    const bEmailMatch = businessText.match(/(?:Business Email|Contact Email|Email)\s*[:.]?\s*([a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,})/i);
+    const bEmail = bEmailMatch ? bEmailMatch[1].trim() : '';
 
-    const revMatch = textToSearch.match(/(?:Gross Revenue|Annual Revenue|Annual Sales|Gross Sales|Annual Volume)\s*[:$]?\s*([0-9,]+(?:\.[0-9]{2})?)/i);
-    const annualRevenue = revMatch ? Math.round(parseFloat(revMatch[1].replace(/,/g, ''))) : 600000;
+    // Business Phone
+    const bPhoneMatch = businessText.match(/(?:Business Phone|Contact Phone|Phone)\s*[:.]?\s*(\+?1?[-.\s]?\(?\d{3}\)?[-.\s]?\d{3}[-.\s]?\d{4})/i);
+    const bPhone = bPhoneMatch ? bPhoneMatch[1].trim() : '';
 
-    const reqMatch = textToSearch.match(/(?:Requested Amount|Amount Requested|Funding Amount|Loan Amount)\s*[:$]?\s*([0-9,]+(?:\.[0-9]{2})?)/i);
-    const requestedAmount = reqMatch ? Math.round(parseFloat(reqMatch[1].replace(/,/g, ''))) : 75000;
+    // Business Address
+    const bAddrMatch = businessText.match(/(?:Business Address|Address)\s*[:.]?\s*([A-Za-z0-9\s,.'#-]+?)(?:\r|\n|City|State|Postal|Zip|Industry|$)/i);
+    const bAddr = bAddrMatch ? bAddrMatch[1].trim() : '';
 
-    extractedData = {
-      firstName,
-      lastName,
-      fullLegalName: fullName,
-      businessName,
-      federalTaxId,
-      email,
-      phone,
-      annualRevenue,
-      monthlyRevenue: Math.round(annualRevenue / 12),
-      requestedAmount,
-      requestedProduct: 'Revenue Funding',
-      state: 'IL',
-      stateOfOrganization: 'IL',
-      entityType: 'LLC',
-      ownershipPercentage: 100,
-      creditScore: 700,
+    // City
+    const bCityMatch = businessText.match(/(?:City)\s*[:.]?\s*([A-Za-z\s.-]+?)(?:\r|\n|State|Postal|Zip|$)/i);
+    const bCity = bCityMatch ? bCityMatch[1].trim() : '';
+
+    // State
+    const bStateMatch = businessText.match(/(?:State of Incorporation or Organization|State)\s*[:.]?\s*([A-Za-z\s]+?)(?:\r|\n|Postal|Zip|EIN|Federal|$)/i);
+    const bState = bStateMatch ? bStateMatch[1].trim() : '';
+
+    // Zip
+    const bZipMatch = businessText.match(/(?:Postal Code|Zip Code|Zip)\s*[:.]?\s*(\d{5}(?:-\d{4})?)/i);
+    const bZip = bZipMatch ? bZipMatch[1].trim() : '';
+
+    // Industry
+    const bIndMatch = businessText.match(/(?:Industry type|Industry Type|Industry)\s*[:.]?\s*([A-Za-z0-9\s&,.'-]+?)(?:\r|\n|Business Start|Federal|$)/i);
+    const bInd = bIndMatch ? bIndMatch[1].trim() : '';
+
+    // Business Start Date
+    const bStartDateMatch = businessText.match(/(?:Business Start Date)\s*[:.]?\s*(\d{1,2}[-/.]\d{1,2}[-/.]\d{2,4})/i);
+    const bStartDate = bStartDateMatch ? bStartDateMatch[1].trim() : '';
+
+    // EIN
+    const einMatch = businessText.match(/(?:Federal Tax ID|Tax ID|EIN|Federal ID)\s*[:.]?\s*(\d{2}-?\d{7})/i);
+    const fedTaxId = einMatch ? einMatch[1].trim() : '';
+
+    // Annual Revenue
+    const revMatch = businessText.match(/(?:Annual Revenue|Gross Revenue|Annual Sales|Gross Sales)\s*[:$]?\s*([0-9,]+(?:\.[0-9]{2})?)/i);
+    const annualRev = revMatch ? Math.round(parseFloat(revMatch[1].replace(/,/g, ''))) : null;
+
+    // Requested funding
+    const reqMatch = businessText.match(/(?:How much capital do you need\?|Capital Needed|Requested Amount|Funding Amount)\s*[:$]?\s*([A-Za-z0-9$,.\s-]+?)(?:\r|\n|What will|Use of|$)/i);
+    const reqRange = reqMatch ? reqMatch[1].trim() : '';
+
+    // Use of funds
+    const fundsMatch = businessText.match(/(?:What will the money be used for\?|Use of Funds|Purpose)\s*[:.]?\s*([A-Za-z0-9\s/&,.'-]+?)(?:\r|\n|Owner|Section|$)/i);
+    const useOfFunds = fundsMatch ? fundsMatch[1].trim() : '';
+
+    // OWNER SECTION
+    const oFirstMatch = ownerText.match(/(?:First Name|Owner First Name)\s*[:.]?\s*([A-Za-z.'-]+)/i);
+    const oFirst = oFirstMatch ? oFirstMatch[1].trim() : '';
+
+    const oLastMatch = ownerText.match(/(?:Last Name|Owner Last Name)\s*[:.]?\s*([A-Za-z.'-]+)/i);
+    const oLast = oLastMatch ? oLastMatch[1].trim() : '';
+
+    const oDobMatch = ownerText.match(/(?:Date of Birth|DOB)\s*[:.]?\s*(\d{1,2}[-/.]\d{1,2}[-/.]\d{2,4})/i);
+    const oDob = oDobMatch ? oDobMatch[1].trim() : '';
+
+    const oTitleMatch = ownerText.match(/(?:Title|Owner Title)\s*[:.]?\s*([A-Za-z\s/.'-]+?)(?:\r|\n|Ownership|$)/i);
+    const oTitle = oTitleMatch ? oTitleMatch[1].trim() : '';
+
+    const oPctMatch = ownerText.match(/(?:Ownership Percentage|Ownership %|Ownership)\s*[:.]?\s*([0-9]+)%?/i);
+    const oPct = oPctMatch ? Number(oPctMatch[1]) : null;
+
+    const oCurrentOwnerDateMatch = ownerText.match(/(?:Business start date under current ownership|Start date under current ownership)\s*[:.]?\s*(\d{1,2}[-/.]\d{1,2}[-/.]\d{2,4})/i);
+    const oCurrentOwnerDate = oCurrentOwnerDateMatch ? oCurrentOwnerDateMatch[1].trim() : '';
+
+    const oHomeSameMatch = ownerText.match(/(?:Is Home Address same as Business Address\?|Home Address same as Business Address)\s*[:.]?\s*(Yes|No|true|false)/i);
+    const oHomeSame = oHomeSameMatch ? oHomeSameMatch[1].toLowerCase() === 'yes' || oHomeSameMatch[1].toLowerCase() === 'true' : null;
+
+    const oSsnMatch = ownerText.match(/(?:SSN|Social Security Number)\s*[:.]?\s*(\d{3}-?\d{2}-?\d{4})/i);
+    const oSsn = oSsnMatch ? oSsnMatch[1].trim() : '';
+
+    const oCreditMatch = ownerText.match(/(?:CREDIT SCORE|Credit Score|FICO)\s*[:.]?\s*(\d{3})/i);
+    const oCredit = oCreditMatch ? Number(oCreditMatch[1]) : null;
+
+    rawParsedApp = {
+      business: {
+        legalBusinessName: bName,
+        businessName: bName,
+        dba: bName,
+        businessEmail: bEmail,
+        businessPhone: bPhone,
+        businessAddress: bAddr,
+        businessCity: bCity,
+        businessState: bState,
+        businessZip: bZip,
+        industry: bInd,
+        businessStartDate: bStartDate,
+        federalTaxId: fedTaxId,
+        stateOfOrganization: bState,
+        annualRevenue: annualRev,
+        requestedFundingRange: reqRange,
+        useOfFunds,
+      },
+      owner: {
+        firstName: oFirst,
+        lastName: oLast,
+        dateOfBirth: oDob,
+        title: oTitle,
+        ownershipPercentage: oPct,
+        businessStartDateCurrentOwnership: oCurrentOwnerDate,
+        homeAddressSameAsBusinessAddress: oHomeSame,
+        ssn: oSsn,
+        creditScore: oCredit,
+      },
     };
+
     summary = `Commercial loan application processed from uploaded file "${fileName}".`;
     modelUsed = 'Maple X Document Intelligence';
   }
 
+  // Sanitize and validate all fields against strict separation and anti-placeholder rules
+  const sanitized = validateAndSanitizeApplicationData(rawParsedApp);
+  const biz = sanitized.business;
+  const own = sanitized.owner;
+
+  // Build flattened ExtractedApplicationProfile
+  const fullLegalName = [own.firstName, own.lastName].filter(Boolean).join(' ');
+
   // Populate structured extracted fields list and statuses
-  addExtractedField('firstName', 'First Name', 'identity', extractedData.firstName);
-  addExtractedField('lastName', 'Last Name', 'identity', extractedData.lastName);
-  addExtractedField('fullLegalName', 'Full Legal Name', 'identity', extractedData.fullLegalName);
-  addExtractedField('ssn', 'Social Security Number (SSN)', 'identity', extractedData.ssn);
-  addExtractedField('dob', 'Date of Birth (DOB)', 'identity', extractedData.dob);
-  addExtractedField('phone', 'Primary Phone', 'identity', extractedData.phone);
-  addExtractedField('email', 'Primary Email', 'identity', extractedData.email);
-  addExtractedField('address', 'Residential Address', 'identity', extractedData.address);
-  addExtractedField('city', 'Residential City', 'identity', extractedData.city);
-  addExtractedField('state', 'Residential State', 'identity', extractedData.state);
-  addExtractedField('zip', 'Residential Zip Code', 'identity', extractedData.zip);
-  addExtractedField('personalAnnualIncome', 'Personal Annual Income', 'income', extractedData.personalAnnualIncome);
-  addExtractedField('housingStatus', 'Housing Status', 'housing', extractedData.housingStatus);
+  addExtractedField('firstName', 'First Name', 'identity', own.firstName);
+  addExtractedField('lastName', 'Last Name', 'identity', own.lastName);
+  addExtractedField('fullLegalName', 'Full Legal Name', 'identity', fullLegalName || undefined);
+  addExtractedField('ssn', 'Social Security Number (SSN)', 'identity', own.ssn);
+  addExtractedField('dob', 'Date of Birth (DOB)', 'identity', own.dateOfBirth);
+  addExtractedField('ownerTitle', 'Owner Title', 'identity', own.title);
+  addExtractedField('ownershipPercentage', 'Ownership Percentage', 'identity', own.ownershipPercentage !== null ? `${own.ownershipPercentage}%` : undefined);
+  addExtractedField('creditScore', 'Stated Credit Score / FICO', 'credit', own.creditScore);
 
-  addExtractedField('businessName', 'Legal Business Entity Name', 'business', extractedData.businessName);
-  addExtractedField('dba', 'Doing Business As (DBA)', 'business', extractedData.dba);
-  addExtractedField('federalTaxId', 'Federal Tax ID / EIN', 'business', extractedData.federalTaxId);
-  addExtractedField('stateOfOrganization', 'State of Organization', 'business', extractedData.stateOfOrganization);
-  addExtractedField('entityType', 'Legal Entity Structure', 'business', extractedData.entityType);
-  addExtractedField('industry', 'Business Industry', 'business', extractedData.industry);
-  addExtractedField('businessStartDate', 'Business Start Date', 'business', extractedData.businessStartDate);
-  addExtractedField('timeInBusiness', 'Time in Business', 'business', extractedData.timeInBusiness);
-  addExtractedField('ownershipPercentage', 'Ownership Percentage', 'business', extractedData.ownershipPercentage !== undefined ? `${extractedData.ownershipPercentage}%` : undefined);
-  addExtractedField('ownerTitle', 'Owner Title', 'business', extractedData.ownerTitle);
-  addExtractedField('businessAddress', 'Business Address', 'business', extractedData.businessAddress);
-  addExtractedField('businessCity', 'Business City', 'business', extractedData.businessCity);
-  addExtractedField('businessState', 'Business State', 'business', extractedData.businessState);
-  addExtractedField('businessZip', 'Business Zip', 'business', extractedData.businessZip);
-  addExtractedField('businessPhone', 'Business Phone', 'business', extractedData.businessPhone);
-  addExtractedField('businessEmail', 'Business Email', 'business', extractedData.businessEmail);
-  addExtractedField('businessDescription', 'Business Nature & Description', 'business', extractedData.businessDescription);
+  addExtractedField('phone', 'Primary Phone', 'identity', biz.phone || own.ssn ? biz.phone : undefined);
+  addExtractedField('email', 'Primary Email', 'identity', biz.email);
+  addExtractedField('businessPhone', 'Business Phone', 'business', biz.businessPhone);
+  addExtractedField('businessEmail', 'Business Email', 'business', biz.businessEmail);
 
-  addExtractedField('annualRevenue', 'Gross Annual Revenue', 'income', extractedData.annualRevenue);
-  addExtractedField('monthlyRevenue', 'Average Monthly Revenue', 'income', extractedData.monthlyRevenue);
-  addExtractedField('creditScore', 'Stated Credit Score / FICO', 'credit', extractedData.creditScore);
+  addExtractedField('address', 'Residential Address', 'identity', own.homeAddressSameAsBusinessAddress ? biz.address : undefined);
+  addExtractedField('city', 'Residential City', 'identity', own.homeAddressSameAsBusinessAddress ? biz.city : undefined);
+  addExtractedField('state', 'Residential State', 'identity', own.homeAddressSameAsBusinessAddress ? biz.state : undefined);
+  addExtractedField('zip', 'Residential Zip Code', 'identity', own.homeAddressSameAsBusinessAddress ? biz.zip : undefined);
 
-  addExtractedField('requestedAmount', 'Requested Funding Amount', 'fundingRequest', extractedData.requestedAmount);
-  addExtractedField('requestedProduct', 'Requested Loan Product', 'fundingRequest', extractedData.requestedProduct);
-  addExtractedField('useOfFunds', 'Stated Use of Funds / Purpose', 'fundingRequest', extractedData.useOfFunds);
+  addExtractedField('businessName', 'Legal Business Entity Name', 'business', biz.businessName);
+  addExtractedField('dba', 'Doing Business As (DBA)', 'business', biz.dba);
+  addExtractedField('federalTaxId', 'Federal Tax ID / EIN', 'business', biz.federalTaxId);
+  addExtractedField('stateOfOrganization', 'State of Organization', 'business', biz.stateOfOrganization);
+  addExtractedField('entityType', 'Legal Entity Structure', 'business', biz.entityStructure);
+  addExtractedField('industry', 'Business Industry', 'business', biz.industry);
+  addExtractedField('businessStartDate', 'Business Start Date', 'business', biz.businessStartDate);
+  addExtractedField('businessStartDateUnderCurrentOwnership', 'Business Start Date Under Current Ownership', 'business', own.businessStartDateCurrentOwnership);
 
-  addExtractedField('businessBank', 'Primary Depository Bank', 'banking', extractedData.businessBank);
-  addExtractedField('businessRoutingNumber', 'Routing Number', 'banking', extractedData.businessRoutingNumber);
-  addExtractedField('businessCheckingAccount', 'Checking Account Number', 'banking', extractedData.businessCheckingAccount);
+  addExtractedField('businessAddress', 'Business Address', 'business', biz.businessAddress);
+  addExtractedField('businessCity', 'Business City', 'business', biz.businessCity);
+  addExtractedField('businessState', 'Business State', 'business', biz.businessState);
+  addExtractedField('businessZip', 'Business Zip', 'business', biz.businessZip);
 
-  addExtractedField('existingLoans', 'Existing Commercial Loans', 'debts', extractedData.existingLoans);
-  addExtractedField('existingMcas', 'Existing MCAs / Daily Debits', 'debts', extractedData.existingMcas);
+  addExtractedField('annualRevenue', 'Gross Annual Revenue', 'income', biz.annualRevenue);
+  addExtractedField('monthlyRevenue', 'Average Monthly Revenue', 'income', biz.annualRevenue ? Math.round(biz.annualRevenue / 12) : undefined);
+
+  addExtractedField('requestedAmount', 'Requested Funding Amount', 'fundingRequest', biz.requestedAmount);
+  addExtractedField('requestedFundingRange', 'Requested Funding Range', 'fundingRequest', biz.requestedFundingRange);
+  addExtractedField('useOfFunds', 'Stated Use of Funds / Purpose', 'fundingRequest', biz.useOfFunds);
 
   return {
-    firstName: extractedData.firstName || '',
-    middleName: extractedData.middleName,
-    lastName: extractedData.lastName || '',
-    fullLegalName: extractedData.fullLegalName || `${extractedData.firstName || ''} ${extractedData.lastName || ''}`.trim(),
-    ssn: extractedData.ssn,
-    dob: extractedData.dob,
-    personalAnnualIncome: extractedData.personalAnnualIncome,
-    personalMonthlyIncome: extractedData.personalMonthlyIncome,
-    housingStatus: extractedData.housingStatus,
-    monthlyHousingPayment: extractedData.monthlyHousingPayment,
-    driversLicenseNumber: extractedData.driversLicenseNumber,
-    driversLicenseState: extractedData.driversLicenseState,
-    citizenship: extractedData.citizenship,
-    maritalStatus: extractedData.maritalStatus,
+    firstName: own.firstName || '',
+    lastName: own.lastName || '',
+    fullLegalName: fullLegalName || '',
+    ssn: own.ssn || undefined,
+    dob: own.dateOfBirth || undefined,
+    phone: biz.phone || '',
+    email: biz.email || '',
+    businessPhone: biz.businessPhone || undefined,
+    businessEmail: biz.businessEmail || undefined,
 
-    phone: extractedData.phone || '',
-    altPhone: extractedData.altPhone,
-    email: extractedData.email || '',
-    altEmail: extractedData.altEmail,
-    businessPhone: extractedData.businessPhone,
-    businessEmail: extractedData.businessEmail,
+    address: (own.homeAddressSameAsBusinessAddress ? biz.address : '') || '',
+    city: (own.homeAddressSameAsBusinessAddress ? biz.city : '') || '',
+    state: (own.homeAddressSameAsBusinessAddress ? biz.state : '') || '',
+    zip: (own.homeAddressSameAsBusinessAddress ? biz.zip : '') || '',
 
-    address: extractedData.address || '',
-    city: extractedData.city || '',
-    state: extractedData.state || '',
-    zip: extractedData.zip || '',
+    businessName: biz.businessName || '',
+    legalBusinessName: biz.legalBusinessName || biz.businessName || '',
+    dba: biz.dba || undefined,
+    federalTaxId: biz.federalTaxId || '',
+    stateOfOrganization: biz.stateOfOrganization || '',
+    entityType: biz.entityStructure || 'LLC',
+    industry: biz.industry || '',
+    businessStartDate: biz.businessStartDate || undefined,
+    businessStartDateUnderCurrentOwnership: own.businessStartDateCurrentOwnership || undefined,
+    timeInBusiness: undefined,
+    ownershipPercentage: own.ownershipPercentage !== null ? own.ownershipPercentage : 100,
+    ownerTitle: own.title || 'Owner',
+    homeAddressSameAsBusinessAddress: own.homeAddressSameAsBusinessAddress !== null ? own.homeAddressSameAsBusinessAddress : undefined,
 
-    businessName: extractedData.businessName || '',
-    dba: extractedData.dba,
-    federalTaxId: extractedData.federalTaxId || '',
-    stateOfOrganization: extractedData.stateOfOrganization || '',
-    entityType: extractedData.entityType || 'LLC',
-    industry: extractedData.industry || 'Commercial Services',
-    businessStartDate: extractedData.businessStartDate,
-    timeInBusiness: extractedData.timeInBusiness,
-    ownershipPercentage: extractedData.ownershipPercentage || 100,
-    ownerTitle: extractedData.ownerTitle || 'Owner / President',
-    numberOfEmployees: extractedData.numberOfEmployees,
-    website: extractedData.website,
-    businessDescription: extractedData.businessDescription,
+    businessAddress: biz.businessAddress || undefined,
+    businessCity: biz.businessCity || undefined,
+    businessState: biz.businessState || undefined,
+    businessZip: biz.businessZip || undefined,
 
-    businessAddress: extractedData.businessAddress,
-    businessCity: extractedData.businessCity,
-    businessState: extractedData.businessState,
-    businessZip: extractedData.businessZip,
+    annualRevenue: biz.annualRevenue !== null ? biz.annualRevenue : undefined,
+    monthlyRevenue: biz.annualRevenue ? Math.round(biz.annualRevenue / 12) : undefined,
+    creditScore: own.creditScore !== null ? own.creditScore : undefined,
 
-    annualRevenue: extractedData.annualRevenue,
-    monthlyRevenue: extractedData.monthlyRevenue,
-    creditScore: extractedData.creditScore,
+    requestedAmount: biz.requestedAmount !== null ? biz.requestedAmount : undefined,
+    requestedFundingRange: biz.requestedFundingRange || undefined,
+    requestedProduct: 'Revenue Funding',
+    useOfFunds: biz.useOfFunds || undefined,
+    fundingUrgency: 'Flexible',
 
-    requestedAmount: extractedData.requestedAmount,
-    requestedProduct: extractedData.requestedProduct || 'Revenue Funding',
-    useOfFunds: extractedData.useOfFunds,
-    fundingUrgency: extractedData.fundingUrgency,
-
-    businessBank: extractedData.businessBank,
-    businessRoutingNumber: extractedData.businessRoutingNumber,
-    businessCheckingAccount: extractedData.businessCheckingAccount,
-
-    existingLoans: extractedData.existingLoans,
-    existingMcas: extractedData.existingMcas,
-    lenderBalances: extractedData.lenderBalances,
-    existingDebt: extractedData.existingDebt,
+    application: sanitized,
+    source: 'APPLICATION',
+    aiFilled: true,
+    callVerified: false,
 
     confidence,
     summary,

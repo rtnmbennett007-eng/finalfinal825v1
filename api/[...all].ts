@@ -1,12 +1,16 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
+import { executeDriveDiagnostic, executeDriveTestConnection } from './drive-runtime';
 import app from './_server/app';
 
 /**
  * Single Authoritative Vercel API Catch-All Handler
- * Forwards every /api/* route directly into the Express application (server/app.ts).
- * Preserves GET, POST, PUT, PATCH, DELETE, query parameters, request bodies, multipart uploads, and headers.
+ * Forwards other /api/* routes directly into the Express application.
+ * Fast-paths dedicated endpoints safely with the standalone drive-runtime.
  */
-export default function handler(req: VercelRequest, res: VercelResponse) {
+export default async function handler(req: VercelRequest, res: VercelResponse) {
+  res.setHeader('Content-Type', 'application/json');
+  res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate');
+
   try {
     let url = req.url || '/';
 
@@ -32,9 +36,44 @@ export default function handler(req: VercelRequest, res: VercelResponse) {
       }
     }
 
-    // 3. Ensure the path starts with /api so Express routes match correctly
+    // 3. Ensure the path starts with /api
     if (!pathname.startsWith('/api')) {
       pathname = `/api${pathname.startsWith('/') ? '' : '/'}${pathname}`;
+    }
+
+    // Dedicated fast paths using bundle-safe runtime (prevents any catch-all failures)
+    if (pathname === '/api/health' || pathname === '/health') {
+      return res.status(200).json({
+        ok: true,
+        api: 'ok',
+        environment: 'production',
+        timestamp: new Date().toISOString(),
+        version: '1.0.0',
+      });
+    }
+
+    if (pathname === '/api/health/drive' || pathname === '/health/drive') {
+      const diagnostic = await executeDriveDiagnostic();
+      return res.status(200).json({
+        success: diagnostic.success || false,
+        api: 'ok',
+        environment: 'production',
+        driveAuthenticated: diagnostic.authenticated || false,
+        folderAccessible: diagnostic.folderAccessible || false,
+        diagnostic,
+        timestamp: new Date().toISOString(),
+        version: '1.0.0',
+      });
+    }
+
+    if (pathname === '/api/drive/diagnostic' || pathname === '/drive/diagnostic') {
+      const diag = await executeDriveDiagnostic();
+      return res.status(200).json(diag);
+    }
+
+    if (pathname === '/api/drive/test-connection' || pathname === '/drive/test-connection') {
+      const result = await executeDriveTestConnection();
+      return res.status(200).json(result);
     }
 
     // Clean up query string by removing Vercel internal 'all' parameter if present
@@ -64,4 +103,5 @@ export default function handler(req: VercelRequest, res: VercelResponse) {
     }
   }
 }
+
 

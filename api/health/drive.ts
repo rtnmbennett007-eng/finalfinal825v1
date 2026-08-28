@@ -1,16 +1,16 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
-import { getDriveDiagnostic, getRequestOrigin } from '../_server/googleDriveService';
+import { executeDriveDiagnostic } from '../drive-runtime';
 
 /**
  * Dedicated Google Drive Health Endpoint
  * Evaluates Drive diagnostic safely with fallback error isolation.
+ * Always returns HTTP 200 JSON even if Drive authentication fails.
  */
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   res.setHeader('Content-Type', 'application/json');
   res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate');
   try {
-    const hostOrigin = getRequestOrigin(req);
-    const diagnostic = await getDriveDiagnostic(hostOrigin);
+    const diagnostic = await executeDriveDiagnostic();
     return res.status(200).json({
       success: diagnostic.success || false,
       api: 'ok',
@@ -36,3 +36,4 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     });
   }
 }
+

@@ -21,6 +21,7 @@ import { Client, CommissionParticipant, FundingDeal } from '../../../types';
 import { useData } from '../../../context/DataContext';
 import { useAuth } from '../../../context/AuthContext';
 import { ConfirmModal } from '../../common/ConfirmModal';
+import { calculateDealFinancials } from '../../../utils/dealFinancials';
 
 interface CommissionDistributionTabProps {
   client: Client;
@@ -69,17 +70,18 @@ export const CommissionDistributionTab: React.FC<CommissionDistributionTabProps>
     status: 'PENDING',
   });
 
-  // Deal Participants
+  // Deal Participants & Canonical Financials
   const dealParticipants = activeDeal
     ? commissions.filter((c) => c.dealId === activeDeal.id)
     : [];
 
-  const totalPointsAllocated = dealParticipants.reduce((sum, p) => sum + Number(p.points), 0);
-  const totalDollarAllocated = dealParticipants.reduce((sum, p) => sum + Number(p.dollarAmount), 0);
+  const dealFinancials = activeDeal
+    ? calculateDealFinancials(activeDeal, commissions)
+    : null;
 
-  const dealTotalCommissionGross = activeDeal
-    ? (Number(activeDeal.fundingAmount) * Number(activeDeal.percentage)) / 100
-    : 0;
+  const totalPointsAllocated = dealFinancials ? dealFinancials.totalAllocatedPoints : 0;
+  const totalDollarAllocated = dealFinancials ? dealFinancials.totalAllocatedDollars : 0;
+  const dealTotalCommissionGross = dealFinancials ? dealFinancials.grossCommission : 0;
 
   // Edit Points Handlers
   const handleStartEditPoints = (participant: CommissionParticipant) => {

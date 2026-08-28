@@ -29,7 +29,7 @@ import { DealDetailModal } from './DealDetailModal';
 import { NewDealModal } from './NewDealModal';
 import { DealsKanbanBoard } from './DealsKanbanBoard';
 import { formatDate } from '../../utils/dateUtils';
-import { calculateDealCommission } from '../../utils/commissionCalculator';
+import { calculateAggregateFinancials, calculateDealFinancials } from '../../utils/dealFinancials';
 
 interface FundingWorkspaceProps {
   setActiveTab: (tab: string) => void;
@@ -39,6 +39,7 @@ export const FundingWorkspace: React.FC<FundingWorkspaceProps> = ({ setActiveTab
   const {
     deals,
     clients,
+    commissions,
     setSelectedClientId,
     deleteDeal,
     duplicateDeal,
@@ -58,21 +59,14 @@ export const FundingWorkspace: React.FC<FundingWorkspaceProps> = ({ setActiveTab
   const [dealToDelete, setDealToDelete] = useState<{ id: string; name: string } | null>(null);
   const [isDeletingDeal, setIsDeletingDeal] = useState(false);
 
-  // Metrics
-  const totalFundedVolume = deals
-    .filter((d) => (d.status || '').toUpperCase() === 'FUNDED')
-    .reduce((sum, d) => sum + (Number(d.fundingAmount) || 0), 0);
-
-  const totalPipelineVolume = deals
-    .filter((d) => !['DECLINED', 'CANCELLED', 'INACTIVE'].includes((d.status || '').toUpperCase()))
-    .reduce((sum, d) => sum + (Number(d.fundingAmount) || 0), 0);
-
-  const totalCommissions = deals.reduce((sum, d) => {
-    const calc = calculateDealCommission(d);
-    return sum + calc.totalCommission;
-  }, 0);
-
-  const fundedCount = deals.filter((d) => (d.status || '').toUpperCase() === 'FUNDED').length;
+  // Canonical Financial Metrics
+  const aggregate = useMemo(() => calculateAggregateFinancials(deals, commissions), [deals, commissions]);
+  const totalFundedVolume = aggregate.totalFundedVolume;
+  const fundedCount = aggregate.totalFundedCount;
+  const activePipelineVolume = aggregate.activePipelineVolume;
+  const activePipelineCount = aggregate.activePipelineCount;
+  const totalCommissions = aggregate.commissionExpected;
+  const totalPipelineVolume = aggregate.totalPortfolioVolume;
 
   // Filtered Deals
   const filteredDeals = useMemo(() => {
@@ -229,11 +223,11 @@ export const FundingWorkspace: React.FC<FundingWorkspaceProps> = ({ setActiveTab
         </div>
 
         <div className="bg-[#0b1528] border border-blue-900/60 p-4 rounded-2xl shadow-lg">
-          <span className="text-xs text-slate-400 block font-semibold">Active Pipeline Volume</span>
-          <div className="text-2xl font-bold text-slate-100 mt-1 font-mono">
-            ${totalPipelineVolume.toLocaleString()}
+          <span className="text-xs text-slate-400 block font-semibold">Active Pipeline (Pre-Approved)</span>
+          <div className="text-2xl font-bold text-cyan-400 mt-1 font-mono">
+            ${activePipelineVolume.toLocaleString()}
           </div>
-          <div className="text-[11px] text-amber-400 mt-1">{deals.length} total deal structures</div>
+          <div className="text-[11px] text-cyan-300 mt-1">{activePipelineCount} pre-approved positions</div>
         </div>
 
         <div className="bg-[#0b1528] border border-blue-900/60 p-4 rounded-2xl shadow-lg">
@@ -332,8 +326,8 @@ export const FundingWorkspace: React.FC<FundingWorkspaceProps> = ({ setActiveTab
             Object.entries(dealsByClient).map(([clientId, group]) => {
               const clientTotal = group.deals.reduce((sum, d) => sum + (Number(d.fundingAmount) || 0), 0);
               const clientComm = group.deals.reduce((sum, d) => {
-                const calc = calculateDealCommission(d);
-                return sum + calc.totalCommission;
+                const financial = calculateDealFinancials(d, commissions);
+                return sum + financial.grossCommission;
               }, 0);
 
               return (
@@ -421,8 +415,8 @@ export const FundingWorkspace: React.FC<FundingWorkspaceProps> = ({ setActiveTab
                   </tr>
                 ) : (
                   filteredDeals.map((deal) => {
-                    const calc = calculateDealCommission(deal);
-                    const amount = Number(deal.fundingAmount || deal.approvedAmount || deal.requestedAmount || 0);
+                    const financial = calculateDealFinancials(deal, commissions);
+                    const amount = financial.fundingAmount;
 
                     return (
                       <tr
@@ -455,19 +449,19 @@ export const FundingWorkspace: React.FC<FundingWorkspaceProps> = ({ setActiveTab
                           <div className="font-bold text-emerald-400 text-xs">
                             ${amount.toLocaleString()}
                           </div>
-                          {deal.fee ? (
+                          {financial.hasFee && financial.fee ? (
                             <div className="text-[10px] text-slate-500 font-sans">
-                              Fee: ${Number(deal.fee).toLocaleString()}
+                              Fee: ${financial.fee.toLocaleString()}
                             </div>
                           ) : null}
                         </td>
 
                         <td className="py-3.5 px-3 font-sans">
                           <div className="font-bold text-amber-400 font-mono">
-                            {calc.hasCommission ? calc.formattedTotalCommission : '$0'}
+                            ${Math.round(financial.grossCommission).toLocaleString()}
                           </div>
                           <div className="text-[10px] text-slate-400 font-mono">
-                            {deal.percentage || 0}% points
+                            {financial.hasPercentage ? `${financial.percentage}% points` : 'No points'}
                           </div>
                         </td>
 

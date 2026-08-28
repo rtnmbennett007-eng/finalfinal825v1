@@ -19,6 +19,7 @@ import {
 import { useData } from '../../context/DataContext';
 import { useAuth } from '../../context/AuthContext';
 import { CommissionParticipant, CommissionDirectoryEntry, CommissionRule } from '../../types';
+import { calculateAggregateFinancials, calculateDealFinancials } from '../../utils/dealFinancials';
 
 interface CommissionEngineProps {
   setActiveTab: (tab: string) => void;
@@ -56,20 +57,12 @@ export const CommissionEngine: React.FC<CommissionEngineProps> = ({ setActiveTab
   const [showRuleModal, setShowRuleModal] = useState(false);
   const [editingRule, setEditingRule] = useState<Partial<CommissionRule> | null>(null);
 
-  // Calculate Metrics
-  const totalFundedVolume = deals
-    .filter((d) => d.status === 'FUNDED')
-    .reduce((sum, d) => sum + Number(d.fundingAmount), 0);
-
-  const totalCommissionGenerated = deals
-    .filter((d) => d.status === 'FUNDED')
-    .reduce((sum, d) => sum + (Number(d.fundingAmount) * Number(d.percentage)) / 100, 0);
-
-  const totalCommissionCollected = deals
-    .filter((d) => d.status === 'FUNDED' && d.commissionStatus === 'COLLECTED')
-    .reduce((sum, d) => sum + (Number(d.fundingAmount) * Number(d.percentage)) / 100, 0);
-
-  const totalCommissionPending = totalCommissionGenerated - totalCommissionCollected;
+  // Master Canonical Financial Metrics
+  const aggregate = calculateAggregateFinancials(deals, commissions);
+  const totalFundedVolume = aggregate.totalFundedVolume;
+  const totalCommissionGenerated = aggregate.commissionExpected;
+  const totalCommissionCollected = aggregate.commissionCollected;
+  const totalCommissionPending = aggregate.commissionToBeCollected;
 
   // Breakdown by Participant Name
   const participantSummary: Record<string, { pointsSum: number; dollarsSum: number; type: string; count: number }> = {};
@@ -77,17 +70,21 @@ export const CommissionEngine: React.FC<CommissionEngineProps> = ({ setActiveTab
     if (!participantSummary[p.name]) {
       participantSummary[p.name] = { pointsSum: 0, dollarsSum: 0, type: p.type, count: 0 };
     }
-    participantSummary[p.name].pointsSum += Number(p.points);
-    participantSummary[p.name].dollarsSum += Number(p.dollarAmount);
+    participantSummary[p.name].pointsSum += Number(p.points) || 0;
+    participantSummary[p.name].dollarsSum += Number(p.dollarAmount) || 0;
     participantSummary[p.name].count += 1;
   }
 
-  // Unallocated points check
+  // Unallocated points check based on canonical deal financials
   const unallocatedDeals = deals.map((d) => {
+    const financials = calculateDealFinancials(d, commissions);
     const pList = commissions.filter((cp) => cp.dealId === d.id);
-    const allocatedPoints = pList.reduce((sum, p) => sum + Number(p.points), 0);
-    const unallocated = Number((d.percentage - allocatedPoints).toFixed(3));
-    return { deal: d, allocatedPoints, unallocated, pList };
+    return {
+      deal: d,
+      allocatedPoints: financials.totalAllocatedPoints,
+      unallocated: financials.unallocatedPoints,
+      pList,
+    };
   }).filter((item) => item.unallocated > 0.001);
 
   const handleAddDirectoryEntry = async (e: React.FormEvent) => {

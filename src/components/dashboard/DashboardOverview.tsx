@@ -32,6 +32,8 @@ import {
   Coins,
   Wallet,
   Receipt,
+  Calculator,
+  ShieldCheck,
 } from 'lucide-react';
 import { useData } from '../../context/DataContext';
 import { useAuth } from '../../context/AuthContext';
@@ -40,6 +42,8 @@ import { InternalTask, PriorityLevel, TaskStatus } from '../../types';
 import { ClientHealthDashboard } from '../clients/tabs/ClientHealthDashboard';
 import { Activity } from 'lucide-react';
 import { calculateDashboardMetrics } from '../../utils/dashboardMetrics';
+import { calculateAggregateFinancials } from '../../utils/dealFinancials';
+import { AuditCalculationModal } from './AuditCalculationModal';
 import { formatDate, formatDateTime, formatTime } from '../../utils/dateUtils';
 
 interface DashboardOverviewProps {
@@ -88,6 +92,9 @@ export const DashboardOverview: React.FC<DashboardOverviewProps> = ({
     'ACTIVE_PIPELINE' | 'TOTAL_FUNDED' | 'COMMISSION_PREDICTION' | 'COMMISSION_TO_BE_COLLECTED' | 'COMMISSION_COLLECTED' | null
   >(null);
   
+  // Calculation Audit & Formula Breakdown Modal State
+  const [showAuditModal, setShowAuditModal] = useState(false);
+
   // Task Edit / Add Modal state
   const [editingTask, setEditingTask] = useState<InternalTask | null>(null);
   const [isTaskModalOpen, setIsTaskModalOpen] = useState(false);
@@ -107,10 +114,15 @@ export const DashboardOverview: React.FC<DashboardOverviewProps> = ({
     notes: '',
   });
 
+  // Centralized Canonical Aggregate Financials
+  const aggregateResult = useMemo(() => calculateAggregateFinancials(deals, commissions), [deals, commissions]);
+
   // Centralized Dynamic Metrics
   const {
     activePipeline,
     totalFunded,
+    proposedVolume,
+    totalPortfolioVolume,
     commissionPrediction,
     commissionToBeCollected,
     commissionCollected,
@@ -119,6 +131,7 @@ export const DashboardOverview: React.FC<DashboardOverviewProps> = ({
     predictiveDeals,
     uncollectedFundedDeals,
     collectedDeals,
+    proposedDeals,
   } = useMemo(() => calculateDashboardMetrics(deals, commissions), [deals, commissions]);
 
   // Action Queues
@@ -272,7 +285,16 @@ export const DashboardOverview: React.FC<DashboardOverviewProps> = ({
           </p>
         </div>
 
-        <div className="flex items-center space-x-3">
+        <div className="flex flex-wrap items-center gap-2.5">
+          <button
+            onClick={() => setShowAuditModal(true)}
+            className="flex items-center space-x-1.5 px-3.5 py-2 bg-blue-900/40 hover:bg-blue-800/60 text-amber-300 rounded-xl text-xs font-bold border border-amber-500/30 hover:border-amber-400 transition-all shadow-xs"
+            title="Inspect calculation logic, formulas, and deal-by-deal breakdown"
+          >
+            <Calculator className="w-4 h-4 text-amber-400" />
+            <span>Calculation Audit</span>
+          </button>
+
           <div className="flex items-center bg-[#070d18] p-1 rounded-xl border border-blue-900/60 text-xs">
             <button
               onClick={() => setDashboardMode('OPERATIONS')}
@@ -1687,6 +1709,14 @@ export const DashboardOverview: React.FC<DashboardOverviewProps> = ({
           </div>
         </div>
       )}
+
+      {/* Comprehensive Mathematical & Lifecycle Audit Modal */}
+      <AuditCalculationModal
+        isOpen={showAuditModal}
+        onClose={() => setShowAuditModal(false)}
+        aggregate={aggregateResult}
+        onOpenClient={(cId) => handleClientClick(cId, 'clients')}
+      />
     </div>
   );
 };

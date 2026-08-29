@@ -1,6 +1,54 @@
 {
   "rewrites": [
     {
+      "source": "/api/health/drive",
+      "destination": "/api/health"
+    },
+    {
+      "source": "/api/health",
+      "destination": "/api/health"
+    },
+    {
+      "source": "/api/ai/:path*",
+      "destination": "/api/ai"
+    },
+    {
+      "source": "/api/drive/:path*",
+      "destination": "/api/drive"
+    },
+    {
+      "source": "/api/applications/:path*",
+      "destination": "/api/applications"
+    },
+    {
+      "source": "/api/diagnostics/:path*",
+      "destination": "/api/diagnostics"
+    },
+    {
+      "source": "/api/errors/:path*",
+      "destination": "/api/diagnostics"
+    },
+    {
+      "source": "/api/errors",
+      "destination": "/api/diagnostics"
+    },
+    {
+      "source": "/api/documents/:path*",
+      "destination": "/api/documents"
+    },
+    {
+      "source": "/api/underwriting/:path*",
+      "destination": "/api/underwriting"
+    },
+    {
+      "source": "/api/discord/:path*",
+      "destination": "/api/discord"
+    },
+    {
+      "source": "/api/ghl/:path*",
+      "destination": "/api/ghl"
+    },
+    {
       "source": "/((?!api/).*)",
       "destination": "/index.html"
     }

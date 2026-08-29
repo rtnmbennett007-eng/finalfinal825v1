@@ -1,1 +1,1 @@
-export * from '../api/_server/documentAiService';
+export * from '../lib/documentAiService';

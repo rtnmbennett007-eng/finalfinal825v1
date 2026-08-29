@@ -1,1 +1,1 @@
-export * from '../api/_server/googleDriveService';
+export * from '../lib/googleDriveService';

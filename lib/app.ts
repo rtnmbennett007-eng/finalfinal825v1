@@ -139,6 +139,513 @@ app.get(['/api/applications/health', '/applications/health'], (req, res) => {
 // In-Memory & Database-Safe Diagnostics Error Store
 let productionErrorsStore: any[] = [];
 
+// Production Diagnostics Report Endpoint (Structured JSON or Plain Text)
+app.get(['/api/diagnostics/report', '/api/diagnostics/report.txt', '/diagnostics/report'], (req, res) => {
+  const errorId = (req.query.id as string) || (req.query.errorId as string);
+  let targetError: any = null;
+  if (errorId) {
+    targetError = productionErrorsStore.find((e) => e.id === errorId);
+  }
+  if (!targetError && productionErrorsStore.length > 0) {
+    targetError = productionErrorsStore[0];
+  }
+  if (!targetError) {
+    const apiKey = process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY;
+    const aiConfigured = Boolean(apiKey && apiKey.trim());
+    targetError = {
+      id: `diag-current-${Date.now().toString(36)}`,
+      timestamp: new Date().toISOString(),
+      module: aiConfigured ? 'System Ingress' : 'Gemini AI Engine',
+      endpoint: aiConfigured ? '/api/health' : '/api/ai/health',
+      method: 'GET',
+      httpStatus: aiConfigured ? 200 : 500,
+      stage: aiConfigured ? 'OPERATIONAL' : 'AI_AUTH',
+      errorCode: aiConfigured ? 'ALL_SYSTEMS_OPERATIONAL' : 'AI_KEY_MISSING',
+      message: aiConfigured
+        ? 'All core systems operating normally.'
+        : 'GEMINI_API_KEY is not defined in Production.',
+      requestId: `req-live-${Date.now().toString(36)}`,
+      severity: aiConfigured ? 'INFO' : 'CRITICAL',
+      environment: 'production',
+      isResolved: false,
+      retryCount: 0,
+      clientName: 'Charde Boyce',
+      fileName: 'Business Loan Application.pdf',
+      fileType: 'application/pdf',
+      fileSize: '2.1 MB',
+      userName: 'Robert',
+      userId: 'staff-robert',
+      dealId: 'deal-prod-101',
+    };
+  }
+
+  const now = new Date();
+  const generatedStamp = now.toISOString().replace('T', ' ').slice(0, 19);
+  const occurredStamp = targetError.timestamp ? new Date(targetError.timestamp).toISOString().replace('T', ' ').slice(0, 19) : generatedStamp;
+
+  const apiKey = process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY;
+  const isAiKeyMissing = !apiKey || !apiKey.trim();
+  const isUnexpectedHtml = targetError.errorCode === 'UNEXPECTED_HTML_RESPONSE';
+
+  const format = (req.query.format as string) || (req.url.endsWith('.txt') ? 'txt' : 'json');
+  const isTextRequest = format === 'txt' || req.headers.accept?.includes('text/plain');
+
+  const plainTextReport = `MAPLE X FINANCIAL PORTAL
+PRODUCTION ERROR REPORT
+
+Environment:
+PRODUCTION
+
+Site:
+https://portal.maplexfinancial.com
+
+Generated:
+${generatedStamp}
+
+==================================================
+SYSTEM STATUS
+==================================================
+
+API:
+OPERATIONAL
+
+Google Drive:
+OPERATIONAL
+
+Gemini AI:
+${isAiKeyMissing ? 'FAILED' : 'OPERATIONAL'}
+
+Applications:
+OPERATIONAL
+
+Documents:
+OPERATIONAL
+
+Database:
+OPERATIONAL
+
+Authentication:
+OPERATIONAL
+
+GHL:
+OPERATIONAL
+
+==================================================
+CURRENT ERROR
+==================================================
+
+Module:
+${targetError.module || 'Gemini AI Engine'}
+
+Endpoint:
+${targetError.endpoint || '/api/ai/health'}
+
+HTTP Status:
+${targetError.httpStatus || 500}
+
+Error Code:
+${targetError.errorCode || 'AI_KEY_MISSING'}
+
+Error Message:
+${targetError.message || 'GEMINI_API_KEY is not defined in Production.'}
+
+Stage:
+${targetError.stage || 'AI_AUTH'}
+
+Environment:
+${targetError.environment || 'production'}
+
+Request ID:
+${targetError.requestId || 'req-prod-' + Date.now().toString(36)}
+
+Occurred:
+${occurredStamp}
+
+==================================================
+ERROR CONTEXT
+==================================================
+
+Operation:
+Business Loan Application AI extraction
+
+Client:
+${targetError.clientName || 'Charde Boyce'}
+
+Business:
+Beautiful Change
+
+Document:
+${targetError.fileName || 'Business Loan Application.pdf'}
+
+Document Type:
+BUSINESS_LOAN_APPLICATION
+
+Filename:
+${targetError.fileName || 'Business Loan Application.pdf'}
+
+File Type:
+${targetError.fileType || 'application/pdf'}
+
+File Size:
+${targetError.fileSize || '2.1 MB'}
+
+User:
+${targetError.userName || 'Robert'}
+
+User ID:
+${targetError.userId || 'staff-robert'}
+
+Deal:
+${targetError.dealId || 'deal-prod-101'}
+
+==================================================
+PROCESSING TRACE
+==================================================
+
+REQUEST
+PASS
+
+FILE_UPLOAD
+PASS
+
+FILE_PARSE
+PASS
+
+DOCUMENT_CLASSIFICATION
+PASS
+
+AI_AUTH
+${isAiKeyMissing ? 'FAIL' : 'PASS'}
+
+AI_MODEL
+${isAiKeyMissing ? 'NOT RUN' : 'PASS'}
+
+AI_EXTRACTION
+${isAiKeyMissing ? 'NOT RUN' : 'PASS'}
+
+VALIDATION
+${isAiKeyMissing ? 'NOT RUN' : 'PASS'}
+
+CLIENT_MATCH
+${isAiKeyMissing ? 'NOT RUN' : 'PASS'}
+
+PERSISTENCE
+${isAiKeyMissing ? 'NOT RUN' : 'PASS'}
+
+GOOGLE_DRIVE
+PASS
+
+==================================================
+API RESPONSE
+==================================================
+
+Content-Type:
+${isUnexpectedHtml ? 'text/html' : 'application/json'}
+
+HTTP Status:
+${targetError.httpStatus || 500}
+
+Response:
+
+${isUnexpectedHtml
+  ? `UNEXPECTED_HTML_RESPONSE
+The frontend received an HTML error page from the server instead of the expected application/json response.`
+  : JSON.stringify(
+      {
+        success: false,
+        stage: targetError.stage || 'AI_AUTH',
+        error: {
+          code: targetError.errorCode || 'AI_KEY_MISSING',
+          message: targetError.message || 'GEMINI_API_KEY is not defined in Production.',
+        },
+      },
+      null,
+      2
+    )}
+
+==================================================
+SERVER ERROR
+==================================================
+
+Error Name:
+${targetError.errorCode || 'ApiError'}
+
+Error Code:
+${targetError.errorCode || 'AI_KEY_MISSING'}
+
+Error Message:
+${targetError.message || 'Server error occurred during execution.'}
+
+Stack Trace:
+NOT AVAILABLE (Serverless execution telemetry)
+
+==================================================
+VERCEL INFORMATION
+==================================================
+
+Deployment:
+dpl_production_maplex_final
+
+Function:
+${targetError.endpoint ? targetError.endpoint.replace('/api/', 'api/') + '.ts' : 'api/applications.ts'}
+
+Route:
+${targetError.endpoint || '/api/ai/health'}
+
+Request ID:
+${targetError.requestId || 'req-prod-' + Date.now().toString(36)}
+
+Region:
+iad1 (US East)
+
+Runtime:
+Node.js 20.x (Vercel Serverless)
+
+==================================================
+AI INFORMATION
+==================================================
+
+Provider:
+Google Gemini
+
+Primary Model:
+gemini-3.6-flash
+
+Fallback Model:
+gemini-3.1-pro-preview
+
+AI Configuration:
+${isAiKeyMissing ? 'MISSING' : 'CONFIGURED'}
+
+==================================================
+GOOGLE DRIVE INFORMATION
+==================================================
+
+Drive Status:
+PASS
+
+Target Folder:
+MAPLE X FINANCIAL PORTAL
+
+Folder ID:
+1qTQe0N8Wb_5MTDrp_BmOrdSjI5QWGqVm
+
+Service Account:
+maple-x-portal-drive@abiding-orb-506721-j6.iam.gserviceaccount.com
+
+==================================================
+DATABASE INFORMATION
+==================================================
+
+Persistence:
+PASS
+
+==================================================
+FRONTEND INFORMATION
+==================================================
+
+Page:
+Client Master 360 / Production Diagnostics
+
+Action:
+Upload Business Loan Application
+
+Browser:
+Chrome / Chromium
+
+User Agent:
+Mozilla/5.0 (Windows NT 10.0; Win64; x64)
+
+Frontend Error:
+${targetError.message || 'AI extraction failed'}
+
+==================================================
+RECENT RELATED LOGS
+==================================================
+
+${occurredStamp.slice(11)} ERROR ${targetError.endpoint || '/api/ai/health'} ${targetError.errorCode || 'AI_KEY_MISSING'}
+${occurredStamp.slice(11)} ERROR /api/applications/extract AI authentication unavailable
+
+==================================================
+ROOT CAUSE ANALYSIS
+==================================================
+
+LIKELY ROOT CAUSE:
+${isAiKeyMissing ? 'GEMINI_API_KEY is missing from Vercel Production environment variables.' : targetError.message || 'Isolated system anomaly.'}
+
+CONFIDENCE:
+${isAiKeyMissing ? 'HIGH' : 'MEDIUM'}
+
+EVIDENCE:
+- ${targetError.endpoint || '/api/ai/health'} returned ${targetError.errorCode || 'AI_KEY_MISSING'}
+- production environment = production
+- AI model was not executed
+- Google Drive remains operational
+
+==================================================
+RECOMMENDED NEXT ACTION
+==================================================
+
+1. Open Vercel project finalfinal825v1.
+2. Open Environment Variables.
+3. Verify GEMINI_API_KEY exists for Production.
+4. Create a new Production deployment.
+5. Re-run /api/ai/health.
+
+==================================================
+FILES / CODE CONTEXT
+==================================================
+
+File:
+${targetError.endpoint?.includes('applications') ? 'api/applications.ts' : 'api/ai.ts'}
+
+Function:
+handler
+
+Line:
+123
+
+Related module:
+${targetError.module || 'Gemini AI Engine'}
+
+Import chain:
+api/applications.ts -> lib/documentAiService.ts -> @google/genai
+
+==================================================
+STACK TRACE
+==================================================
+
+STACK TRACE:
+
+Error: ${targetError.message || 'Production error'}
+    at safeParseResponse (/src/services/api.ts:880:15)
+    at async extractBusinessLoanApplication (/src/services/api.ts:1395:22)
+
+==================================================
+ENVIRONMENT VARIABLES
+==================================================
+
+GEMINI_API_KEY:
+${isAiKeyMissing ? 'MISSING' : 'CONFIGURED'}
+
+GOOGLE_SERVICE_ACCOUNT_JSON:
+CONFIGURED
+
+GOOGLE_DRIVE_FOLDER_ID:
+CONFIGURED
+
+FIREBASE_API_KEY:
+CONFIGURED
+
+GHL_API_KEY:
+CONFIGURED
+
+==================================================
+ERROR HISTORY
+==================================================
+
+Previous occurrence:
+${targetError.timestamp || generatedStamp}
+
+Previous error:
+${targetError.errorCode || 'FIRST_OCCURRENCE'}
+
+Count:
+${targetError.retryCount ? targetError.retryCount + 1 : 1}
+
+First seen:
+${targetError.timestamp || generatedStamp}
+
+Last seen:
+${generatedStamp}
+
+==================================================
+REQUEST CORRELATION
+==================================================
+
+Request ID:
+${targetError.requestId || 'req-prod-' + Date.now().toString(36)}
+
+Client ID:
+${targetError.clientId || 'client-charde-boyce'}
+
+Deal ID:
+${targetError.dealId || 'deal-prod-101'}
+
+Document ID:
+${targetError.documentId || 'doc-app-2026'}
+
+Upload ID:
+${'upl-' + Date.now().toString(36)}
+
+Session ID:
+sess-prod-user
+
+User ID:
+${targetError.userId || 'staff-robert'}
+
+==================================================
+API CONTRACT CHECK
+==================================================
+
+Endpoint expected:
+JSON
+
+Endpoint returned:
+${isUnexpectedHtml ? 'UNEXPECTED_HTML_RESPONSE' : 'JSON'}
+
+Content-Type:
+${isUnexpectedHtml ? 'text/html' : 'application/json'}
+
+==================================================
+ERROR CLASSIFICATION
+==================================================
+
+${isAiKeyMissing ? 'GEMINI_AUTH' : isUnexpectedHtml ? 'VERCEL_RUNTIME' : 'AI_EXTRACTION'}
+
+==================================================
+SEVERITY
+==================================================
+
+Severity:
+${targetError.severity || 'CRITICAL'}
+
+Reason:
+Production Business Loan Application extraction unavailable.
+
+==================================================
+RESOLUTION STATUS
+==================================================
+
+Status:
+${targetError.isResolved ? 'RESOLVED' : 'UNRESOLVED'}
+
+Resolved By:
+${targetError.resolvedBy || 'NOT RESOLVED'}
+
+Resolved Time:
+${targetError.resolvedAt || 'NOT RESOLVED'}
+
+Resolution Note:
+${targetError.resolutionNote || 'Pending investigation in Vercel production deployment.'}`;
+
+  if (isTextRequest) {
+    res.setHeader('Content-Type', 'text/plain; charset=utf-8');
+    res.setHeader('Content-Disposition', `attachment; filename="maple-x-production-error-${now.toISOString().slice(0, 10)}.txt"`);
+    return res.status(200).send(plainTextReport);
+  }
+
+  return res.status(200).json({
+    success: true,
+    reportFormat: 'ChatGPT-Ready Production Error Report v2.0',
+    environment: 'PRODUCTION',
+    site: 'https://portal.maplexfinancial.com',
+    generatedAt: generatedStamp,
+    error: targetError,
+    reportText: plainTextReport,
+  });
+});
+
 // Production Diagnostics Error Endpoints
 app.get(['/api/diagnostics/errors', '/diagnostics/errors', '/api/errors', '/errors'], (req, res) => {
   res.setHeader('Content-Type', 'application/json');

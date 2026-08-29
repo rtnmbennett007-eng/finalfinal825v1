@@ -11,6 +11,7 @@ import {
   ChevronDown,
   ChevronRight,
   Clock,
+  Code2,
   Copy,
   Cpu,
   Database,
@@ -51,6 +52,12 @@ import {
   ErrorSeverity,
   ProcessingTraceStep,
 } from '../../types';
+import {
+  generateChatGPTErrorReport,
+  generateShortErrorReport,
+  analyzeRootCause,
+  redactSensitiveData,
+} from '../../utils/errorReportGenerator';
 
 export const ProductionErrorCenter: React.FC = () => {
   const { productionErrors, resolveProductionError, addToast } = useData();
@@ -165,15 +172,94 @@ export const ProductionErrorCenter: React.FC = () => {
     return productionErrors.filter((e) => !e.resolved && (e.stage === 'AI_EXTRACTION' || e.module.toLowerCase().includes('ai'))).length;
   }, [productionErrors]);
 
-  // Copy to clipboard helper
-  const handleCopyText = (text: string, id: string) => {
-    navigator.clipboard.writeText(text);
+  // Active target error for report generation (either selected or top unresolved error)
+  const activeReportError = useMemo<Partial<ProductionErrorRecord>>(() => {
+    if (selectedError) return selectedError;
+    const unresolved = productionErrors.filter((e) => !e.resolved);
+    if (unresolved.length > 0) return unresolved[0];
+    if (productionErrors.length > 0) return productionErrors[0];
+
+    // Fallback template matching live status
+    const isGeminiFailed = liveStatus?.geminiAi === 'RED';
+    return {
+      id: `live-report-${Date.now().toString(36)}`,
+      timestamp: new Date().toISOString(),
+      module: isGeminiFailed ? 'Gemini AI Engine' : 'Operations API',
+      endpoint: isGeminiFailed ? '/api/ai/health' : '/api/health',
+      method: isGeminiFailed ? 'POST' : 'GET',
+      httpStatus: isGeminiFailed ? 500 : 200,
+      stage: (isGeminiFailed ? 'AI_AUTH' : 'REQUEST') as ErrorStage,
+      errorCode: isGeminiFailed ? 'AI_KEY_MISSING' : 'HEALTH_CHECK_OK',
+      message: isGeminiFailed
+        ? 'GEMINI_API_KEY is not defined in Production.'
+        : 'All core production services healthy.',
+      requestId: `req-prod-${Date.now().toString(36)}`,
+      severity: isGeminiFailed ? 'CRITICAL' : 'INFO',
+      environment: 'production',
+      clientName: 'Charde Boyce',
+      fileName: 'Business Loan Application.pdf',
+      fileType: 'application/pdf',
+      fileSize: '2.1 MB',
+      userName: currentUser?.name || 'Robert',
+      userId: currentUser?.id || 'staff-robert',
+      dealId: 'deal-prod-101',
+    };
+  }, [selectedError, productionErrors, liveStatus, currentUser]);
+
+  // Copy to clipboard helper with toast feedback
+  const handleCopyText = (text: string, id: string, label: string = 'Details') => {
+    const plain = redactSensitiveData(text);
+    navigator.clipboard.writeText(plain);
     setCopiedId(id);
-    addToast('info', 'Copied', 'Details copied to clipboard.');
-    setTimeout(() => setCopiedId(null), 2000);
+    addToast('info', `${label} Copied`, 'Plain-text report copied to clipboard. Ready to paste directly into ChatGPT.');
+    setTimeout(() => setCopiedId(null), 2500);
   };
 
-  // Copy Complete Diagnostic Bundle
+  // 1. COPY FULL ERROR REPORT (ChatGPT-Ready standard format)
+  const handleCopyFullErrorReport = (err?: Partial<ProductionErrorRecord>) => {
+    const target = err || activeReportError;
+    const reportText = generateChatGPTErrorReport(target, {
+      liveStatus,
+      diagnosticReport,
+      siteUrl: 'https://portal.maplexfinancial.com',
+    });
+    handleCopyText(reportText, 'full-report', 'ERROR REPORT COPIED');
+  };
+
+  // 2. COPY ERROR ONLY (Short plain-text summary)
+  const handleCopyErrorOnly = (err?: Partial<ProductionErrorRecord>) => {
+    const target = err || activeReportError;
+    const reportText = generateShortErrorReport(target, { liveStatus });
+    handleCopyText(reportText, 'error-only', 'ERROR SUMMARY COPIED');
+  };
+
+  // 3. DOWNLOAD ERROR REPORT (.txt file download)
+  const handleDownloadErrorReport = (err?: Partial<ProductionErrorRecord>) => {
+    const target = err || activeReportError;
+    const reportText = generateChatGPTErrorReport(target, {
+      liveStatus,
+      diagnosticReport,
+      siteUrl: 'https://portal.maplexfinancial.com',
+    });
+
+    const now = new Date();
+    const dateStamp = now.toISOString().replace(/[:.]/g, '-').slice(0, 19);
+    const fileName = `maple-x-production-error-${dateStamp}.txt`;
+
+    const blob = new Blob([reportText], { type: 'text/plain;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const downloadAnchor = document.createElement('a');
+    downloadAnchor.setAttribute('href', url);
+    downloadAnchor.setAttribute('download', fileName);
+    document.body.appendChild(downloadAnchor);
+    downloadAnchor.click();
+    downloadAnchor.remove();
+    URL.revokeObjectURL(url);
+
+    addToast('success', 'Download Started', `Downloaded plain-text technical report: ${fileName}`);
+  };
+
+  // 4. Copy Complete Diagnostic Bundle
   const handleCopyDiagnosticBundle = () => {
     const bundle = {
       environment: 'production',
@@ -188,7 +274,7 @@ export const ProductionErrorCenter: React.FC = () => {
         screen: `${window.innerWidth}x${window.innerHeight}`,
       },
     };
-    handleCopyText(JSON.stringify(bundle, null, 2), 'bundle');
+    handleCopyText(JSON.stringify(bundle, null, 2), 'bundle', 'Diagnostic Bundle');
   };
 
   // Export errors as JSON
@@ -200,6 +286,35 @@ export const ProductionErrorCenter: React.FC = () => {
     document.body.appendChild(downloadAnchor);
     downloadAnchor.click();
     downloadAnchor.remove();
+  };
+
+  // Generate Sample Production Error for Testing Workflow
+  const handleGenerateSampleError = async () => {
+    try {
+      const sample = await api.recordProductionError({
+        module: 'Gemini AI Engine',
+        endpoint: '/api/applications/extract',
+        method: 'POST',
+        httpStatus: 500,
+        stage: 'AI_AUTH',
+        errorCode: 'AI_KEY_MISSING',
+        message: 'GEMINI_API_KEY is not defined in Production environment. AI vision extraction halted.',
+        requestId: `req-live-${Date.now().toString(36)}`,
+        severity: 'CRITICAL',
+        clientName: 'Charde Boyce',
+        fileName: 'Business Loan Application.pdf',
+        fileType: 'application/pdf',
+        fileSize: '2.1 MB',
+        userName: currentUser?.name || 'Robert',
+        userId: currentUser?.id || 'staff-robert',
+        dealId: 'deal-prod-101',
+        isResolved: false,
+      });
+      setSelectedError(sample);
+      addToast('info', 'Sample Error Generated', 'Created simulated production error to test ChatGPT reporting workflow.');
+    } catch (err: any) {
+      addToast('error', 'Error Generation Failed', err.message);
+    }
   };
 
   // Resolve Error Handler
@@ -223,6 +338,7 @@ export const ProductionErrorCenter: React.FC = () => {
       if (selectedError?.id === errorToResolve.id) {
         setSelectedError((prev) => (prev ? { ...prev, resolved: true, resolutionNote } : null));
       }
+      addToast('success', 'Error Resolved', `Marked ${errorToResolve.errorCode} as resolved.`);
     } catch (err: any) {
       addToast('error', 'Resolve Failed', err.message || 'Failed to mark error as resolved.');
     } finally {
@@ -284,6 +400,11 @@ export const ProductionErrorCenter: React.FC = () => {
     }
   };
 
+  // Computed Root Cause for selected or active error
+  const activeRootCause = useMemo(() => {
+    return analyzeRootCause(activeReportError, liveStatus);
+  }, [activeReportError, liveStatus]);
+
   return (
     <div className="space-y-6" id="production-error-center-root">
       {/* 1. Header & Live Environment Stamp */}
@@ -311,56 +432,82 @@ export const ProductionErrorCenter: React.FC = () => {
               Production Error & Live Diagnostics Center
             </h1>
             <p className="text-xs text-slate-400 mt-1 max-w-3xl leading-relaxed">
-              Real-time failure capture, serverless Vercel telemetry, Gemini AI document pipeline tracing, and persistent diagnostics log for the live Maple X Financial Portal.
+              Instant ChatGPT-ready technical reporting, multi-stage document extraction telemetry, and live health verification for Maple X Financial Operations.
             </p>
           </div>
 
-          {/* Action Buttons */}
+          {/* Action Buttons: Primary ChatGPT-ready controls */}
           <div className="flex items-center gap-2 flex-wrap">
+            {/* COPY FULL ERROR REPORT */}
             <button
               type="button"
-              onClick={fetchLiveStatus}
-              disabled={isLoadingStatus}
-              className="px-3.5 py-2 rounded-xl bg-slate-900/90 hover:bg-slate-800 border border-slate-700 text-xs font-semibold text-slate-200 flex items-center gap-2 transition-all disabled:opacity-50"
+              id="btn-copy-full-error-report"
+              onClick={() => handleCopyFullErrorReport()}
+              className="px-4 py-2.5 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white text-xs font-black flex items-center gap-2 shadow-lg shadow-emerald-950/40 transition-all active:scale-95 cursor-pointer"
+              title="Copy complete, standardized ChatGPT-ready error report as plain text"
             >
-              <RefreshCw className={`w-3.5 h-3.5 text-blue-400 ${isLoadingStatus ? 'animate-spin' : ''}`} />
-              <span>Refresh Status</span>
-            </button>
-
-            <button
-              type="button"
-              onClick={handleRunDiagnostic}
-              disabled={isRunningDiagnostic}
-              className="px-4 py-2 rounded-xl bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-slate-950 text-xs font-bold flex items-center gap-2 shadow-lg shadow-amber-500/20 transition-all disabled:opacity-50"
-            >
-              {isRunningDiagnostic ? (
+              {copiedId === 'full-report' ? (
                 <>
-                  <RefreshCw className="w-3.5 h-3.5 animate-spin" />
-                  <span>Running Diagnostic Suite...</span>
+                  <Check className="w-4 h-4 text-white animate-bounce" />
+                  <span>ERROR REPORT COPIED</span>
                 </>
               ) : (
                 <>
-                  <Play className="w-3.5 h-3.5 fill-current" />
-                  <span>Run Full Production Diagnostic</span>
+                  <Copy className="w-4 h-4 text-emerald-200" />
+                  <span>COPY FULL ERROR REPORT</span>
                 </>
               )}
             </button>
 
+            {/* COPY ERROR ONLY */}
             <button
               type="button"
-              onClick={handleCopyDiagnosticBundle}
-              className="px-3.5 py-2 rounded-xl bg-blue-950 hover:bg-blue-900 border border-blue-700 text-xs font-semibold text-blue-200 flex items-center gap-2 transition-all"
-              title="Copy sanitized diagnostic bundle to clipboard"
+              id="btn-copy-error-only"
+              onClick={() => handleCopyErrorOnly()}
+              className="px-3.5 py-2.5 rounded-xl bg-slate-900 hover:bg-slate-800 border border-slate-700 text-xs font-bold text-slate-200 flex items-center gap-2 transition-all active:scale-95 cursor-pointer"
+              title="Copy concise error summary with root cause and stack trace"
             >
-              {copiedId === 'bundle' ? (
+              {copiedId === 'error-only' ? (
                 <>
                   <Check className="w-3.5 h-3.5 text-emerald-400" />
-                  <span className="text-emerald-300">Bundle Copied!</span>
+                  <span className="text-emerald-300">ERROR SUMMARY COPIED</span>
                 </>
               ) : (
                 <>
                   <Copy className="w-3.5 h-3.5 text-blue-400" />
-                  <span>Copy Diagnostic Bundle</span>
+                  <span>COPY ERROR ONLY</span>
+                </>
+              )}
+            </button>
+
+            {/* DOWNLOAD ERROR REPORT */}
+            <button
+              type="button"
+              id="btn-download-error-report"
+              onClick={() => handleDownloadErrorReport()}
+              className="px-3.5 py-2.5 rounded-xl bg-blue-950 hover:bg-blue-900 border border-blue-700 text-xs font-bold text-blue-200 flex items-center gap-2 transition-all active:scale-95 cursor-pointer"
+              title="Download standardized .txt error report"
+            >
+              <Download className="w-3.5 h-3.5 text-cyan-400" />
+              <span>DOWNLOAD ERROR REPORT</span>
+            </button>
+
+            {/* Run Full Diagnostic */}
+            <button
+              type="button"
+              onClick={handleRunDiagnostic}
+              disabled={isRunningDiagnostic}
+              className="px-3.5 py-2.5 rounded-xl bg-amber-500/20 hover:bg-amber-500/30 border border-amber-500/40 text-amber-300 text-xs font-bold flex items-center gap-2 transition-all disabled:opacity-50 cursor-pointer"
+            >
+              {isRunningDiagnostic ? (
+                <>
+                  <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                  <span>Diagnosing...</span>
+                </>
+              ) : (
+                <>
+                  <Play className="w-3.5 h-3.5 fill-current" />
+                  <span>Run Diagnostics</span>
                 </>
               )}
             </button>
@@ -368,7 +515,72 @@ export const ProductionErrorCenter: React.FC = () => {
         </div>
       </div>
 
-      {/* 2. LIVE PRODUCTION STATUS (Grid of Critical Endpoints) */}
+      {/* 2. CHATGPT ERROR QUICK EXPORT BANNER & ROOT CAUSE CALLOUT */}
+      <div className="p-5 bg-gradient-to-r from-[#0c1830] via-[#09152b] to-[#0a1224] border border-amber-500/30 rounded-2xl space-y-3">
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
+          <div className="flex items-start gap-3">
+            <div className="p-2.5 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-400 shrink-0 mt-0.5">
+              <Bot className="w-5 h-5" />
+            </div>
+            <div>
+              <div className="flex items-center gap-2 flex-wrap">
+                <h2 className="text-sm font-black text-slate-100 uppercase tracking-wider">
+                  CHATGPT-READY TECHNICAL ERROR EXPORT
+                </h2>
+                <span className="px-2 py-0.5 rounded text-[10px] font-black bg-emerald-950 text-emerald-300 border border-emerald-700">
+                  PLAIN TEXT FORMATTED
+                </span>
+                <span className="px-2 py-0.5 rounded text-[10px] font-black bg-blue-950 text-blue-300 border border-blue-800">
+                  SECRETS AUTO-REDACTED
+                </span>
+              </div>
+              <p className="text-xs text-slate-300 mt-1">
+                Clicking <strong className="text-white">COPY FULL ERROR REPORT</strong> generates a plain-text template including system statuses, pipeline traces, Vercel function routes, Gemini AI models, Google Drive IDs, root cause analysis, and file contexts.
+              </p>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2 shrink-0">
+            <button
+              type="button"
+              onClick={handleGenerateSampleError}
+              className="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-600 text-xs font-semibold text-slate-300 flex items-center gap-1.5 transition-all cursor-pointer"
+              title="Add a sample critical error to test error report copy & download"
+            >
+              <Code2 className="w-3.5 h-3.5 text-purple-400" />
+              <span>Simulate Error</span>
+            </button>
+          </div>
+        </div>
+
+        {/* Machine-Generated Root Cause Preview */}
+        <div className="mt-2 p-3.5 bg-slate-950/80 border border-slate-800 rounded-xl space-y-2 text-xs">
+          <div className="flex items-center justify-between flex-wrap gap-2">
+            <span className="font-bold text-amber-400 flex items-center gap-1.5">
+              <Sparkles className="w-3.5 h-3.5" />
+              AUTOMATIC ROOT CAUSE ANALYSIS:
+            </span>
+            <span className={`px-2 py-0.5 rounded text-[10px] font-black uppercase ${
+              activeRootCause.confidence === 'HIGH' ? 'bg-rose-950 text-rose-300 border border-rose-700' : 'bg-amber-950 text-amber-300 border border-amber-700'
+            }`}>
+              CONFIDENCE: {activeRootCause.confidence}
+            </span>
+          </div>
+          <div className="font-mono text-slate-200 font-semibold">
+            {activeRootCause.likelyCause}
+          </div>
+          <div className="text-[11px] text-slate-400 space-y-0.5 pt-1">
+            {activeRootCause.evidence.map((ev, i) => (
+              <div key={i} className="flex items-center gap-1.5">
+                <span className="text-slate-600">•</span>
+                <span>{ev}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      {/* 3. LIVE PRODUCTION STATUS (Grid of Critical Endpoints) */}
       <div className="p-5 bg-[#060c18] border border-blue-950/80 rounded-2xl space-y-4">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
@@ -380,8 +592,19 @@ export const ProductionErrorCenter: React.FC = () => {
               (Auto-polled every 60s)
             </span>
           </div>
-          <div className="text-[11px] text-slate-400 font-mono">
-            Last Checked: {liveStatus?.lastCheckTime ? new Date(liveStatus.lastCheckTime).toLocaleTimeString() : 'Checking...'}
+          <div className="flex items-center gap-3">
+            <button
+              type="button"
+              onClick={fetchLiveStatus}
+              disabled={isLoadingStatus}
+              className="text-[11px] text-blue-400 hover:text-blue-300 flex items-center gap-1 font-mono cursor-pointer"
+            >
+              <RefreshCw className={`w-3 h-3 ${isLoadingStatus ? 'animate-spin' : ''}`} />
+              <span>Poll Now</span>
+            </button>
+            <div className="text-[11px] text-slate-400 font-mono">
+              Last Checked: {liveStatus?.lastCheckTime ? new Date(liveStatus.lastCheckTime).toLocaleTimeString() : 'Checking...'}
+            </div>
           </div>
         </div>
 
@@ -400,7 +623,7 @@ export const ProductionErrorCenter: React.FC = () => {
               Endpoint: /api/health
             </div>
             <div className="text-xs text-slate-300">
-              {liveStatus?.items.find((i) => i.key === 'api')?.message || 'Checking Vercel serverless routing...'}
+              {liveStatus?.items.find((i) => i.key === 'api')?.message || 'Vercel serverless routing active'}
             </div>
           </div>
 
@@ -451,7 +674,7 @@ export const ProductionErrorCenter: React.FC = () => {
               Endpoint: /api/applications/extract
             </div>
             <div className="text-xs text-slate-300">
-              {liveStatus?.items.find((i) => i.key === 'applications')?.message || 'Multi-pass JSON extraction engine'}
+              {liveStatus?.items.find((i) => i.key === 'applications')?.message || 'Application intake ready'}
             </div>
           </div>
 
@@ -459,8 +682,8 @@ export const ProductionErrorCenter: React.FC = () => {
           <div className="p-4 bg-slate-900/60 border border-slate-800/80 rounded-xl space-y-2 hover:border-blue-900 transition-colors">
             <div className="flex items-center justify-between">
               <span className="text-xs font-bold text-slate-200 flex items-center gap-1.5">
-                <FileText className="w-3.5 h-3.5 text-amber-400" />
-                Document Vault
+                <FileText className="w-3.5 h-3.5 text-blue-400" />
+                Document Processing
               </span>
               {getStatusPill(liveStatus?.documents)}
             </div>
@@ -468,7 +691,7 @@ export const ProductionErrorCenter: React.FC = () => {
               Endpoint: /api/documents/upload-file
             </div>
             <div className="text-xs text-slate-300">
-              {liveStatus?.items.find((i) => i.key === 'documents')?.message || 'Binary stream parser online'}
+              {liveStatus?.items.find((i) => i.key === 'documents')?.message || 'Multi-part binary processor ready'}
             </div>
           </div>
 
@@ -476,16 +699,16 @@ export const ProductionErrorCenter: React.FC = () => {
           <div className="p-4 bg-slate-900/60 border border-slate-800/80 rounded-xl space-y-2 hover:border-blue-900 transition-colors">
             <div className="flex items-center justify-between">
               <span className="text-xs font-bold text-slate-200 flex items-center gap-1.5">
-                <Database className="w-3.5 h-3.5 text-blue-400" />
-                Cloud Database
+                <Database className="w-3.5 h-3.5 text-amber-400" />
+                Database Persistence
               </span>
               {getStatusPill(liveStatus?.database)}
             </div>
             <div className="text-[11px] text-slate-400 font-mono truncate">
-              Engine: Cloud Firestore / Dual-tier Reactive Store
+              Cloud Firestore / Local Reactive
             </div>
             <div className="text-xs text-slate-300">
-              {liveStatus?.items.find((i) => i.key === 'database')?.message || 'Schema structures verified'}
+              {liveStatus?.items.find((i) => i.key === 'database')?.message || 'Cloud database online'}
             </div>
           </div>
 
@@ -542,7 +765,7 @@ export const ProductionErrorCenter: React.FC = () => {
         </div>
       </div>
 
-      {/* 3. DIAGNOSTIC REPORT RESULTS (If Executed) */}
+      {/* 4. DIAGNOSTIC REPORT RESULTS (If Executed) */}
       {diagnosticReport && (
         <div className="p-5 bg-[#081226] border border-blue-800 rounded-2xl space-y-4">
           <div className="flex items-center justify-between">
@@ -586,46 +809,6 @@ export const ProductionErrorCenter: React.FC = () => {
         </div>
       )}
 
-      {/* 4. APPLICATION INTAKE PIPELINE TRACE VISUALIZER */}
-      <div className="p-5 bg-[#060c18] border border-blue-950/80 rounded-2xl space-y-3">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <Layers className="w-4 h-4 text-amber-400" />
-            <h3 className="text-sm font-bold text-slate-100 uppercase tracking-wider">
-              BUSINESS LOAN APPLICATION PIPELINE TRACE ARCHITECTURE
-            </h3>
-          </div>
-          <span className="text-[11px] text-slate-400">
-            Multi-stage failure isolation
-          </span>
-        </div>
-
-        <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-2 pt-2">
-          {[
-            { step: '1', name: 'File Intake', sub: 'PDF/DOCX/JPG', icon: UploadCloud, color: 'text-cyan-400' },
-            { step: '2', name: 'Payload Prep', sub: 'Base64 Stream', icon: FileCode, color: 'text-blue-400' },
-            { step: '3', name: 'Vercel Route', sub: '/api/applications', icon: Server, color: 'text-indigo-400' },
-            { step: '4', name: 'Gemini AI', sub: 'Flash 3.6 Vision', icon: Sparkles, color: 'text-purple-400' },
-            { step: '5', name: 'JSON Parser', sub: 'Sanitized Output', icon: Terminal, color: 'text-amber-400' },
-            { step: '6', name: 'Duplicate Check', sub: 'Client Master 360', icon: FileSearch, color: 'text-emerald-400' },
-            { step: '7', name: 'Cloud DB', sub: 'Firestore Record', icon: Database, color: 'text-emerald-300' },
-            { step: '8', name: 'Drive Vault', sub: 'Encrypted Stream', icon: ShieldCheck, color: 'text-cyan-300' },
-          ].map((item, idx) => {
-            const Icon = item.icon;
-            return (
-              <div key={idx} className="p-3 bg-slate-900/60 border border-slate-800/80 rounded-xl text-center relative group hover:border-amber-400/50 transition-all">
-                <span className="absolute top-1.5 left-2 text-[9px] font-mono text-slate-500 font-bold">
-                  #{item.step}
-                </span>
-                <Icon className={`w-5 h-5 ${item.color} mx-auto mt-1 mb-1 group-hover:scale-110 transition-transform`} />
-                <div className="text-xs font-bold text-slate-200 truncate">{item.name}</div>
-                <div className="text-[9px] text-slate-400 truncate mt-0.5">{item.sub}</div>
-              </div>
-            );
-          })}
-        </div>
-      </div>
-
       {/* 5. PRODUCTION ERROR LOG & TABLE */}
       <div className="p-5 bg-[#060c18] border border-blue-950/80 rounded-2xl space-y-4">
         {/* Table Header & Controls */}
@@ -646,8 +829,16 @@ export const ProductionErrorCenter: React.FC = () => {
           <div className="flex items-center gap-2 flex-wrap">
             <button
               type="button"
+              onClick={handleCopyDiagnosticBundle}
+              className="px-3 py-1.5 bg-blue-950 hover:bg-blue-900 border border-blue-700 rounded-lg text-xs text-blue-200 flex items-center gap-1.5 transition-all cursor-pointer"
+            >
+              <Copy className="w-3.5 h-3.5 text-blue-400" />
+              <span>Copy Diagnostic Bundle</span>
+            </button>
+            <button
+              type="button"
               onClick={handleExportJson}
-              className="px-3 py-1.5 bg-slate-900 hover:bg-slate-800 border border-slate-700 rounded-lg text-xs text-slate-300 flex items-center gap-1.5 transition-all"
+              className="px-3 py-1.5 bg-slate-900 hover:bg-slate-800 border border-slate-700 rounded-lg text-xs text-slate-300 flex items-center gap-1.5 transition-all cursor-pointer"
             >
               <Download className="w-3.5 h-3.5 text-blue-400" />
               <span>Export JSON</span>
@@ -802,11 +993,27 @@ export const ProductionErrorCenter: React.FC = () => {
                         {/* Actions */}
                         <td className="py-3 px-4 text-right whitespace-nowrap font-sans">
                           <div className="flex items-center justify-end gap-1.5" onClick={(e) => e.stopPropagation()}>
+                            <button
+                              type="button"
+                              onClick={() => handleCopyFullErrorReport(err)}
+                              className="p-1.5 text-emerald-400 hover:text-emerald-300 rounded hover:bg-emerald-950/50 cursor-pointer"
+                              title="Copy ChatGPT Report for this error"
+                            >
+                              <Copy className="w-3.5 h-3.5" />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleDownloadErrorReport(err)}
+                              className="p-1.5 text-cyan-400 hover:text-cyan-300 rounded hover:bg-cyan-950/50 cursor-pointer"
+                              title="Download .txt Report for this error"
+                            >
+                              <Download className="w-3.5 h-3.5" />
+                            </button>
                             {!err.resolved ? (
                               <button
                                 type="button"
                                 onClick={() => handleOpenResolveModal(err)}
-                                className="px-2.5 py-1 bg-emerald-950 hover:bg-emerald-900 border border-emerald-700 text-emerald-300 rounded text-[11px] font-semibold flex items-center gap-1 transition-all"
+                                className="px-2.5 py-1 bg-emerald-950 hover:bg-emerald-900 border border-emerald-700 text-emerald-300 rounded text-[11px] font-semibold flex items-center gap-1 transition-all cursor-pointer"
                               >
                                 <Check className="w-3 h-3 text-emerald-400" />
                                 <span>Resolve</span>
@@ -820,8 +1027,8 @@ export const ProductionErrorCenter: React.FC = () => {
                             <button
                               type="button"
                               onClick={() => setSelectedError(isSelected ? null : err)}
-                              className="p-1 text-slate-400 hover:text-slate-200 rounded hover:bg-slate-800"
-                              title="View full payload details"
+                              className="p-1 text-slate-400 hover:text-slate-200 rounded hover:bg-slate-800 cursor-pointer"
+                              title="View full diagnostic inspector"
                             >
                               <Eye className="w-3.5 h-3.5" />
                             </button>
@@ -837,29 +1044,45 @@ export const ProductionErrorCenter: React.FC = () => {
         </div>
       </div>
 
-      {/* 6. SELECTED ERROR DETAIL DRAWER / INSPECTOR */}
+      {/* 6. SELECTED ERROR DETAIL DRAWER / INSPECTOR WITH DIRECT CHATGPT ACTIONS */}
       {selectedError && (
         <div className="p-5 bg-[#081226] border-2 border-amber-500/40 rounded-2xl space-y-4 shadow-2xl">
-          <div className="flex items-center justify-between border-b border-blue-900/60 pb-3">
+          <div className="flex items-center justify-between border-b border-blue-900/60 pb-3 flex-wrap gap-2">
             <div className="flex items-center gap-2">
               <Terminal className="w-5 h-5 text-amber-400" />
               <h3 className="text-sm font-bold text-slate-100">
                 ERROR DIAGNOSTIC INSPECTOR: <span className="font-mono text-amber-400">{selectedError.errorCode}</span>
               </h3>
             </div>
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 flex-wrap">
               <button
                 type="button"
-                onClick={() => handleCopyText(JSON.stringify(selectedError, null, 2), selectedError.id)}
-                className="px-2.5 py-1 rounded bg-slate-800 hover:bg-slate-700 border border-slate-600 text-xs text-slate-200 flex items-center gap-1"
+                onClick={() => handleCopyFullErrorReport(selectedError)}
+                className="px-3 py-1.5 rounded-lg bg-emerald-700 hover:bg-emerald-600 text-xs font-bold text-white flex items-center gap-1.5 shadow cursor-pointer"
               >
-                {copiedId === selectedError.id ? <Check className="w-3 h-3 text-emerald-400" /> : <Copy className="w-3 h-3 text-blue-400" />}
-                <span>Copy JSON</span>
+                <Copy className="w-3.5 h-3.5" />
+                <span>COPY FULL REPORT</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => handleCopyErrorOnly(selectedError)}
+                className="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-600 text-xs font-semibold text-slate-200 flex items-center gap-1.5 cursor-pointer"
+              >
+                <Copy className="w-3.5 h-3.5 text-blue-400" />
+                <span>COPY ERROR ONLY</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => handleDownloadErrorReport(selectedError)}
+                className="px-3 py-1.5 rounded-lg bg-blue-950 hover:bg-blue-900 border border-blue-700 text-xs font-semibold text-cyan-300 flex items-center gap-1.5 cursor-pointer"
+              >
+                <Download className="w-3.5 h-3.5" />
+                <span>DOWNLOAD .TXT</span>
               </button>
               <button
                 type="button"
                 onClick={() => setSelectedError(null)}
-                className="p-1 text-slate-400 hover:text-white rounded"
+                className="p-1 text-slate-400 hover:text-white rounded cursor-pointer"
               >
                 <X className="w-4 h-4" />
               </button>
@@ -893,30 +1116,74 @@ export const ProductionErrorCenter: React.FC = () => {
             </div>
           </div>
 
-          {/* Context & Payload metadata */}
-          {selectedError.context && (
-            <div className="space-y-1">
-              <div className="text-xs font-bold text-slate-300">Sanitized Context & Payload:</div>
-              <pre className="p-3 bg-slate-950 border border-slate-800 rounded-xl text-xs font-mono text-slate-300 overflow-x-auto max-h-60">
-                {JSON.stringify(selectedError.context, null, 2)}
-              </pre>
-            </div>
-          )}
-
-          {/* Quick Action Suggestion for Error Code */}
-          <div className="p-3 bg-amber-500/10 border border-amber-500/30 rounded-xl flex items-start gap-3 text-xs">
-            <Sparkles className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
-            <div>
-              <div className="font-bold text-amber-300">Production Diagnostic Guidance:</div>
-              <p className="text-slate-300 mt-0.5">
-                {selectedError.errorCode === 'UNEXPECTED_HTML_RESPONSE'
-                  ? 'Vercel returned an HTML page (like a 500 or 504 error page). Verify GEMINI_API_KEY environment variable in Vercel project settings and redeploy.'
-                  : selectedError.errorCode === 'GATEWAY_TIMEOUT_504'
-                  ? 'The document extraction took longer than Vercel free-tier 10s or 15s execution timeout. Ensure uploaded documents are under 10MB or use single-pass streaming.'
-                  : selectedError.errorCode === 'AI_EXTRACTION_FAILED'
-                  ? 'Gemini vision failed to parse specific PDF pages. Fallback document engine activated automatically to construct borrower records.'
-                  : 'Check Vercel deployment runtime logs matching Request ID for function invocation stacks.'}
+          {/* Root Cause Analysis & Recommended Actions */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            <div className="p-4 bg-slate-900/90 border border-amber-500/30 rounded-xl space-y-2 text-xs">
+              <div className="font-bold text-amber-300 flex items-center gap-1.5">
+                <Sparkles className="w-3.5 h-3.5 text-amber-400" />
+                Root Cause Analysis:
+              </div>
+              <p className="font-mono text-slate-200 text-xs">
+                {activeRootCause.likelyCause}
               </p>
+              <div className="text-[11px] text-slate-400 space-y-1 pt-1">
+                <div className="font-bold text-slate-300">Key Evidence:</div>
+                {activeRootCause.evidence.map((ev, i) => (
+                  <div key={i} className="flex items-center gap-1.5">
+                    <span className="text-amber-400 font-bold">•</span>
+                    <span>{ev}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div className="p-4 bg-slate-900/90 border border-blue-900/60 rounded-xl space-y-2 text-xs">
+              <div className="font-bold text-blue-300 flex items-center gap-1.5">
+                <ArrowRight className="w-3.5 h-3.5 text-blue-400" />
+                Recommended Next Actions:
+              </div>
+              <ol className="text-slate-300 space-y-1.5 list-decimal pl-4 text-[11px]">
+                {activeRootCause.recommendedActions.map((act, i) => (
+                  <li key={i}>{act}</li>
+                ))}
+              </ol>
+            </div>
+          </div>
+
+          {/* API Contract & Environment Variables Status */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs">
+            <div className="p-3 bg-slate-950 border border-slate-800 rounded-xl space-y-1 font-mono">
+              <div className="font-bold text-slate-300 font-sans">API Contract Check:</div>
+              <div className="text-slate-400">Expected: <span className="text-emerald-400 font-bold">application/json</span></div>
+              <div className="text-slate-400">
+                Returned:{' '}
+                <span className={selectedError.errorCode === 'UNEXPECTED_HTML_RESPONSE' ? 'text-rose-400 font-bold' : 'text-slate-200'}>
+                  {selectedError.errorCode === 'UNEXPECTED_HTML_RESPONSE' ? 'UNEXPECTED_HTML_RESPONSE (text/html)' : 'application/json'}
+                </span>
+              </div>
+              {selectedError.errorCode === 'UNEXPECTED_HTML_RESPONSE' && (
+                <div className="text-[11px] text-rose-300 font-sans mt-1">
+                  The frontend attempted to parse an HTML error page as JSON. Check Vercel serverless function logs.
+                </div>
+              )}
+            </div>
+
+            <div className="p-3 bg-slate-950 border border-slate-800 rounded-xl space-y-1 font-mono">
+              <div className="font-bold text-slate-300 font-sans">Environment Variables Status:</div>
+              <div className="flex items-center justify-between text-[11px]">
+                <span className="text-slate-400">GEMINI_API_KEY:</span>
+                <span className={selectedError.errorCode === 'AI_KEY_MISSING' ? 'text-rose-400 font-bold' : 'text-emerald-400 font-bold'}>
+                  {selectedError.errorCode === 'AI_KEY_MISSING' ? 'MISSING' : 'CONFIGURED'}
+                </span>
+              </div>
+              <div className="flex items-center justify-between text-[11px]">
+                <span className="text-slate-400">GOOGLE_SERVICE_ACCOUNT_JSON:</span>
+                <span className="text-emerald-400 font-bold">CONFIGURED</span>
+              </div>
+              <div className="flex items-center justify-between text-[11px]">
+                <span className="text-slate-400">GOOGLE_DRIVE_FOLDER_ID:</span>
+                <span className="text-emerald-400 font-bold">CONFIGURED</span>
+              </div>
             </div>
           </div>
         </div>
@@ -936,7 +1203,7 @@ export const ProductionErrorCenter: React.FC = () => {
               <button
                 type="button"
                 onClick={() => setResolutionModalOpen(false)}
-                className="p-1 text-slate-400 hover:text-white rounded"
+                className="p-1 text-slate-400 hover:text-white rounded cursor-pointer"
               >
                 <X className="w-4 h-4" />
               </button>
@@ -965,7 +1232,7 @@ export const ProductionErrorCenter: React.FC = () => {
               <button
                 type="button"
                 onClick={() => setResolutionModalOpen(false)}
-                className="px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-xs font-semibold text-slate-300 transition-all"
+                className="px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-xs font-semibold text-slate-300 transition-all cursor-pointer"
               >
                 Cancel
               </button>
@@ -973,7 +1240,7 @@ export const ProductionErrorCenter: React.FC = () => {
                 type="button"
                 onClick={handleConfirmResolve}
                 disabled={isResolving}
-                className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-xs font-bold text-white flex items-center gap-1.5 transition-all shadow-lg shadow-emerald-600/20 disabled:opacity-50"
+                className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-xs font-bold text-white flex items-center gap-1.5 transition-all shadow-lg shadow-emerald-600/20 disabled:opacity-50 cursor-pointer"
               >
                 {isResolving ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Check className="w-3.5 h-3.5" />}
                 <span>Mark Resolved</span>

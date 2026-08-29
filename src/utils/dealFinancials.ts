@@ -326,16 +326,36 @@ export function calculateDealFinancials(
   // Calculate actual collected commission
   let alreadyCollectedCommission = 0;
   if (isFunded) {
-    if ((deal as any).commissionReceivedAmount !== undefined && (deal as any).commissionReceivedAmount !== null) {
+    if ((deal as any).commissionReceivedAmount !== undefined && (deal as any).commissionReceivedAmount !== null && !isNaN(Number((deal as any).commissionReceivedAmount))) {
       alreadyCollectedCommission = Math.max(0, Number((deal as any).commissionReceivedAmount) || 0);
-    } else if (deal.commissionStatus === 'COLLECTED') {
+    } else if (
+      (deal.commissionStatus as string) === 'COLLECTED' ||
+      (deal.commissionStatus as string) === 'DISTRIBUTED' ||
+      (deal.commissionStatus as string) === 'PAID' ||
+      (deal.commissionStatus as string) === 'RECEIVED'
+    ) {
       alreadyCollectedCommission = grossCommission;
     } else if (receivedParticipantsDollars > 0) {
       alreadyCollectedCommission = receivedParticipantsDollars;
     }
   }
 
-  const toBeCollectedCommission = isFunded ? Math.max(0, grossCommission - alreadyCollectedCommission) : 0;
+  // Formula: Remaining Commission = max(Expected Commission - Already Collected, 0)
+  // If deal is marked COLLECTED/DISTRIBUTED/PAID/RECEIVED or if alreadyCollected >= grossCommission - 0.99, balance is 0.
+  let toBeCollectedCommission = 0;
+  if (isFunded) {
+    if (
+      (deal.commissionStatus as string) === 'COLLECTED' ||
+      (deal.commissionStatus as string) === 'DISTRIBUTED' ||
+      (deal.commissionStatus as string) === 'PAID' ||
+      (deal.commissionStatus as string) === 'RECEIVED'
+    ) {
+      toBeCollectedCommission = 0;
+    } else {
+      const rawRemaining = grossCommission - alreadyCollectedCommission;
+      toBeCollectedCommission = rawRemaining > 0.99 ? rawRemaining : 0;
+    }
+  }
 
   // Participant allocation balance
   const dealPct = percentage || 0;

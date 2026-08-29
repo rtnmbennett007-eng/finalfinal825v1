@@ -40,7 +40,6 @@ import { MasterApplicationSection } from './masterEditor/MasterApplicationSectio
 import { MasterVerificationSection } from './masterEditor/MasterVerificationSection';
 import { MasterUnderwritingSection } from './masterEditor/MasterUnderwritingSection';
 import { MasterDealsSection } from './masterEditor/MasterDealsSection';
-import { MasterCommissionsSection } from './masterEditor/MasterCommissionsSection';
 import { MasterDocumentsSection } from './masterEditor/MasterDocumentsSection';
 import { MasterTasksNotesSection } from './masterEditor/MasterTasksNotesSection';
 import { MasterIntegrationsSection } from './masterEditor/MasterIntegrationsSection';
@@ -67,7 +66,6 @@ type MasterTabType =
   | 'verification'
   | 'underwriting'
   | 'deals'
-  | 'commissions'
   | 'documents'
   | 'tasks_notes'
   | 'integrations';
@@ -262,7 +260,6 @@ export const MasterFileEditor: React.FC<MasterFileEditorProps> = ({
     { id: 'verification', label: 'Verification Record', icon: FileCheck2, badge: verificationForm.status || 'PENDING' },
     { id: 'underwriting', label: 'Underwriting Decision', icon: Scale, badge: underwritingForm.decision },
     { id: 'deals', label: 'Funding Deals & Stacking', icon: DollarSign, badge: `${dealsList.length} Deals` },
-    { id: 'commissions', label: 'Commission Splits', icon: PieChart },
     { id: 'documents', label: 'Document Vault', icon: FolderLock, badge: `${documentsList.length}` },
     { id: 'tasks_notes', label: 'Tasks & Notes', icon: ListTodo, badge: `${tasksList.length}` },
     { id: 'integrations', label: 'Integrations (GHL/Discord)', icon: Share2 },
@@ -399,14 +396,6 @@ export const MasterFileEditor: React.FC<MasterFileEditorProps> = ({
               businessName={clientForm.businessName || client.businessName}
               deals={dealsList}
               onChangeDeals={handleDealsChange}
-            />
-          )}
-
-          {activeTab === 'commissions' && (
-            <MasterCommissionsSection
-              deals={dealsList}
-              commissions={commissionsList}
-              onChangeCommissions={handleCommissionsChange}
             />
           )}
 

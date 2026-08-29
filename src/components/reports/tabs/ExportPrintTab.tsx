@@ -112,17 +112,17 @@ export const ExportPrintTab: React.FC<ExportPrintTabProps> = ({
                 <FileSpreadsheet className="w-4 h-4" />
               </div>
               <div>
-                <h4 className="text-xs font-bold text-slate-100">Commission & Stacking Ledger</h4>
+                <h4 className="text-xs font-bold text-slate-100">Deal Commissions Summary</h4>
                 <p className="text-[10px] text-slate-400 font-mono">
-                  {commissions.length} participant lines
+                  {allDeals.length} deal records
                 </p>
               </div>
             </div>
             <p className="text-xs text-slate-400 line-clamp-2">
-              Detailed participant breakdown with point allocations, dollar amounts, status, and received dates.
+              Summary report of expected and collected revenue across all deals, commission rates, and funding dates.
             </p>
             <button
-              onClick={() => exportCommissionsToCsv(commissions, allDeals, 'Maple_X_Commission_Ledger')}
+              onClick={() => exportCommissionsToCsv([], allDeals, 'Maple_X_Commission_Summary')}
               className="w-full py-2 px-3 rounded-lg bg-blue-900/60 hover:bg-blue-800 text-amber-300 text-xs font-bold transition-all border border-blue-800 flex items-center justify-center gap-1.5 cursor-pointer"
             >
               <Download className="w-3.5 h-3.5" />

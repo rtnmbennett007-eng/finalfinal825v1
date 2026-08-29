@@ -79,51 +79,45 @@ export function exportDealsToCsv(deals: FundingDeal[], filename: string = 'Maple
 }
 
 /**
- * Formats Commission Participant Ledger for CSV Export
+ * Formats Deal Commissions Summary for CSV Export
  */
 export function exportCommissionsToCsv(
-  commissions: CommissionParticipant[],
+  _commissions: CommissionParticipant[],
   deals: FundingDeal[],
-  filename: string = 'Maple_X_Commission_Ledger'
+  filename: string = 'Maple_X_Commission_Summary_Report'
 ) {
-  const dealMap = new Map(deals.map((d) => [d.id, d]));
-
   const headers = [
-    'Participant ID',
     'Deal ID',
     'Client Name',
     'Business Name',
-    'Deal Product',
-    'Deal Funding Amount ($)',
-    'Participant Name',
-    'Participant Type',
-    'Role',
-    'Points (%)',
-    'Dollar Amount ($)',
-    'Status',
-    'Received Date',
-    'Notes',
+    'Product',
+    'Lender Name',
+    'Funding Amount ($)',
+    'Commission Rate (%)',
+    'Expected Commission ($)',
+    'Commission Status',
+    'Commission Received Date',
+    'Is Stacked',
     'Created At',
   ];
 
-  const rows = commissions.map((cp) => {
-    const deal = dealMap.get(cp.dealId);
+  const rows = deals.map((d) => {
+    const amt = Number(d.fundingAmount) || 0;
+    const pct = Number(d.percentage) || 0;
+    const expCommission = (amt * pct) / 100;
     return [
-      cp.id,
-      cp.dealId,
-      deal?.clientName || 'N/A',
-      deal?.businessName || 'N/A',
-      deal?.product || 'N/A',
-      Number(deal?.fundingAmount) || 0,
-      cp.name,
-      cp.type || 'Internal Staff',
-      cp.role || 'Staff',
-      Number(cp.points) || 0,
-      (Number(cp.dollarAmount) || 0).toFixed(2),
-      cp.status || 'PENDING',
-      cp.receivedDate || 'N/A',
-      cp.notes || '',
-      cp.createdAt || '',
+      d.id,
+      d.clientName || 'N/A',
+      d.businessName || 'N/A',
+      d.product || 'N/A',
+      d.lenderName || 'Direct',
+      amt,
+      pct,
+      expCommission.toFixed(2),
+      d.commissionStatus || 'PENDING',
+      d.commissionReceivedDate || 'N/A',
+      d.isStacked ? 'YES' : 'NO',
+      d.createdAt || '',
     ];
   });
 

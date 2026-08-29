@@ -719,10 +719,8 @@ export const OperationsReports: React.FC<OperationsReportsProps> = ({
           <CommissionStackingTab
             filteredDeals={filteredDeals}
             allDeals={deals}
-            commissions={commissions}
             clients={clients}
             onSelectClient={onSelectClient}
-            onUpdateCommissionParticipant={updateCommissionParticipant}
             onMarkDealCommissionReceived={markDealCommissionReceived}
           />
         )}

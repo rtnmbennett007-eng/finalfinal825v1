@@ -70,7 +70,6 @@ import { formatDate, formatDateTime } from '../../utils/dateUtils';
 
 // Tab Subcomponents
 import { FundingStrategyTab } from './tabs/FundingStrategyTab';
-import { CommissionDistributionTab } from './tabs/CommissionDistributionTab';
 import { LenderHistoryTab } from './tabs/LenderHistoryTab';
 import { MasterVerificationTab } from './tabs/MasterVerificationTab';
 import { UnderwritingEvaluationTab } from './tabs/UnderwritingEvaluationTab';
@@ -770,7 +769,6 @@ export const ClientDetailView: React.FC<ClientDetailViewProps> = ({
           { id: 'strategy', label: 'Funding Strategy', icon: Sparkles, badge: safeStrategies.length > 0 ? 'Active' : undefined },
           { id: 'funding', label: 'Funding Deals', icon: DollarSign, badge: `${safeDeals.length} Deals` },
           { id: 'lender-history', label: 'Lender History', icon: History, badge: `${safeLenderHistory.length}` },
-          { id: 'commissions', label: 'Commissions', icon: PieChart },
           { id: 'tasks', label: 'Tasks', icon: ListTodo, badge: `${safeTasks.length}` },
           { id: 'internal-notes', label: 'Internal Notes', icon: MessageSquare, badge: `${safeInternalNotes.length}` },
           { id: 'documents', label: 'Documents', icon: FolderLock, badge: `${safeDocuments.length}` },
@@ -1159,17 +1157,7 @@ export const ClientDetailView: React.FC<ClientDetailViewProps> = ({
         />
       )}
 
-      {/* TAB 6: COMMISSION DISTRIBUTION */}
-      {activeTab === 'commissions' && (
-        <CommissionDistributionTab
-          client={client}
-          deals={safeDeals}
-          commissions={safeCommissions}
-          onRefresh={loadClientDetails}
-        />
-      )}
-
-      {/* TAB 7: LENDER HISTORY */}
+      {/* TAB 6: LENDER HISTORY */}
       {activeTab === 'lender-history' && (
         <LenderHistoryTab
           client={client}

@@ -2,7 +2,6 @@ import React, { useState } from 'react';
 import {
   DollarSign,
   Layers,
-  Users,
   CheckCircle2,
   Clock,
   ArrowUpRight,
@@ -11,90 +10,62 @@ import {
   Search,
   ExternalLink,
   ShieldCheck,
-  AlertCircle,
   Filter,
+  Wallet,
+  Target,
 } from 'lucide-react';
-import { Client, CommissionParticipant, FundingDeal } from '../../../types';
+import { Client, FundingDeal } from '../../../types';
 import { ProductBadge } from '../../common/StatusBadge';
 import { calculateDealCommission } from '../../../utils/commissionCalculator';
 
 interface CommissionStackingTabProps {
   filteredDeals: FundingDeal[];
   allDeals: FundingDeal[];
-  commissions: CommissionParticipant[];
   clients: Client[];
   onSelectClient?: (clientId: string) => void;
-  onUpdateCommissionParticipant?: (id: string, data: Partial<CommissionParticipant>) => Promise<any>;
   onMarkDealCommissionReceived?: (dealId: string) => Promise<any>;
 }
 
 export const CommissionStackingTab: React.FC<CommissionStackingTabProps> = ({
   filteredDeals,
   allDeals,
-  commissions,
   clients,
   onSelectClient,
-  onUpdateCommissionParticipant,
   onMarkDealCommissionReceived,
 }) => {
   const [searchTerm, setSearchTerm] = useState('');
-  const [statusFilter, setStatusFilter] = useState<'ALL' | 'PENDING' | 'RECEIVED'>('ALL');
-  const [typeFilter, setTypeFilter] = useState<'ALL' | 'INTERNAL' | 'PARTNER'>('ALL');
+  const [statusFilter, setStatusFilter] = useState<'ALL' | 'PENDING' | 'COLLECTED'>('ALL');
   const [updatingId, setUpdatingId] = useState<string | null>(null);
 
-  // Map deals for fast lookup
-  const dealMap = new Map(allDeals.map((d) => [d.id, d]));
-  const filteredDealIds = new Set(filteredDeals.map((d) => d.id));
-
-  // Filter commissions to match active deal filters + search + sub-filters
-  const activeCommissions = commissions.filter((cp) => {
-    // Must belong to filtered deals if deal filters are active
-    if (filteredDeals.length > 0 && !filteredDealIds.has(cp.dealId)) {
-      return false;
-    }
-
-    // Status filter
-    if (statusFilter !== 'ALL') {
-      const isReceived = cp.status === 'RECEIVED';
-      if (statusFilter === 'RECEIVED' && !isReceived) return false;
-      if (statusFilter === 'PENDING' && isReceived) return false;
-    }
-
-    // Type filter
-    if (typeFilter !== 'ALL') {
-      const isInternal = cp.type === 'Internal Staff';
-      if (typeFilter === 'INTERNAL' && !isInternal) return false;
-      if (typeFilter === 'PARTNER' && isInternal) return false;
-    }
-
-    // Search term
-    if (searchTerm.trim()) {
-      const q = searchTerm.toLowerCase();
-      const deal = dealMap.get(cp.dealId);
-      const matchName = cp.name.toLowerCase().includes(q);
-      const matchRole = cp.role?.toLowerCase().includes(q);
-      const matchClient = deal?.clientName?.toLowerCase().includes(q);
-      const matchBusiness = deal?.businessName?.toLowerCase().includes(q);
-      const matchDealId = cp.dealId.toLowerCase().includes(q);
-      if (!matchName && !matchRole && !matchClient && !matchBusiness && !matchDealId) {
-        return false;
-      }
-    }
-
-    return true;
-  });
+  // Active Pipeline deals (UNDERWRITING, PRE-APPROVED, PRE-APPROVAL AND APPROVED)
+  const isPipelineStatus = (status?: string | null) => {
+    if (!status) return false;
+    const s = status.toUpperCase().replace(/\s+/g, '_');
+    return (
+      s === 'UNDERWRITING' ||
+      s === 'PRE_APPROVED' ||
+      s === 'PRE_APPROVAL' ||
+      s === 'PRE_APPROVAL_AND_APPROVED' ||
+      s === 'APPROVED'
+    );
+  };
 
   // Calculate High-level Commission Metrics from filtered deals
   let predictedCommission = 0;
   let uncollectedCommission = 0;
   let collectedCommission = 0;
+  let totalFundedVolume = 0;
 
   for (const deal of filteredDeals) {
     const calc = calculateDealCommission(deal);
     const totalComm = calc.totalCommission;
 
-    predictedCommission += totalComm;
+    if (isPipelineStatus(deal.status)) {
+      predictedCommission += totalComm;
+    }
+
     if (deal.status === 'FUNDED') {
+      totalFundedVolume += Number(deal.fundingAmount) || 0;
       if (deal.commissionStatus === 'COLLECTED') {
         collectedCommission += totalComm;
       } else {
@@ -109,45 +80,37 @@ export const CommissionStackingTab: React.FC<CommissionStackingTabProps> = ({
   const stackedVolume = stackedDeals.reduce((sum, d) => sum + (Number(d.fundingAmount) || 0), 0);
   const primaryVolume = primaryDeals.reduce((sum, d) => sum + (Number(d.fundingAmount) || 0), 0);
 
-  // Group commissions by participant name
-  const participantSummary: Record<
-    string,
-    { name: string; type: string; totalPoints: number; totalDollars: number; receivedDollars: number; count: number }
-  > = {};
-
-  for (const cp of activeCommissions) {
-    if (!participantSummary[cp.name]) {
-      participantSummary[cp.name] = {
-        name: cp.name,
-        type: cp.type || 'Internal Staff',
-        totalPoints: 0,
-        totalDollars: 0,
-        receivedDollars: 0,
-        count: 0,
-      };
+  // Filter deals for ledger
+  const activeDeals = filteredDeals.filter((deal) => {
+    if (statusFilter !== 'ALL') {
+      const isCollected = deal.commissionStatus === 'COLLECTED';
+      if (statusFilter === 'COLLECTED' && !isCollected) return false;
+      if (statusFilter === 'PENDING' && isCollected) return false;
     }
-    const dollars = Number(cp.dollarAmount) || 0;
-    participantSummary[cp.name].count += 1;
-    participantSummary[cp.name].totalPoints += Number(cp.points) || 0;
-    participantSummary[cp.name].totalDollars += dollars;
-    if (cp.status === 'RECEIVED') {
-      participantSummary[cp.name].receivedDollars += dollars;
-    }
-  }
 
-  // Handle Mark Received
-  const handleToggleReceived = async (cp: CommissionParticipant) => {
-    if (!onUpdateCommissionParticipant) return;
-    setUpdatingId(cp.id);
+    if (searchTerm.trim()) {
+      const q = searchTerm.toLowerCase();
+      const matchClient = deal.clientName?.toLowerCase().includes(q);
+      const matchBusiness = deal.businessName?.toLowerCase().includes(q);
+      const matchLender = deal.lenderName?.toLowerCase().includes(q);
+      const matchProduct = deal.product?.toLowerCase().includes(q);
+      const matchId = deal.id.toLowerCase().includes(q);
+      if (!matchClient && !matchBusiness && !matchLender && !matchProduct && !matchId) {
+        return false;
+      }
+    }
+
+    return true;
+  });
+
+  // Handle Mark Deal Commission Received
+  const handleToggleDealCommission = async (deal: FundingDeal) => {
+    if (!onMarkDealCommissionReceived) return;
+    setUpdatingId(deal.id);
     try {
-      const newStatus = cp.status === 'RECEIVED' ? 'PENDING' : 'RECEIVED';
-      const receivedDate = newStatus === 'RECEIVED' ? new Date().toISOString() : undefined;
-      await onUpdateCommissionParticipant(cp.id, {
-        status: newStatus,
-        receivedDate,
-      });
+      await onMarkDealCommissionReceived(deal.id);
     } catch (err) {
-      console.error('Failed to update participant commission status:', err);
+      console.error('Failed to update deal commission status:', err);
     } finally {
       setUpdatingId(null);
     }
@@ -157,76 +120,83 @@ export const CommissionStackingTab: React.FC<CommissionStackingTabProps> = ({
     <div className="space-y-6">
       {/* KPI Cards Grid */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+        {/* Card 1: COMMISSION PREDICTION */}
         <div className="bg-[#0e1c38] border border-blue-900/60 p-4.5 rounded-2xl">
-          <div className="flex items-center justify-between text-xs text-blue-300/80 font-medium">
-            <span>COMMISSION PREDICTED</span>
-            <Sparkles className="w-4 h-4 text-cyan-400" />
+          <div className="flex items-center justify-between text-slate-400">
+            <span className="text-xs font-bold uppercase tracking-wider text-amber-300">Commission Prediction</span>
+            <div className="p-1.5 rounded-lg bg-amber-500/15 text-amber-400">
+              <Target className="w-4 h-4" />
+            </div>
           </div>
-          <div className="text-2xl font-bold text-cyan-400 mt-2 font-mono">
+          <div className="text-2xl font-bold font-mono text-amber-400 mt-2">
             ${Math.round(predictedCommission).toLocaleString()}
           </div>
-          <div className="text-[11px] text-slate-400 mt-1">
-            Total potential commission across pipeline
+          <div className="text-xs text-slate-400 mt-1">
+            Active pipeline deals at expected fee %
           </div>
         </div>
 
+        {/* Card 2: TOTAL FUNDED */}
         <div className="bg-[#0e1c38] border border-blue-900/60 p-4.5 rounded-2xl">
-          <div className="flex items-center justify-between text-xs text-blue-300/80 font-medium">
-            <span>TO BE COLLECTED</span>
-            <Clock className="w-4 h-4 text-amber-400" />
+          <div className="flex items-center justify-between text-slate-400">
+            <span className="text-xs font-bold uppercase tracking-wider text-emerald-400">Total Funded Capital</span>
+            <div className="p-1.5 rounded-lg bg-emerald-500/15 text-emerald-400">
+              <DollarSign className="w-4 h-4" />
+            </div>
           </div>
-          <div className="text-2xl font-bold text-amber-400 mt-2 font-mono">
+          <div className="text-2xl font-bold font-mono text-emerald-400 mt-2">
+            ${Math.round(totalFundedVolume).toLocaleString()}
+          </div>
+          <div className="text-xs text-slate-400 mt-1">
+            {filteredDeals.filter((d) => d.status === 'FUNDED').length} funded deals
+          </div>
+        </div>
+
+        {/* Card 3: COMMISSION TO BE COLLECTED */}
+        <div className="bg-[#0e1c38] border border-blue-900/60 p-4.5 rounded-2xl">
+          <div className="flex items-center justify-between text-slate-400">
+            <span className="text-xs font-bold uppercase tracking-wider text-purple-300">Commission To Be Collected</span>
+            <div className="p-1.5 rounded-lg bg-purple-500/15 text-purple-300">
+              <Wallet className="w-4 h-4" />
+            </div>
+          </div>
+          <div className="text-2xl font-bold font-mono text-purple-300 mt-2">
             ${Math.round(uncollectedCommission).toLocaleString()}
           </div>
-          <div className="text-[11px] text-slate-400 mt-1">
-            Funded deals awaiting lender payout
+          <div className="text-xs text-slate-400 mt-1">
+            Outstanding balance on funded deals
           </div>
         </div>
 
+        {/* Card 4: COMMISSION COLLECTED */}
         <div className="bg-[#0e1c38] border border-blue-900/60 p-4.5 rounded-2xl">
-          <div className="flex items-center justify-between text-xs text-blue-300/80 font-medium">
-            <span>COMMISSION COLLECTED</span>
-            <CheckCircle2 className="w-4 h-4 text-emerald-400" />
+          <div className="flex items-center justify-between text-slate-400">
+            <span className="text-xs font-bold uppercase tracking-wider text-teal-300">Commission Collected</span>
+            <div className="p-1.5 rounded-lg bg-teal-500/15 text-teal-400">
+              <CheckCircle2 className="w-4 h-4" />
+            </div>
           </div>
-          <div className="text-2xl font-bold text-emerald-400 mt-2 font-mono">
+          <div className="text-2xl font-bold font-mono text-teal-300 mt-2">
             ${Math.round(collectedCommission).toLocaleString()}
           </div>
-          <div className="text-[11px] text-slate-400 mt-1">
-            Realized cash settled to treasury
-          </div>
-        </div>
-
-        <div className="bg-[#0e1c38] border border-blue-900/60 p-4.5 rounded-2xl">
-          <div className="flex items-center justify-between text-xs text-blue-300/80 font-medium">
-            <span>STACKED POSITIONS VOLUME</span>
-            <Layers className="w-4 h-4 text-purple-400" />
-          </div>
-          <div className="text-2xl font-bold text-purple-300 mt-2 font-mono">
-            ${Math.round(stackedVolume).toLocaleString()}
-          </div>
-          <div className="text-[11px] text-slate-400 mt-1">
-            {stackedDeals.length} stacked multi-tranche positions
+          <div className="text-xs text-slate-400 mt-1">
+            Verified received revenue
           </div>
         </div>
       </div>
 
-      {/* Multi-Product Stacking Architecture Showcase */}
-      <div className="bg-gradient-to-br from-[#0c1933] to-[#081124] border border-purple-900/50 rounded-2xl p-5 shadow-xl">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-4 border-b border-blue-900/40">
-          <div>
-            <h3 className="text-sm font-bold text-slate-100 flex items-center gap-2">
-              <Layers className="w-4 h-4 text-purple-400" />
-              Maple X Multi-Product Stacking Model Performance
-            </h3>
-            <p className="text-xs text-slate-400 mt-0.5">
-              Comprehensive breakdown of Primary 1st Positions vs Multi-Product Stacked 2nd & 3rd Tranches.
-            </p>
+      {/* Multi-Product Stacking Architecture */}
+      <div className="bg-[#0e1c38] border border-blue-900/60 rounded-2xl p-5 shadow-xl">
+        <div className="flex items-center justify-between pb-3 border-b border-blue-900/50">
+          <div className="flex items-center space-x-2">
+            <Layers className="w-4 h-4 text-cyan-400" />
+            <h2 className="text-sm font-bold text-slate-100 uppercase tracking-wider">
+              Multi-Product Deal Stacking Performance
+            </h2>
           </div>
-          <div className="flex items-center gap-2">
-            <span className="text-xs px-2.5 py-1 rounded-lg bg-purple-950/80 border border-purple-800 text-purple-200 font-mono font-bold">
-              {Math.round((stackedVolume / (primaryVolume + stackedVolume || 1)) * 100)}% Stacked Capital Share
-            </span>
-          </div>
+          <span className="text-xs text-cyan-300 font-mono">
+            {stackedDeals.length} of {filteredDeals.length} Deals Stacked ({filteredDeals.length ? Math.round((stackedDeals.length / filteredDeals.length) * 100) : 0}%)
+          </span>
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
@@ -254,77 +224,14 @@ export const CommissionStackingTab: React.FC<CommissionStackingTabProps> = ({
         </div>
       </div>
 
-      {/* Participant Allocation Summary Cards */}
-      <div className="bg-[#0e1c38] border border-blue-900/60 rounded-2xl shadow-xl overflow-hidden">
-        <div className="p-4 sm:p-5 border-b border-blue-900/50 flex items-center justify-between bg-[#0a1428]">
-          <div className="flex items-center space-x-2">
-            <Users className="w-4 h-4 text-cyan-400" />
-            <h2 className="text-sm font-bold text-slate-100 uppercase tracking-wider">
-              Participant Commission Distribution Summary
-            </h2>
-          </div>
-          <span className="text-xs text-slate-400 font-mono">
-            {Object.keys(participantSummary).length} Participants Active
-          </span>
-        </div>
-
-        <div className="p-4 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3.5">
-          {Object.values(participantSummary).map((part) => {
-            const isInternal = part.type === 'Internal Staff';
-            return (
-              <div
-                key={part.name}
-                className="bg-[#091224] p-4 rounded-xl border border-blue-900/40 space-y-2.5"
-              >
-                <div className="flex items-center justify-between">
-                  <div className="font-bold text-slate-100 text-sm flex items-center gap-1.5">
-                    <div
-                      className={`w-6 h-6 rounded-full flex items-center justify-center font-mono font-bold text-[10px] ${
-                        isInternal
-                          ? 'bg-blue-500/20 text-cyan-300 border border-cyan-500/30'
-                          : 'bg-purple-500/20 text-purple-300 border border-purple-500/30'
-                      }`}
-                    >
-                      {part.name.charAt(0)}
-                    </div>
-                    <span>{part.name}</span>
-                  </div>
-                  <span
-                    className={`text-[9px] px-1.5 py-0.5 rounded font-mono uppercase ${
-                      isInternal
-                        ? 'bg-blue-950 text-blue-300 border border-blue-800'
-                        : 'bg-purple-950 text-purple-300 border border-purple-800'
-                    }`}
-                  >
-                    {part.type}
-                  </span>
-                </div>
-
-                <div className="flex items-baseline justify-between pt-1">
-                  <span className="text-xs text-slate-400">Total Allocation:</span>
-                  <span className="text-base font-bold font-mono text-amber-400">
-                    ${Math.round(part.totalDollars).toLocaleString()}
-                  </span>
-                </div>
-
-                <div className="flex items-center justify-between text-[11px] text-slate-400 pt-2 border-t border-blue-900/30">
-                  <span>Collected: <strong className="text-emerald-400 font-mono">${Math.round(part.receivedDollars).toLocaleString()}</strong></span>
-                  <span>Deals: <strong>{part.count}</strong></span>
-                </div>
-              </div>
-            );
-          })}
-        </div>
-      </div>
-
-      {/* Participant Allocation Ledger Table */}
+      {/* Deal-Level Commission & Stacking Ledger */}
       <div className="bg-[#0e1c38] border border-blue-900/60 rounded-2xl shadow-xl overflow-hidden">
         {/* Table Filters & Search Header */}
         <div className="p-4 sm:p-5 border-b border-blue-900/50 flex flex-col md:flex-row md:items-center justify-between gap-3 bg-[#0a1428]">
           <div className="flex items-center space-x-2">
             <DollarSign className="w-4 h-4 text-amber-400" />
             <h2 className="text-sm font-bold text-slate-100">
-              Detailed Commission Participant Ledger ({activeCommissions.length})
+              Deal Commissions & Stacking Ledger ({activeDeals.length})
             </h2>
           </div>
 
@@ -334,7 +241,7 @@ export const CommissionStackingTab: React.FC<CommissionStackingTabProps> = ({
               <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
               <input
                 type="text"
-                placeholder="Search participant, client..."
+                placeholder="Search deal, client, lender..."
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
                 className="w-full pl-8.5 pr-3 py-1.5 bg-[#050b17] border border-blue-900/70 rounded-xl text-xs text-slate-200 placeholder-slate-500 focus:outline-hidden focus:border-cyan-500"
@@ -349,23 +256,9 @@ export const CommissionStackingTab: React.FC<CommissionStackingTabProps> = ({
                 aria-label="Filter commission status"
                 className="bg-transparent text-slate-200 text-xs focus:outline-hidden cursor-pointer"
               >
-                <option value="ALL" className="bg-[#0e1c38]">All Statuses</option>
-                <option value="PENDING" className="bg-[#0e1c38]">Pending Only</option>
-                <option value="RECEIVED" className="bg-[#0e1c38]">Received Only</option>
-              </select>
-            </div>
-
-            {/* Type Filter */}
-            <div className="flex items-center space-x-1 bg-[#050b17] border border-blue-900/70 rounded-xl px-2.5 py-1 text-xs">
-              <select
-                value={typeFilter}
-                onChange={(e) => setTypeFilter(e.target.value as any)}
-                aria-label="Filter participant type"
-                className="bg-transparent text-slate-200 text-xs focus:outline-hidden cursor-pointer"
-              >
-                <option value="ALL" className="bg-[#0e1c38]">All Roles</option>
-                <option value="INTERNAL" className="bg-[#0e1c38]">Internal Staff</option>
-                <option value="PARTNER" className="bg-[#0e1c38]">Referral Partner</option>
+                <option value="ALL" className="bg-[#0e1c38]">All Commissions</option>
+                <option value="PENDING" className="bg-[#0e1c38]">Pending / Uncollected</option>
+                <option value="COLLECTED" className="bg-[#0e1c38]">Collected Only</option>
               </select>
             </div>
           </div>
@@ -376,85 +269,89 @@ export const CommissionStackingTab: React.FC<CommissionStackingTabProps> = ({
           <table className="w-full text-left text-xs">
             <thead className="bg-[#070e20] text-slate-400 border-b border-blue-900/40 uppercase font-mono text-[10px] tracking-wider">
               <tr>
-                <th className="py-3 px-4">Participant & Role</th>
-                <th className="py-3 px-4">Type</th>
-                <th className="py-3 px-4">Deal ID & Client</th>
-                <th className="py-3 px-4 text-right">Deal Capital</th>
-                <th className="py-3 px-4 text-right">Points (%)</th>
-                <th className="py-3 px-4 text-right">Commission ($)</th>
-                <th className="py-3 px-4">Settlement Status</th>
+                <th className="py-3 px-4">Deal ID & Position</th>
+                <th className="py-3 px-4">Client / Business</th>
+                <th className="py-3 px-4">Product</th>
+                <th className="py-3 px-4">Lender</th>
+                <th className="py-3 px-4 text-right">Funded Amount</th>
+                <th className="py-3 px-4 text-right">Fee Rate (%)</th>
+                <th className="py-3 px-4 text-right">Expected Commission</th>
+                <th className="py-3 px-4">Commission Status</th>
                 <th className="py-3 px-4 text-center">Action</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-blue-900/30 font-sans">
-              {activeCommissions.length === 0 ? (
+              {activeDeals.length === 0 ? (
                 <tr>
-                  <td colSpan={8} className="py-8 text-center text-slate-400 text-xs">
-                    No commission allocations found matching the current criteria.
+                  <td colSpan={9} className="py-8 text-center text-slate-400 text-xs">
+                    No deals found matching the current criteria.
                   </td>
                 </tr>
               ) : (
-                activeCommissions.map((cp) => {
-                  const deal = dealMap.get(cp.dealId);
-                  const isReceived = cp.status === 'RECEIVED';
-                  const isUpdating = updatingId === cp.id;
+                activeDeals.map((deal) => {
+                  const amt = Number(deal.fundingAmount) || 0;
+                  const pct = Number(deal.percentage) || 0;
+                  const comm = (amt * pct) / 100;
+                  const isCollected = deal.commissionStatus === 'COLLECTED';
+                  const isUpdating = updatingId === deal.id;
 
                   return (
-                    <tr key={cp.id} className="hover:bg-blue-950/40 transition-colors">
-                      {/* Participant */}
+                    <tr key={deal.id} className="hover:bg-blue-950/40 transition-colors">
+                      {/* Deal ID & Position */}
                       <td className="py-3 px-4">
-                        <div className="font-bold text-slate-100">{cp.name}</div>
-                        <div className="text-[11px] text-slate-400">{cp.role || 'Participant'}</div>
+                        <div className="font-mono text-slate-300 font-bold">#{deal.id.slice(-6)}</div>
+                        <div className="text-[10px] text-slate-400">
+                          {deal.isStacked ? (
+                            <span className="text-purple-300 font-semibold">Stacked Position</span>
+                          ) : (
+                            <span className="text-slate-400">Primary (1st)</span>
+                          )}
+                        </div>
                       </td>
 
-                      {/* Type */}
-                      <td className="py-3 px-4">
-                        <span
-                          className={`text-[10px] px-2 py-0.5 rounded font-mono ${
-                            cp.type === 'Internal Staff'
-                              ? 'bg-blue-950 text-cyan-300 border border-blue-800'
-                              : 'bg-purple-950 text-purple-300 border border-purple-800'
-                          }`}
-                        >
-                          {cp.type || 'Internal Staff'}
-                        </span>
-                      </td>
-
-                      {/* Deal & Client */}
+                      {/* Client / Business */}
                       <td className="py-3 px-4">
                         <div
-                          onClick={() => deal?.clientId && onSelectClient && onSelectClient(deal.clientId)}
-                          className="font-semibold text-slate-200 hover:text-amber-400 cursor-pointer flex items-center gap-1"
+                          onClick={() => deal.clientId && onSelectClient && onSelectClient(deal.clientId)}
+                          className="font-bold text-slate-100 hover:text-amber-400 cursor-pointer flex items-center gap-1"
                         >
-                          <span>{deal?.clientName || 'Unknown Client'}</span>
+                          <span>{deal.clientName || 'Unknown Client'}</span>
                           <ExternalLink className="w-3 h-3 text-slate-500" />
                         </div>
-                        <div className="text-[11px] text-slate-400 font-mono">
-                          Deal #{cp.dealId.slice(-6)}
-                        </div>
+                        <div className="text-[11px] text-slate-400">{deal.businessName || 'Direct Account'}</div>
                       </td>
 
-                      {/* Deal Funding Amount */}
-                      <td className="py-3 px-4 text-right font-mono text-slate-200">
-                        ${Number(deal?.fundingAmount || 0).toLocaleString()}
+                      {/* Product */}
+                      <td className="py-3 px-4">
+                        <ProductBadge product={deal.product} />
                       </td>
 
-                      {/* Points */}
-                      <td className="py-3 px-4 text-right font-mono font-bold text-cyan-400">
-                        {Number(cp.points || 0).toFixed(3)}%
+                      {/* Lender */}
+                      <td className="py-3 px-4 text-slate-300">
+                        {deal.lenderName || 'Direct'}
                       </td>
 
-                      {/* Commission Dollar Amount */}
-                      <td className="py-3 px-4 text-right font-mono font-bold text-amber-400 text-sm">
-                        ${Number(cp.dollarAmount || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                      {/* Funded Amount */}
+                      <td className="py-3 px-4 text-right font-mono font-bold text-slate-100">
+                        ${amt.toLocaleString()}
+                      </td>
+
+                      {/* Fee Rate */}
+                      <td className="py-3 px-4 text-right font-mono font-bold text-amber-400">
+                        {pct.toFixed(2)}%
+                      </td>
+
+                      {/* Expected Commission */}
+                      <td className="py-3 px-4 text-right font-mono font-bold text-amber-300 text-sm">
+                        ${comm.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                       </td>
 
                       {/* Status */}
                       <td className="py-3 px-4">
-                        {isReceived ? (
+                        {isCollected ? (
                           <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-950/80 border border-emerald-500/40 text-emerald-300 font-mono">
                             <CheckCircle2 className="w-3 h-3 text-emerald-400" />
-                            RECEIVED
+                            COLLECTED
                           </span>
                         ) : (
                           <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-950/80 border border-amber-500/40 text-amber-300 font-mono">
@@ -466,17 +363,25 @@ export const CommissionStackingTab: React.FC<CommissionStackingTabProps> = ({
 
                       {/* Action */}
                       <td className="py-3 px-4 text-center">
-                        <button
-                          disabled={isUpdating}
-                          onClick={() => handleToggleReceived(cp)}
-                          className={`px-2.5 py-1 rounded-lg text-[11px] font-bold transition-all border ${
-                            isReceived
-                              ? 'bg-blue-950 hover:bg-amber-950/60 text-slate-400 border-blue-900 hover:text-amber-300'
-                              : 'bg-emerald-600 hover:bg-emerald-500 text-white border-emerald-500 shadow-md shadow-emerald-950'
-                          }`}
-                        >
-                          {isUpdating ? 'Saving...' : isReceived ? 'Revert to Pending' : 'Mark Received'}
-                        </button>
+                        <div className="flex items-center justify-center gap-2">
+                          <button
+                            disabled={isUpdating}
+                            onClick={() => handleToggleDealCommission(deal)}
+                            className={`px-2.5 py-1 rounded-lg text-[11px] font-bold transition-all border ${
+                              isCollected
+                                ? 'bg-blue-950 hover:bg-amber-950/60 text-slate-400 border-blue-900 hover:text-amber-300'
+                                : 'bg-emerald-600 hover:bg-emerald-500 text-white border-emerald-500 shadow-md shadow-emerald-950'
+                            }`}
+                          >
+                            {isUpdating ? 'Saving...' : isCollected ? 'Mark Pending' : 'Mark Collected'}
+                          </button>
+                          <button
+                            onClick={() => deal.clientId && onSelectClient && onSelectClient(deal.clientId)}
+                            className="px-2.5 py-1 rounded-lg bg-blue-900/40 hover:bg-blue-800 text-cyan-300 text-[11px] font-semibold border border-blue-800 transition-colors"
+                          >
+                            Open File
+                          </button>
+                        </div>
                       </td>
                     </tr>
                   );

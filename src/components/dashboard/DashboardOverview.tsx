@@ -564,11 +564,12 @@ export const DashboardOverview: React.FC<DashboardOverviewProps> = ({
       ) : (
         <>
           {/* ========================================================================= */}
-          {/* 2. PRIMARY KPI ROW (5 CARDS) */}
+          {/* 2. PRIMARY KPI ROW (5 CARDS IN EXACT REQUIRED ORDER) */}
           {/* ========================================================================= */}
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3.5">
             {/* Card 1: ACTIVE PIPELINE */}
             <div
+              id="kpi-card-active-pipeline"
               onClick={() => setDrilldownMetric('ACTIVE_PIPELINE')}
               className="bg-[#0e1c38] border border-blue-900/70 hover:border-cyan-500/70 p-4.5 rounded-2xl shadow-lg cursor-pointer transition-all duration-200 hover:-translate-y-0.5 hover:shadow-cyan-500/10 group flex flex-col justify-between"
             >
@@ -593,41 +594,16 @@ export const DashboardOverview: React.FC<DashboardOverviewProps> = ({
               </div>
             </div>
 
-            {/* Card 2: REQUESTED FUNDING */}
+            {/* Card 2: TOTAL FUNDED */}
             <div
-              onClick={() => setDrilldownMetric('REQUESTED_FUNDING')}
-              className="bg-[#0e1c38] border border-blue-900/70 hover:border-blue-400/70 p-4.5 rounded-2xl shadow-lg cursor-pointer transition-all duration-200 hover:-translate-y-0.5 hover:shadow-blue-500/10 group flex flex-col justify-between"
-            >
-              <div>
-                <div className="flex items-center justify-between">
-                  <span className="text-[11px] font-bold tracking-wider text-blue-300 uppercase">
-                    Requested Funding
-                  </span>
-                  <div className="p-1.5 rounded-xl bg-blue-500/15 border border-blue-500/30 text-blue-400 group-hover:scale-110 transition-transform">
-                    <Inbox className="w-4 h-4" />
-                  </div>
-                </div>
-                <div className="text-2xl font-bold text-slate-100 mt-2.5 font-mono tracking-tight group-hover:text-blue-300 transition-colors">
-                  ${totalRequestedFunding.toLocaleString()}
-                </div>
-              </div>
-              <div className="mt-2.5 pt-2 border-t border-blue-900/40 flex items-center justify-between text-[11px] text-blue-300/90 font-medium">
-                <span>Total inbound demand</span>
-                <span className="flex items-center gap-0.5 text-[10px] text-blue-300 font-semibold group-hover:underline">
-                  View <ChevronRight className="w-3 h-3" />
-                </span>
-              </div>
-            </div>
-
-            {/* Card 3: FUNDED THIS MONTH */}
-            <div
+              id="kpi-card-total-funded"
               onClick={() => setDrilldownMetric('TOTAL_FUNDED')}
               className="bg-[#0e1c38] border border-blue-900/70 hover:border-emerald-500/70 p-4.5 rounded-2xl shadow-lg cursor-pointer transition-all duration-200 hover:-translate-y-0.5 hover:shadow-emerald-500/10 group flex flex-col justify-between"
             >
               <div>
                 <div className="flex items-center justify-between">
                   <span className="text-[11px] font-bold tracking-wider text-emerald-400 uppercase">
-                    Funded This Month
+                    Total Funded
                   </span>
                   <div className="p-1.5 rounded-xl bg-emerald-500/15 border border-emerald-500/30 text-emerald-400 group-hover:scale-110 transition-transform">
                     <DollarSign className="w-4 h-4" />
@@ -645,27 +621,55 @@ export const DashboardOverview: React.FC<DashboardOverviewProps> = ({
               </div>
             </div>
 
-            {/* Card 4: EXPECTED COMMISSION */}
+            {/* Card 3: COMMISSION PREDICTION */}
             <div
+              id="kpi-card-commission-prediction"
               onClick={() => setDrilldownMetric('COMMISSION_PREDICTION')}
               className="bg-[#0e1c38] border border-blue-900/70 hover:border-amber-500/70 p-4.5 rounded-2xl shadow-lg cursor-pointer transition-all duration-200 hover:-translate-y-0.5 hover:shadow-amber-500/10 group flex flex-col justify-between"
             >
               <div>
                 <div className="flex items-center justify-between">
                   <span className="text-[11px] font-bold tracking-wider text-amber-300 uppercase">
-                    Expected Commission
+                    Commission Prediction
                   </span>
                   <div className="p-1.5 rounded-xl bg-amber-500/15 border border-amber-500/30 text-amber-400 group-hover:scale-110 transition-transform">
                     <Target className="w-4 h-4" />
                   </div>
                 </div>
                 <div className="text-2xl font-bold text-amber-400 mt-2.5 font-mono tracking-tight group-hover:text-amber-300 transition-colors">
-                  ${commissionExpected.toLocaleString()}
+                  ${commissionPrediction.toLocaleString()}
                 </div>
               </div>
               <div className="mt-2.5 pt-2 border-t border-blue-900/40 flex items-center justify-between text-[11px] text-amber-300/90 font-medium">
-                <span>Active & funded deals</span>
+                <span>Active Pipeline × Rate %</span>
                 <span className="flex items-center gap-0.5 text-[10px] text-amber-300 font-semibold group-hover:underline">
+                  View <ChevronRight className="w-3 h-3" />
+                </span>
+              </div>
+            </div>
+
+            {/* Card 4: COMMISSION TO BE COLLECTED */}
+            <div
+              id="kpi-card-commission-to-be-collected"
+              onClick={() => setDrilldownMetric('COMMISSION_TO_BE_COLLECTED')}
+              className="bg-[#0e1c38] border border-blue-900/70 hover:border-purple-500/70 p-4.5 rounded-2xl shadow-lg cursor-pointer transition-all duration-200 hover:-translate-y-0.5 hover:shadow-purple-500/10 group flex flex-col justify-between"
+            >
+              <div>
+                <div className="flex items-center justify-between">
+                  <span className="text-[11px] font-bold tracking-wider text-purple-300 uppercase">
+                    Commission To Be Collected
+                  </span>
+                  <div className="p-1.5 rounded-xl bg-purple-500/15 border border-purple-500/30 text-purple-300 group-hover:scale-110 transition-transform">
+                    <Wallet className="w-4 h-4" />
+                  </div>
+                </div>
+                <div className="text-2xl font-bold text-purple-300 mt-2.5 font-mono tracking-tight group-hover:text-purple-200 transition-colors">
+                  ${commissionToBeCollected.toLocaleString()}
+                </div>
+              </div>
+              <div className="mt-2.5 pt-2 border-t border-blue-900/40 flex items-center justify-between text-[11px] text-purple-300/90 font-medium">
+                <span>{uncollectedFundedDeals.length} funded deal{uncollectedFundedDeals.length === 1 ? '' : 's'} with balance</span>
+                <span className="flex items-center gap-0.5 text-[10px] text-purple-300 font-semibold group-hover:underline">
                   View <ChevronRight className="w-3 h-3" />
                 </span>
               </div>
@@ -673,6 +677,7 @@ export const DashboardOverview: React.FC<DashboardOverviewProps> = ({
 
             {/* Card 5: COMMISSION COLLECTED */}
             <div
+              id="kpi-card-commission-collected"
               onClick={() => setDrilldownMetric('COMMISSION_COLLECTED')}
               className="bg-[#0e1c38] border border-blue-900/70 hover:border-teal-500/70 p-4.5 rounded-2xl shadow-lg cursor-pointer transition-all duration-200 hover:-translate-y-0.5 hover:shadow-teal-500/10 group flex flex-col justify-between"
             >
@@ -1800,57 +1805,80 @@ export const DashboardOverview: React.FC<DashboardOverviewProps> = ({
                 {drilldownMetric === 'COMMISSION_TO_BE_COLLECTED' && (
                   <div>
                     {uncollectedFundedDeals.length === 0 ? (
-                      <div className="py-12 text-center text-slate-400">
-                        All commissions on funded deals have been fully collected! ($0 remaining).
+                      <div className="py-12 text-center text-slate-400 space-y-2">
+                        <CheckCircle2 className="w-8 h-8 text-emerald-400 mx-auto" />
+                        <div className="text-sm font-bold text-slate-200">No outstanding commissions to be collected.</div>
+                        <div className="text-xs text-slate-400">All funded commissions have been fully collected.</div>
                       </div>
                     ) : (
-                      <table className="w-full text-left">
-                        <thead>
-                          <tr className="border-b border-blue-900/60 text-slate-400 font-semibold text-[11px]">
-                            <th className="pb-2">Client / Deal</th>
-                            <th className="pb-2 text-right">Funded Amount</th>
-                            <th className="pb-2 text-right">Expected Commission</th>
-                            <th className="pb-2 text-right">Already Collected</th>
-                            <th className="pb-2 text-right">Remaining to Collect</th>
-                            <th className="pb-2 text-right">Actions</th>
-                          </tr>
-                        </thead>
-                        <tbody className="divide-y divide-blue-900/40 text-slate-200">
-                          {uncollectedFundedDeals.map((deal) => (
-                            <tr key={deal.id} className="hover:bg-blue-900/20">
-                              <td className="py-3">
-                                <div className="font-bold text-slate-100">{deal.clientName}</div>
-                                <div className="text-[10px] text-slate-400">
-                                  {deal.product} • {deal.lenderName || 'Direct'}
-                                </div>
-                              </td>
-                              <td className="py-3 text-right font-mono text-slate-200">
-                                ${Number(deal.fundingAmount).toLocaleString()}
-                              </td>
-                              <td className="py-3 text-right font-mono text-slate-300">
-                                ${deal.expectedCommission.toLocaleString()} ({deal.percentage}%)
-                              </td>
-                              <td className="py-3 text-right font-mono text-emerald-400">
-                                ${deal.alreadyCollected.toLocaleString()}
-                              </td>
-                              <td className="py-3 text-right font-mono font-bold text-purple-300">
-                                ${deal.remainingToCollect.toLocaleString()}
-                              </td>
-                              <td className="py-3 text-right">
-                                <button
-                                  onClick={() => {
-                                    setDrilldownMetric(null);
-                                    handleClientClick(deal.clientId, 'clients');
-                                  }}
-                                  className="px-2.5 py-1 rounded bg-blue-600/30 hover:bg-blue-600 text-blue-200 hover:text-white font-semibold text-[11px] transition-colors"
-                                >
-                                  Open File
-                                </button>
-                              </td>
+                      <div className="overflow-x-auto">
+                        <table className="w-full text-left">
+                          <thead>
+                            <tr className="border-b border-blue-900/60 text-slate-400 font-semibold text-[11px]">
+                              <th className="pb-2">Client Name / Business</th>
+                              <th className="pb-2">Deal ID / Position</th>
+                              <th className="pb-2">Product</th>
+                              <th className="pb-2">Lender</th>
+                              <th className="pb-2 text-right">Funded Amount</th>
+                              <th className="pb-2 text-right">Commission %</th>
+                              <th className="pb-2 text-right">Expected Commission</th>
+                              <th className="pb-2 text-right">Commission Collected</th>
+                              <th className="pb-2 text-right">Remaining Balance</th>
+                              <th className="pb-2 text-center">Commission Status</th>
+                              <th className="pb-2 text-right">Actions</th>
                             </tr>
-                          ))}
-                        </tbody>
-                      </table>
+                          </thead>
+                          <tbody className="divide-y divide-blue-900/40 text-slate-200 text-xs">
+                            {uncollectedFundedDeals.map((deal) => (
+                              <tr key={deal.id} className="hover:bg-blue-900/20">
+                                <td className="py-3">
+                                  <div className="font-bold text-slate-100">{deal.clientName}</div>
+                                  <div className="text-[10px] text-slate-400">{deal.businessName || 'Direct Account'}</div>
+                                </td>
+                                <td className="py-3 font-mono text-[11px] text-slate-300">
+                                  {deal.id.substring(0, 10)}
+                                  {deal.isStacked && <span className="ml-1 px-1 py-0.2 rounded bg-purple-900/60 text-purple-200 text-[9px]">Stacked</span>}
+                                </td>
+                                <td className="py-3">
+                                  <ProductBadge product={deal.product} />
+                                </td>
+                                <td className="py-3 text-slate-300">{deal.lenderName || 'Direct'}</td>
+                                <td className="py-3 text-right font-mono text-slate-200 font-bold">
+                                  ${Number(deal.fundingAmount).toLocaleString()}
+                                </td>
+                                <td className="py-3 text-right font-mono text-amber-400 font-bold">
+                                  {deal.percentage}%
+                                </td>
+                                <td className="py-3 text-right font-mono text-slate-300">
+                                  ${deal.expectedCommission.toLocaleString()}
+                                </td>
+                                <td className="py-3 text-right font-mono text-emerald-400">
+                                  ${deal.alreadyCollected.toLocaleString()}
+                                </td>
+                                <td className="py-3 text-right font-mono font-bold text-purple-300">
+                                  ${deal.remainingToCollect.toLocaleString()}
+                                </td>
+                                <td className="py-3 text-center">
+                                  <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-blue-950 text-blue-300 border border-blue-800 font-bold">
+                                    {deal.commissionStatus || 'PENDING'}
+                                  </span>
+                                </td>
+                                <td className="py-3 text-right">
+                                  <button
+                                    onClick={() => {
+                                      setDrilldownMetric(null);
+                                      handleClientClick(deal.clientId, 'clients');
+                                    }}
+                                    className="px-2.5 py-1 rounded bg-blue-600/30 hover:bg-blue-600 text-blue-200 hover:text-white font-semibold text-[11px] transition-colors"
+                                  >
+                                    Open Deal
+                                  </button>
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
                     )}
                   </div>
                 )}

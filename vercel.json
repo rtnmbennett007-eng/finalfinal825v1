@@ -2,7 +2,7 @@
   "rewrites": [
     {
       "source": "/api/health/drive",
-      "destination": "/api/health"
+      "destination": "/api/drive"
     },
     {
       "source": "/api/health",

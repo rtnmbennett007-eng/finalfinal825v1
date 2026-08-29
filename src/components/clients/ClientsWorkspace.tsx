@@ -33,12 +33,14 @@ interface ClientsWorkspaceProps {
   onOpenNewClientModal: () => void;
   isNewClientModalOpen: boolean;
   setIsNewClientModalOpen: (open: boolean) => void;
+  onNavigateToTab?: (tab: string) => void;
 }
 
 export const ClientsWorkspace: React.FC<ClientsWorkspaceProps> = ({
   onOpenNewClientModal,
   isNewClientModalOpen,
   setIsNewClientModalOpen,
+  onNavigateToTab,
 }) => {
   const {
     clients,
@@ -97,6 +99,7 @@ export const ClientsWorkspace: React.FC<ClientsWorkspaceProps> = ({
         <ClientDetailView
           clientId={selectedClientId}
           onBack={() => setSelectedClientId(null)}
+          onNavigateToTab={onNavigateToTab}
         />
       </ErrorBoundary>
     );

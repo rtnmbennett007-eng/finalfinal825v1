@@ -13,12 +13,15 @@ import {
 } from '../../types';
 import { ApplicantRiskSummaryTab } from './ApplicantRiskSummaryTab';
 import { BankStatementAnalysisTab } from './BankStatementAnalysisTab';
+import { CreditAnalysisTab } from './CreditAnalysisTab';
+import { DebtDscrTab } from './DebtDscrTab';
 import { RiskFlagsTab } from './RiskFlagsTab';
 import { UnderwritingDocumentsTab } from './UnderwritingDocumentsTab';
 import { ConflictCenterTab } from './ConflictCenterTab';
 import { UnderwritingChecklistTab } from './UnderwritingChecklistTab';
 import { SubmissionPackageTab } from './SubmissionPackageTab';
 import { ReadyToFundTab } from './ReadyToFundTab';
+import { UnderwritingAuditTrailTab } from './UnderwritingAuditTrailTab';
 import { ReadyForUnderwritingModal } from './ReadyForUnderwritingModal';
 import {
   generateRiskFlags,
@@ -45,6 +48,9 @@ import {
   UserCheck,
   Layers,
   FileCheck2,
+  History,
+  CreditCard,
+  Calculator,
 } from 'lucide-react';
 
 interface UnderwritingCommandCenterProps {
@@ -74,12 +80,15 @@ export const UnderwritingCommandCenter: React.FC<UnderwritingCommandCenterProps>
   const [activeSubTab, setActiveSubTab] = useState<
     | 'RISK_SUMMARY'
     | 'BANK_ANALYSIS'
+    | 'CREDIT_ANALYSIS'
+    | 'DEBT_DSCR'
     | 'RISK_FLAGS'
     | 'DOCUMENTS'
     | 'CONFLICTS'
     | 'CHECKLIST'
     | 'SUBMISSION'
     | 'READY_TO_FUND'
+    | 'AUDIT_TRAIL'
   >('RISK_SUMMARY');
 
   const [loading, setLoading] = useState(false);
@@ -265,6 +274,33 @@ export const UnderwritingCommandCenter: React.FC<UnderwritingCommandCenterProps>
     }
   };
 
+  const handleAddAuditEntry = async (entry: { action: string; details: string; staffMember: string }) => {
+    const newLogItem = {
+      id: `audit_${Date.now()}`,
+      timestamp: new Date().toISOString(),
+      action: entry.action,
+      details: entry.details,
+      staffMember: entry.staffMember,
+      metadata: { dealId: deal.id, clientId: client.id },
+    };
+    const existingAudit = evaluation?.auditTrail || [];
+    const updatedAudit = [newLogItem, ...existingAudit];
+    await handleSaveEvaluation({
+      ...(evaluation || {
+        id: `eval_${deal.id}`,
+        clientId: client.id,
+        dealId: deal.id,
+        decision: (deal as any).decision || 'PENDING',
+        underwriterNotes: (deal as any).underwriterNotes || '',
+        conditions: [],
+        auditTrail: [],
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      }),
+      auditTrail: updatedAudit,
+    });
+  };
+
   const handleCreateSubmissionPackage = async (packageData: any) => {
     const dealId = deal.id || deal.dealId;
     const res = await fetch(`/api/underwriting/deal/${dealId}/submission-package`, {
@@ -324,7 +360,6 @@ export const UnderwritingCommandCenter: React.FC<UnderwritingCommandCenterProps>
   };
 
   const handleTriggerAiScan = async (docId?: string) => {
-    // Calls document AI extractor endpoint
     try {
       await fetch(`/api/documents/scan-ai`, {
         method: 'POST',
@@ -512,31 +547,55 @@ export const UnderwritingCommandCenter: React.FC<UnderwritingCommandCenterProps>
       <div className="flex items-center gap-1 bg-slate-900 border border-slate-800 p-1.5 rounded-xl overflow-x-auto">
         <button
           onClick={() => setActiveSubTab('RISK_SUMMARY')}
-          className={`px-3.5 py-2 text-xs font-bold rounded-lg transition-all flex items-center gap-1.5 whitespace-nowrap ${
+          className={`px-3 py-2 text-xs font-bold rounded-lg transition-all flex items-center gap-1.5 whitespace-nowrap ${
             activeSubTab === 'RISK_SUMMARY'
               ? 'bg-amber-500 text-slate-950'
               : 'text-slate-400 hover:text-white hover:bg-slate-800'
           }`}
         >
           <ShieldCheck className="w-3.5 h-3.5" />
-          Applicant & Risk Profile
+          Executive Summary
         </button>
 
         <button
           onClick={() => setActiveSubTab('BANK_ANALYSIS')}
-          className={`px-3.5 py-2 text-xs font-bold rounded-lg transition-all flex items-center gap-1.5 whitespace-nowrap ${
+          className={`px-3 py-2 text-xs font-bold rounded-lg transition-all flex items-center gap-1.5 whitespace-nowrap ${
             activeSubTab === 'BANK_ANALYSIS'
               ? 'bg-amber-500 text-slate-950'
               : 'text-slate-400 hover:text-white hover:bg-slate-800'
           }`}
         >
           <Landmark className="w-3.5 h-3.5" />
-          4-Mo Bank Analysis
+          Bank & Financials
+        </button>
+
+        <button
+          onClick={() => setActiveSubTab('CREDIT_ANALYSIS')}
+          className={`px-3 py-2 text-xs font-bold rounded-lg transition-all flex items-center gap-1.5 whitespace-nowrap ${
+            activeSubTab === 'CREDIT_ANALYSIS'
+              ? 'bg-amber-500 text-slate-950'
+              : 'text-slate-400 hover:text-white hover:bg-slate-800'
+          }`}
+        >
+          <CreditCard className="w-3.5 h-3.5" />
+          Credit Analysis
+        </button>
+
+        <button
+          onClick={() => setActiveSubTab('DEBT_DSCR')}
+          className={`px-3 py-2 text-xs font-bold rounded-lg transition-all flex items-center gap-1.5 whitespace-nowrap ${
+            activeSubTab === 'DEBT_DSCR'
+              ? 'bg-amber-500 text-slate-950'
+              : 'text-slate-400 hover:text-white hover:bg-slate-800'
+          }`}
+        >
+          <Calculator className="w-3.5 h-3.5" />
+          Debt & DSCR
         </button>
 
         <button
           onClick={() => setActiveSubTab('RISK_FLAGS')}
-          className={`px-3.5 py-2 text-xs font-bold rounded-lg transition-all flex items-center gap-1.5 whitespace-nowrap ${
+          className={`px-3 py-2 text-xs font-bold rounded-lg transition-all flex items-center gap-1.5 whitespace-nowrap ${
             activeSubTab === 'RISK_FLAGS'
               ? 'bg-amber-500 text-slate-950'
               : 'text-slate-400 hover:text-white hover:bg-slate-800'
@@ -553,14 +612,14 @@ export const UnderwritingCommandCenter: React.FC<UnderwritingCommandCenterProps>
 
         <button
           onClick={() => setActiveSubTab('DOCUMENTS')}
-          className={`px-3.5 py-2 text-xs font-bold rounded-lg transition-all flex items-center gap-1.5 whitespace-nowrap ${
+          className={`px-3 py-2 text-xs font-bold rounded-lg transition-all flex items-center gap-1.5 whitespace-nowrap ${
             activeSubTab === 'DOCUMENTS'
               ? 'bg-amber-500 text-slate-950'
               : 'text-slate-400 hover:text-white hover:bg-slate-800'
           }`}
         >
           <FolderArchive className="w-3.5 h-3.5" />
-          Missing Docs & Vault
+          Checklist & Vault
           <span className="px-1.5 py-0.2 rounded-full text-[10px] font-mono bg-slate-800 text-slate-300 ml-1">
             {documents.length}
           </span>
@@ -568,7 +627,7 @@ export const UnderwritingCommandCenter: React.FC<UnderwritingCommandCenterProps>
 
         <button
           onClick={() => setActiveSubTab('CONFLICTS')}
-          className={`px-3.5 py-2 text-xs font-bold rounded-lg transition-all flex items-center gap-1.5 whitespace-nowrap ${
+          className={`px-3 py-2 text-xs font-bold rounded-lg transition-all flex items-center gap-1.5 whitespace-nowrap ${
             activeSubTab === 'CONFLICTS'
               ? 'bg-amber-500 text-slate-950'
               : 'text-slate-400 hover:text-white hover:bg-slate-800'
@@ -585,38 +644,50 @@ export const UnderwritingCommandCenter: React.FC<UnderwritingCommandCenterProps>
 
         <button
           onClick={() => setActiveSubTab('CHECKLIST')}
-          className={`px-3.5 py-2 text-xs font-bold rounded-lg transition-all flex items-center gap-1.5 whitespace-nowrap ${
+          className={`px-3 py-2 text-xs font-bold rounded-lg transition-all flex items-center gap-1.5 whitespace-nowrap ${
             activeSubTab === 'CHECKLIST'
               ? 'bg-amber-500 text-slate-950'
               : 'text-slate-400 hover:text-white hover:bg-slate-800'
           }`}
         >
           <CheckSquare className="w-3.5 h-3.5" />
-          Checklist & Memo
+          Conditions & Decision
         </button>
 
         <button
           onClick={() => setActiveSubTab('SUBMISSION')}
-          className={`px-3.5 py-2 text-xs font-bold rounded-lg transition-all flex items-center gap-1.5 whitespace-nowrap ${
+          className={`px-3 py-2 text-xs font-bold rounded-lg transition-all flex items-center gap-1.5 whitespace-nowrap ${
             activeSubTab === 'SUBMISSION'
               ? 'bg-amber-500 text-slate-950'
               : 'text-slate-400 hover:text-white hover:bg-slate-800'
           }`}
         >
           <Package className="w-3.5 h-3.5" />
-          Submission Package
+          Lender Package
         </button>
 
         <button
           onClick={() => setActiveSubTab('READY_TO_FUND')}
-          className={`px-3.5 py-2 text-xs font-bold rounded-lg transition-all flex items-center gap-1.5 whitespace-nowrap ${
+          className={`px-3 py-2 text-xs font-bold rounded-lg transition-all flex items-center gap-1.5 whitespace-nowrap ${
             activeSubTab === 'READY_TO_FUND'
               ? 'bg-emerald-500 text-slate-950'
               : 'text-emerald-400 hover:bg-slate-800'
           }`}
         >
           <Banknote className="w-3.5 h-3.5" />
-          Ready to Fund (1-Click)
+          Ready to Fund
+        </button>
+
+        <button
+          onClick={() => setActiveSubTab('AUDIT_TRAIL')}
+          className={`px-3 py-2 text-xs font-bold rounded-lg transition-all flex items-center gap-1.5 whitespace-nowrap ${
+            activeSubTab === 'AUDIT_TRAIL'
+              ? 'bg-amber-500 text-slate-950'
+              : 'text-slate-400 hover:text-white hover:bg-slate-800'
+          }`}
+        >
+          <History className="w-3.5 h-3.5" />
+          Audit Trail
         </button>
       </div>
 
@@ -630,6 +701,7 @@ export const UnderwritingCommandCenter: React.FC<UnderwritingCommandCenterProps>
             riskFlags={riskFlags}
             conflicts={conflicts}
             onOpenConflictCenter={() => setActiveSubTab('CONFLICTS')}
+            onNavigateToTab={setActiveTab}
           />
         )}
 
@@ -641,6 +713,27 @@ export const UnderwritingCommandCenter: React.FC<UnderwritingCommandCenterProps>
             documents={documents}
             onUpdateBankAnalysis={handleUpdateBankAnalysis}
             onTriggerAiScan={() => handleTriggerAiScan()}
+          />
+        )}
+
+        {activeSubTab === 'CREDIT_ANALYSIS' && (
+          <CreditAnalysisTab
+            deal={deal}
+            client={client}
+            evaluation={evaluation}
+            onSaveEvaluation={handleSaveEvaluation}
+            onRefresh={fetchCommandCenterData}
+          />
+        )}
+
+        {activeSubTab === 'DEBT_DSCR' && (
+          <DebtDscrTab
+            deal={deal}
+            client={client}
+            bankAnalysis={bankAnalysis}
+            evaluation={evaluation}
+            onSaveEvaluation={handleSaveEvaluation}
+            onRefresh={fetchCommandCenterData}
           />
         )}
 
@@ -707,6 +800,16 @@ export const UnderwritingCommandCenter: React.FC<UnderwritingCommandCenterProps>
             onNavigateToCommissions={() => setActiveTab && setActiveTab('commissions')}
             onNavigateToConflicts={() => setActiveSubTab('CONFLICTS')}
             onNavigateToRiskFlags={() => setActiveSubTab('RISK_FLAGS')}
+          />
+        )}
+
+        {activeSubTab === 'AUDIT_TRAIL' && (
+          <UnderwritingAuditTrailTab
+            deal={deal}
+            client={client}
+            evaluation={evaluation}
+            onAddAuditEntry={handleAddAuditEntry}
+            onRefresh={fetchCommandCenterData}
           />
         )}
       </div>

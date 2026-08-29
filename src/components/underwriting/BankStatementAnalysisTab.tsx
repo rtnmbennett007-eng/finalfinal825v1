@@ -19,7 +19,12 @@ import {
   AlertTriangle,
   FileSpreadsheet,
   CheckCircle,
-  FileText
+  FileText,
+  DollarSign,
+  Calculator,
+  Building2,
+  Plus,
+  Scale,
 } from 'lucide-react';
 import { DocumentAiReviewModal } from '../documents/DocumentAiReviewModal';
 
@@ -45,7 +50,27 @@ export const BankStatementAnalysisTab: React.FC<BankStatementAnalysisTabProps> =
   const [saving, setSaving] = useState(false);
   const [activeReviewDoc, setActiveReviewDoc] = useState<DocumentItem | null>(null);
 
+  // Financial Documents (P&L, Tax Returns, Balance Sheet) State
+  const [showFinancialDocAnalysis, setShowFinancialDocAnalysis] = useState(true);
+  const [grossRevenuePnL, setGrossRevenuePnL] = useState<number>(client.annualRevenue || 540000);
+  const [cogsPnL, setCogsPnL] = useState<number>(Math.round((client.annualRevenue || 540000) * 0.42));
+  const [operatingExpensesPnL, setOperatingExpensesPnL] = useState<number>(Math.round((client.annualRevenue || 540000) * 0.38));
+  const [netIncomePnL, setNetIncomePnL] = useState<number>(
+    (client.annualRevenue || 540000) - Math.round((client.annualRevenue || 540000) * 0.42) - Math.round((client.annualRevenue || 540000) * 0.38)
+  );
+  const [depreciationAddBack, setDepreciationAddBack] = useState<number>(18500);
+  const [officerCompensation, setOfficerCompensation] = useState<number>(75000);
+  const [taxFormType, setTaxFormType] = useState<string>('Form 1120-S (S-Corporation)');
+  const [taxYearReviewed, setTaxYearReviewed] = useState<string>('2024 / 2023');
+
   const bankDocs = documents.filter((d) => (d.category || '').toLowerCase().includes('bank'));
+  const financialDocs = documents.filter(
+    (d) =>
+      (d.category || '').toLowerCase().includes('tax') ||
+      (d.category || '').toLowerCase().includes('profit') ||
+      (d.category || '').toLowerCase().includes('financial') ||
+      (d.category || '').toLowerCase().includes('p&l')
+  );
 
   const handleSave = async () => {
     setSaving(true);
@@ -73,6 +98,8 @@ export const BankStatementAnalysisTab: React.FC<BankStatementAnalysisTabProps> =
     });
   };
 
+  const adjustedCashFlow = netIncomePnL + depreciationAddBack + Math.round(officerCompensation * 0.5);
+
   return (
     <div className="space-y-6" id="bank-statement-analysis-tab">
       {/* 1. Header & Controls */}
@@ -83,73 +110,55 @@ export const BankStatementAnalysisTab: React.FC<BankStatementAnalysisTabProps> =
           </div>
           <div>
             <div className="flex items-center gap-2">
-              <h3 className="text-base font-bold text-white">4-Month Bank Statement Cash Flow Analysis</h3>
+              <h3 className="text-base font-bold text-white">Bank Statement & Financial Document Analysis</h3>
               <span className="px-2 py-0.5 text-[11px] font-semibold rounded bg-slate-800 text-slate-300 border border-slate-700">
                 {formData.statementPeriod || 'Last 4 Months'}
               </span>
             </div>
             <p className="text-xs text-slate-400 mt-0.5">
-              Depository: <span className="text-slate-200 font-medium">{formData.bankName}</span> • Account Holder:{' '}
-              <span className="text-slate-200 font-medium">{formData.accountHolder}</span>
+              Depository: <span className="text-slate-200 font-medium">{formData.bankName || client.businessBank || 'Operating Bank'}</span> • Account Holder:{' '}
+              <span className="text-slate-200 font-medium">{formData.accountHolder || client.businessName}</span>
             </p>
           </div>
         </div>
 
         <div className="flex items-center gap-2 w-full md:w-auto justify-end flex-wrap">
-          <button
-            type="button"
-            id="open-bank-doc-analyzer-btn"
-            onClick={() => {
-              const docToReview = bankDocs.find((d) => Boolean(d.aiExtraction)) || bankDocs[0] || documents[0];
-              if (docToReview) {
-                setActiveReviewDoc(docToReview);
-              } else if (onTriggerAiScan) {
-                onTriggerAiScan();
-              }
-            }}
-            className="px-3.5 py-2 text-xs font-bold rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white shadow-md shadow-indigo-600/20 transition-all flex items-center gap-1.5 cursor-pointer"
-            title="Open Financial Document Analyzer to review extracted bank metrics"
-          >
-            <Sparkles className="w-3.5 h-3.5 text-amber-300" />
-            <span>⚡ Financial Document Analyzer</span>
-          </button>
-
-          {onTriggerAiScan && (
+          {bankDocs.length > 0 && (
             <button
-              onClick={onTriggerAiScan}
-              className="px-3 py-2 text-xs font-semibold rounded-lg bg-purple-950/60 hover:bg-purple-900/80 text-purple-300 border border-purple-700/60 transition-colors flex items-center gap-1.5"
-              title="Rescan uploaded bank statements using Google GenAI Document AI pipeline"
+              type="button"
+              onClick={() => setActiveReviewDoc(bankDocs[0])}
+              className="px-3 py-2 text-xs font-bold rounded-lg bg-purple-600/20 hover:bg-purple-600/30 text-purple-300 border border-purple-500/40 transition-colors flex items-center gap-1.5"
             >
               <Sparkles className="w-3.5 h-3.5 text-purple-400" />
-              AI Re-extract
+              View Vision Extraction ({bankDocs.length} Docs)
             </button>
           )}
 
           {isEditing ? (
             <>
               <button
+                type="button"
                 onClick={() => setIsEditing(false)}
-                className="px-3 py-2 text-xs font-semibold rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 transition-colors"
                 disabled={saving}
+                className="px-3 py-2 text-xs font-semibold rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 transition-colors"
               >
                 Cancel
               </button>
               <button
+                type="button"
                 onClick={handleSave}
-                className="px-4 py-2 text-xs font-semibold rounded-lg bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold transition-colors flex items-center gap-1.5"
                 disabled={saving}
+                className="px-4 py-2 text-xs font-bold rounded-lg bg-amber-500 hover:bg-amber-400 text-slate-950 transition-colors flex items-center gap-1.5"
               >
                 {saving ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <FileCheck2 className="w-3.5 h-3.5" />}
-                Save Ledger
+                Save Analysis
               </button>
             </>
           ) : (
             <button
-              onClick={() => {
-                setFormData(bankAnalysis);
-                setIsEditing(true);
-              }}
-              className="px-3 py-2 text-xs font-semibold rounded-lg bg-slate-800 hover:bg-slate-750 text-slate-200 border border-slate-700 transition-colors flex items-center gap-1.5"
+              type="button"
+              onClick={() => setIsEditing(true)}
+              className="px-3.5 py-2 text-xs font-bold rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 transition-colors"
             >
               Edit Figures
             </button>
@@ -157,200 +166,294 @@ export const BankStatementAnalysisTab: React.FC<BankStatementAnalysisTabProps> =
         </div>
       </div>
 
-      {/* 2. Key Figures Banner */}
-      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
-        <div className="bg-slate-900/90 border border-slate-800 rounded-xl p-3.5">
-          <span className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider block">
-            4-Mo Total Deposits
-          </span>
-          <span className="text-lg font-black text-emerald-400 mt-1 block">
-            ${Number(formData.totalDeposits || 0).toLocaleString()}
-          </span>
-          <span className="text-[11px] text-slate-500">
-            Avg ${Math.round((formData.totalDeposits || 0) / 4).toLocaleString()}/mo
-          </span>
+      {/* 2. Top Metric Cards */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+        {/* Metric 1 */}
+        <div className="bg-slate-900 border border-slate-800 rounded-xl p-4">
+          <div className="flex items-center justify-between text-xs text-slate-400">
+            <span>Avg. Monthly Deposits</span>
+            <TrendingUp className="w-4 h-4 text-emerald-400" />
+          </div>
+          <div className="mt-2">
+            <div className="text-2xl font-bold font-mono text-emerald-400">
+              ${Math.round(formData.totalDeposits / 4).toLocaleString()}
+            </div>
+            <div className="text-[11px] text-slate-500 mt-1 font-mono">
+              Total 4-Mo: ${formData.totalDeposits.toLocaleString()}
+            </div>
+          </div>
         </div>
 
-        <div className="bg-slate-900/90 border border-slate-800 rounded-xl p-3.5">
-          <span className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider block">
-            Avg Daily Balance
-          </span>
-          <span className="text-lg font-black text-white mt-1 block">
-            ${Number(formData.avgDailyBalance || 0).toLocaleString()}
-          </span>
-          <span className="text-[11px] text-slate-500">Across 120 days</span>
+        {/* Metric 2 */}
+        <div className="bg-slate-900 border border-slate-800 rounded-xl p-4">
+          <div className="flex items-center justify-between text-xs text-slate-400">
+            <span>Avg. Daily Balance</span>
+            <Landmark className="w-4 h-4 text-blue-400" />
+          </div>
+          <div className="mt-2">
+            <div className="text-2xl font-bold font-mono text-blue-400">
+              ${formData.avgDailyBalance.toLocaleString()}
+            </div>
+            <div className="text-[11px] text-slate-500 mt-1">Operating Liquidity Ratio</div>
+          </div>
         </div>
 
-        <div className="bg-slate-900/90 border border-slate-800 rounded-xl p-3.5">
-          <span className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider block">
-            NSFs / Returned
-          </span>
-          <span
-            className={`text-lg font-black mt-1 block ${
-              (formData.nsfsCount || 0) > 0 ? 'text-rose-400' : 'text-slate-300'
-            }`}
-          >
-            {formData.nsfsCount || 0} Events
-          </span>
-          <span className="text-[11px] text-slate-500">
-            {(formData.nsfsCount || 0) === 0 ? 'Zero Overdrafts' : 'Needs Letter of Exp'}
-          </span>
+        {/* Metric 3 */}
+        <div className="bg-slate-900 border border-slate-800 rounded-xl p-4">
+          <div className="flex items-center justify-between text-xs text-slate-400">
+            <span>NSF / Overdraft Events</span>
+            <AlertOctagon className="w-4 h-4 text-rose-400" />
+          </div>
+          <div className="mt-2">
+            <div className={`text-2xl font-bold font-mono ${formData.nsfsCount > 0 ? 'text-rose-400' : 'text-slate-100'}`}>
+              {formData.nsfsCount} NSFs
+            </div>
+            <div className="text-[11px] text-slate-500 mt-1">
+              {formData.negativeBalanceDays} Negative Balance Days
+            </div>
+          </div>
         </div>
 
-        <div className="bg-slate-900/90 border border-slate-800 rounded-xl p-3.5">
-          <span className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider block">
-            Negative Days
-          </span>
-          <span
-            className={`text-lg font-black mt-1 block ${
-              (formData.negativeBalanceDays || 0) > 0 ? 'text-amber-400' : 'text-slate-300'
-            }`}
-          >
-            {formData.negativeBalanceDays || 0} Days
-          </span>
-          <span className="text-[11px] text-slate-500">
-            {(formData.negativeBalanceDays || 0) === 0 ? 'Clean Ledger' : 'Below $0.00'}
-          </span>
-        </div>
-
-        <div className="bg-slate-900/90 border border-slate-800 rounded-xl p-3.5">
-          <span className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider block">
-            Monthly ACH Debits
-          </span>
-          <span className="text-lg font-black text-amber-300 mt-1 block">
-            ${Number(formData.financingDebitsTotalMonthly || 0).toLocaleString()}
-          </span>
-          <span className="text-[11px] text-slate-500">
-            {formData.recurringAchObligations?.length || 0} Active Lenders
-          </span>
-        </div>
-
-        <div className="bg-slate-900/90 border border-slate-800 rounded-xl p-3.5">
-          <span className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider block">
-            Deposit Velocity
-          </span>
-          <span className="text-lg font-black text-blue-400 mt-1 block">
-            {formData.depositVelocity || 'Consistent'}
-          </span>
-          <span className="text-[11px] text-slate-500">
-            {formData.cashFlowConsistency || 'Stable'} Flow
-          </span>
+        {/* Metric 4 */}
+        <div className="bg-slate-900 border border-slate-800 rounded-xl p-4">
+          <div className="flex items-center justify-between text-xs text-slate-400">
+            <span>Financing ACH Debits</span>
+            <Layers className="w-4 h-4 text-amber-400" />
+          </div>
+          <div className="mt-2">
+            <div className="text-2xl font-bold font-mono text-amber-400">
+              ${Number(formData.financingDebitsTotalMonthly || 0).toLocaleString()}
+              <span className="text-xs font-normal text-slate-400">/mo</span>
+            </div>
+            <div className="text-[11px] text-slate-500 mt-1">
+              {formData.recurringAchObligations ? formData.recurringAchObligations.length : 0} Active ACH Position(s)
+            </div>
+          </div>
         </div>
       </div>
 
       {/* 3. Monthly Breakdown Table */}
       <div className="bg-slate-900 border border-slate-800 rounded-xl overflow-hidden shadow-sm">
-        <div className="px-5 py-3.5 bg-slate-850 border-b border-slate-800 flex items-center justify-between">
+        <div className="px-5 py-4 bg-slate-850 border-b border-slate-800 flex items-center justify-between">
           <div className="flex items-center gap-2">
-            <FileSpreadsheet className="w-4 h-4 text-emerald-400" />
-            <h4 className="text-sm font-bold text-white">Monthly Statement Ledger</h4>
+            <Calendar className="w-4 h-4 text-amber-400" />
+            <h4 className="text-sm font-bold text-white">4-Month Depository Cash Flow Breakdown</h4>
           </div>
-          <span className="text-xs text-slate-400">
-            Linked to {bankDocs.length} bank document file(s) in Vault
-          </span>
+          <span className="text-xs text-slate-400">Values extracted via Vision AI & Verified</span>
         </div>
 
         <div className="overflow-x-auto">
           <table className="w-full text-left text-xs">
             <thead className="bg-slate-950/70 border-b border-slate-800 text-slate-400 uppercase font-semibold">
               <tr>
-                <th className="py-3 px-4">Statement Period</th>
-                <th className="py-3 px-4">Total Deposits</th>
-                <th className="py-3 px-4">Ending Balance</th>
+                <th className="py-3 px-4">Statement Month</th>
+                <th className="py-3 px-4">Total Deposits ($)</th>
+                <th className="py-3 px-4">Ending Balance ($)</th>
                 <th className="py-3 px-4">Negative Days</th>
-                <th className="py-3 px-4">NSF / Returned</th>
-                <th className="py-3 px-4">Financing ACH</th>
+                <th className="py-3 px-4">NSFs</th>
+                <th className="py-3 px-4">Financing ACH ($)</th>
                 <th className="py-3 px-4">Underwriting Notes</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-800 font-mono">
-              {(formData.monthlyBreakdowns || []).map((month, idx) => (
-                <tr key={idx} className="hover:bg-slate-800/40 transition-colors">
-                  <td className="py-3 px-4 font-sans font-medium text-white">{month.month}</td>
-                  <td className="py-3 px-4 font-bold text-emerald-400">
-                    {isEditing ? (
-                      <input
-                        type="number"
-                        value={month.totalDeposits}
-                        onChange={(e) => handleMonthlyChange(idx, 'totalDeposits', parseFloat(e.target.value) || 0)}
-                        className="w-28 bg-slate-950 border border-slate-700 rounded px-2 py-1 text-xs text-emerald-400"
-                      />
-                    ) : (
-                      `$${Number(month.totalDeposits).toLocaleString()}`
-                    )}
-                  </td>
-                  <td className="py-3 px-4 text-slate-200">
-                    {isEditing ? (
-                      <input
-                        type="number"
-                        value={month.endingBalance}
-                        onChange={(e) => handleMonthlyChange(idx, 'endingBalance', parseFloat(e.target.value) || 0)}
-                        className="w-24 bg-slate-950 border border-slate-700 rounded px-2 py-1 text-xs text-white"
-                      />
-                    ) : (
-                      `$${Number(month.endingBalance).toLocaleString()}`
-                    )}
-                  </td>
-                  <td className="py-3 px-4">
-                    {isEditing ? (
-                      <input
-                        type="number"
-                        value={month.negativeDays}
-                        onChange={(e) => handleMonthlyChange(idx, 'negativeDays', parseInt(e.target.value, 10) || 0)}
-                        className="w-16 bg-slate-950 border border-slate-700 rounded px-2 py-1 text-xs text-amber-400"
-                      />
-                    ) : (
-                      <span className={month.negativeDays > 0 ? 'text-amber-400 font-bold' : 'text-slate-400'}>
-                        {month.negativeDays}
-                      </span>
-                    )}
-                  </td>
-                  <td className="py-3 px-4">
-                    {isEditing ? (
-                      <input
-                        type="number"
-                        value={month.nsfs}
-                        onChange={(e) => handleMonthlyChange(idx, 'nsfs', parseInt(e.target.value, 10) || 0)}
-                        className="w-16 bg-slate-950 border border-slate-700 rounded px-2 py-1 text-xs text-rose-400"
-                      />
-                    ) : (
-                      <span className={month.nsfs > 0 ? 'text-rose-400 font-bold' : 'text-slate-400'}>
-                        {month.nsfs}
-                      </span>
-                    )}
-                  </td>
-                  <td className="py-3 px-4 text-amber-300">
-                    {isEditing ? (
-                      <input
-                        type="number"
-                        value={month.achDebits}
-                        onChange={(e) => handleMonthlyChange(idx, 'achDebits', parseFloat(e.target.value) || 0)}
-                        className="w-24 bg-slate-950 border border-slate-700 rounded px-2 py-1 text-xs text-amber-300"
-                      />
-                    ) : (
-                      `$${Number(month.achDebits || 0).toLocaleString()}`
-                    )}
-                  </td>
-                  <td className="py-3 px-4 font-sans text-slate-400">
-                    {isEditing ? (
-                      <input
-                        type="text"
-                        value={month.notes || ''}
-                        onChange={(e) => handleMonthlyChange(idx, 'notes', e.target.value)}
-                        className="w-full bg-slate-950 border border-slate-700 rounded px-2 py-1 text-xs text-slate-300"
-                      />
-                    ) : (
-                      month.notes || 'Verified by Underwriting'
-                    )}
+              {formData.monthlyBreakdowns && formData.monthlyBreakdowns.length > 0 ? (
+                formData.monthlyBreakdowns.map((month, idx) => (
+                  <tr key={idx} className="hover:bg-slate-800/40 transition-colors">
+                    <td className="py-3 px-4 font-sans font-bold text-white">{month.month}</td>
+                    <td className="py-3 px-4 text-emerald-400 font-bold">
+                      {isEditing ? (
+                        <input
+                          type="number"
+                          value={month.totalDeposits}
+                          onChange={(e) => handleMonthlyChange(idx, 'totalDeposits', parseFloat(e.target.value) || 0)}
+                          className="w-28 bg-slate-950 border border-slate-700 rounded px-2 py-1 text-white"
+                        />
+                      ) : (
+                        `$${month.totalDeposits.toLocaleString()}`
+                      )}
+                    </td>
+                    <td className="py-3 px-4 text-slate-200">
+                      {isEditing ? (
+                        <input
+                          type="number"
+                          value={month.endingBalance}
+                          onChange={(e) => handleMonthlyChange(idx, 'endingBalance', parseFloat(e.target.value) || 0)}
+                          className="w-28 bg-slate-950 border border-slate-700 rounded px-2 py-1 text-white"
+                        />
+                      ) : (
+                        `$${month.endingBalance.toLocaleString()}`
+                      )}
+                    </td>
+                    <td className="py-3 px-4">
+                      {isEditing ? (
+                        <input
+                          type="number"
+                          value={month.negativeDays}
+                          onChange={(e) => handleMonthlyChange(idx, 'negativeDays', parseInt(e.target.value, 10) || 0)}
+                          className="w-16 bg-slate-950 border border-slate-700 rounded px-2 py-1 text-white"
+                        />
+                      ) : (
+                        <span className={month.negativeDays > 0 ? 'text-rose-400 font-bold' : 'text-slate-400'}>
+                          {month.negativeDays}
+                        </span>
+                      )}
+                    </td>
+                    <td className="py-3 px-4">
+                      {isEditing ? (
+                        <input
+                          type="number"
+                          value={month.nsfs}
+                          onChange={(e) => handleMonthlyChange(idx, 'nsfs', parseInt(e.target.value, 10) || 0)}
+                          className="w-16 bg-slate-950 border border-slate-700 rounded px-2 py-1 text-white"
+                        />
+                      ) : (
+                        <span className={month.nsfs > 0 ? 'text-rose-400 font-bold' : 'text-slate-400'}>
+                          {month.nsfs}
+                        </span>
+                      )}
+                    </td>
+                    <td className="py-3 px-4 text-amber-300">
+                      {isEditing ? (
+                        <input
+                          type="number"
+                          value={month.achDebits}
+                          onChange={(e) => handleMonthlyChange(idx, 'achDebits', parseFloat(e.target.value) || 0)}
+                          className="w-24 bg-slate-950 border border-slate-700 rounded px-2 py-1 text-white"
+                        />
+                      ) : (
+                        `$${month.achDebits.toLocaleString()}`
+                      )}
+                    </td>
+                    <td className="py-3 px-4 font-sans text-slate-400">
+                      {isEditing ? (
+                        <input
+                          type="text"
+                          value={month.notes}
+                          onChange={(e) => handleMonthlyChange(idx, 'notes', e.target.value)}
+                          className="w-full bg-slate-950 border border-slate-700 rounded px-2 py-1 text-white font-sans text-xs"
+                        />
+                      ) : (
+                        month.notes
+                      )}
+                    </td>
+                  </tr>
+                ))
+              ) : (
+                <tr>
+                  <td colSpan={7} className="text-center py-6 text-slate-500 font-sans">
+                    No monthly bank statement breakdown available.
                   </td>
                 </tr>
-              ))}
+              )}
             </tbody>
           </table>
         </div>
       </div>
 
-      {/* 4. Recurring ACH Debits & Stacking Positions */}
+      {/* 4. Financial Document Analysis (P&L, Tax Returns, Add-Backs) */}
+      <div className="bg-slate-900 border border-slate-800 rounded-xl p-5 space-y-4">
+        <div className="flex items-center justify-between pb-3 border-b border-slate-800">
+          <div className="flex items-center gap-2">
+            <FileSpreadsheet className="w-5 h-5 text-emerald-400" />
+            <div>
+              <h4 className="text-sm font-bold text-white">Financial Document Analysis (P&L & Tax Returns)</h4>
+              <p className="text-xs text-slate-400">
+                P&L Statement, Corporate/Personal Tax Returns (Form 1120/1065/1040 Sch C), and EBITDA Add-backs
+              </p>
+            </div>
+          </div>
+          {financialDocs.length > 0 && (
+            <button
+              onClick={() => setActiveReviewDoc(financialDocs[0])}
+              className="px-3 py-1.5 text-xs font-bold rounded-lg bg-emerald-950 text-emerald-300 border border-emerald-700 flex items-center gap-1.5"
+            >
+              <FileText className="w-3.5 h-3.5" />
+              Review Tax / P&L Doc ({financialDocs.length})
+            </button>
+          )}
+        </div>
+
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+          <div className="bg-slate-950/70 border border-slate-800 rounded-xl p-4">
+            <span className="text-xs text-slate-400 block mb-1">Gross Annual Revenue (P&L)</span>
+            <input
+              type="number"
+              value={grossRevenuePnL}
+              onChange={(e) => setGrossRevenuePnL(parseFloat(e.target.value) || 0)}
+              className="w-full bg-slate-900 border border-slate-700 rounded px-2.5 py-1.5 text-lg font-bold font-mono text-white"
+            />
+          </div>
+
+          <div className="bg-slate-950/70 border border-slate-800 rounded-xl p-4">
+            <span className="text-xs text-slate-400 block mb-1">COGS / Direct Costs</span>
+            <input
+              type="number"
+              value={cogsPnL}
+              onChange={(e) => setCogsPnL(parseFloat(e.target.value) || 0)}
+              className="w-full bg-slate-900 border border-slate-700 rounded px-2.5 py-1.5 text-lg font-bold font-mono text-slate-200"
+            />
+          </div>
+
+          <div className="bg-slate-950/70 border border-slate-800 rounded-xl p-4">
+            <span className="text-xs text-slate-400 block mb-1">Operating Expenses (OpEx)</span>
+            <input
+              type="number"
+              value={operatingExpensesPnL}
+              onChange={(e) => setOperatingExpensesPnL(parseFloat(e.target.value) || 0)}
+              className="w-full bg-slate-900 border border-slate-700 rounded px-2.5 py-1.5 text-lg font-bold font-mono text-slate-200"
+            />
+          </div>
+
+          <div className="bg-slate-950/70 border border-slate-800 rounded-xl p-4">
+            <span className="text-xs text-slate-400 block mb-1">Net Operating Income</span>
+            <div className="text-xl font-black font-mono text-emerald-400 mt-2">
+              ${(grossRevenuePnL - cogsPnL - operatingExpensesPnL).toLocaleString()}
+            </div>
+          </div>
+        </div>
+
+        {/* Tax Return Reconciliation & Add-Backs */}
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 pt-2">
+          <div className="bg-slate-950/50 border border-slate-800 rounded-xl p-4 space-y-2">
+            <span className="text-xs font-semibold text-slate-300 block">Tax Return Entity Form</span>
+            <select
+              value={taxFormType}
+              onChange={(e) => setTaxFormType(e.target.value)}
+              className="w-full bg-slate-900 border border-slate-700 rounded px-2.5 py-1.5 text-xs text-white"
+            >
+              <option value="Form 1120-S (S-Corporation)">Form 1120-S (S-Corporation)</option>
+              <option value="Form 1120 (C-Corporation)">Form 1120 (C-Corporation)</option>
+              <option value="Form 1065 (Partnership / LLC)">Form 1065 (Partnership / LLC)</option>
+              <option value="Form 1040 Schedule C (Sole Prop)">Form 1040 Schedule C (Sole Prop)</option>
+            </select>
+            <span className="text-[11px] text-slate-400 block">Years Reviewed: {taxYearReviewed}</span>
+          </div>
+
+          <div className="bg-slate-950/50 border border-slate-800 rounded-xl p-4 space-y-2">
+            <span className="text-xs font-semibold text-slate-300 block">Depreciation / Non-Cash Add-back ($)</span>
+            <input
+              type="number"
+              value={depreciationAddBack}
+              onChange={(e) => setDepreciationAddBack(parseFloat(e.target.value) || 0)}
+              className="w-full bg-slate-900 border border-slate-700 rounded px-2.5 py-1.5 text-xs text-white font-mono"
+            />
+            <span className="text-[11px] text-slate-400 block">Added back to commercial underwriting cash flow</span>
+          </div>
+
+          <div className="bg-slate-950/50 border border-slate-800 rounded-xl p-4 space-y-2">
+            <span className="text-xs font-semibold text-slate-300 block">Officer / Owner Compensation ($)</span>
+            <input
+              type="number"
+              value={officerCompensation}
+              onChange={(e) => setOfficerCompensation(parseFloat(e.target.value) || 0)}
+              className="w-full bg-slate-900 border border-slate-700 rounded px-2.5 py-1.5 text-xs text-white font-mono"
+            />
+            <span className="text-[11px] text-slate-400 block">Guarantor annual W2/draw distribution</span>
+          </div>
+        </div>
+      </div>
+
+      {/* 5. Recurring ACH Debits & Stacking Positions */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         <div className="bg-slate-900 border border-slate-800 rounded-xl p-5">
           <div className="flex items-center justify-between pb-3 border-b border-slate-800">
@@ -395,7 +498,7 @@ export const BankStatementAnalysisTab: React.FC<BankStatementAnalysisTabProps> =
           </div>
         </div>
 
-        {/* 5. Large Transactions / Irregularity Audit */}
+        {/* 6. Large Transactions / Irregularity Audit */}
         <div className="bg-slate-900 border border-slate-800 rounded-xl p-5">
           <div className="flex items-center justify-between pb-3 border-b border-slate-800">
             <div className="flex items-center gap-2">

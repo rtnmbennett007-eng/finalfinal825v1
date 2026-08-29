@@ -122,6 +122,7 @@ const MainLayout: React.FC = () => {
               onOpenNewClientModal={handleOpenNewClientModal}
               isNewClientModalOpen={isNewClientModalOpen}
               setIsNewClientModalOpen={setIsNewClientModalOpen}
+              onNavigateToTab={setActiveTab}
             />
           )}
 

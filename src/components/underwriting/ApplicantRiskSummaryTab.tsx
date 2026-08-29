@@ -22,6 +22,9 @@ import {
   Layers,
   Banknote,
   UserCheck,
+  PhoneCall,
+  ArrowRight,
+  Sparkles,
 } from 'lucide-react';
 
 interface ApplicantRiskSummaryTabProps {
@@ -31,6 +34,7 @@ interface ApplicantRiskSummaryTabProps {
   riskFlags: RiskFlagItem[];
   conflicts: ConflictItem[];
   onOpenConflictCenter?: () => void;
+  onNavigateToTab?: (tab: string) => void;
 }
 
 export const ApplicantRiskSummaryTab: React.FC<ApplicantRiskSummaryTabProps> = ({
@@ -40,6 +44,7 @@ export const ApplicantRiskSummaryTab: React.FC<ApplicantRiskSummaryTabProps> = (
   riskFlags,
   conflicts,
   onOpenConflictCenter,
+  onNavigateToTab,
 }) => {
   const activeCritical = riskFlags.filter((f) => f.severity === 'CRITICAL' && f.status === 'ACTIVE');
   const activeHigh = riskFlags.filter((f) => f.severity === 'HIGH' && f.status === 'ACTIVE');
@@ -105,97 +110,87 @@ export const ApplicantRiskSummaryTab: React.FC<ApplicantRiskSummaryTabProps> = (
             }`}
           >
             {activeCritical.length > 0 ? (
-              <ShieldAlert className="w-6 h-6 animate-pulse" />
+              <ShieldAlert className="w-6 h-6" />
+            ) : activeHigh.length > 0 ? (
+              <AlertTriangle className="w-6 h-6" />
             ) : (
               <ShieldCheck className="w-6 h-6" />
             )}
           </div>
           <div>
             <div className="flex items-center gap-2">
-              <h3 className="text-base font-bold text-white tracking-wide">
-                Underwriting Risk Stance:{' '}
+              <h3 className="text-base font-bold text-white">Executive Underwriting Stance</h3>
+              <span
+                className={`px-2.5 py-0.5 text-xs font-bold rounded-full uppercase tracking-wider ${
+                  activeCritical.length > 0
+                    ? 'bg-rose-600 text-white'
+                    : activeHigh.length > 0
+                    ? 'bg-amber-600 text-white'
+                    : 'bg-emerald-600 text-white'
+                }`}
+              >
                 {activeCritical.length > 0
-                  ? 'CRITICAL MITIGATION REQUIRED'
+                  ? 'CRITICAL RISK'
                   : activeHigh.length > 0
-                  ? 'MODERATE RISK — CONDITIONS APPLY'
-                  : 'TIER-1 APPROVED FOR DIRECT LENDER SUBMISSION'}
-              </h3>
+                  ? 'MODERATE RISK'
+                  : 'TIER 1 (LOW RISK)'}
+              </span>
             </div>
-            <p className="text-xs text-slate-300 mt-0.5">
+            <p className="text-xs mt-1 text-slate-300">
               {activeCritical.length > 0
-                ? `${activeCritical.length} critical blocker(s) detected. Acknowledge or mitigate before package compilation.`
+                ? `${activeCritical.length} critical blocking flag(s) active. File cannot be submitted to lenders until resolved.`
                 : activeHigh.length > 0
-                ? `${activeHigh.length} high-severity risk flag(s) present. Review lender underwriting tolerance.`
-                : 'Zero high-risk flags. Cash flow velocity and guarantor credit metrics meet prime submission parameters.'}
+                ? `${activeHigh.length} risk flag(s) require underwriting conditions or compensating factors.`
+                : 'Clean underwriting profile. Cash flow, credit score, and corporate entity satisfy lender parameters.'}
             </p>
           </div>
         </div>
 
-        <div className="flex items-center gap-3">
-          <div className="text-right">
-            <span className="text-[11px] uppercase tracking-wider text-slate-400 font-semibold block">
-              Active Flags
-            </span>
-            <div className="flex items-center gap-1.5 justify-end mt-0.5">
-              <span className="px-2 py-0.5 text-xs font-bold rounded bg-rose-900/60 text-rose-300 border border-rose-700">
-                {activeCritical.length} Critical
-              </span>
-              <span className="px-2 py-0.5 text-xs font-bold rounded bg-amber-900/60 text-amber-300 border border-amber-700">
-                {activeHigh.length} High
-              </span>
-              <span className="px-2 py-0.5 text-xs font-bold rounded bg-slate-800 text-slate-300 border border-slate-700">
-                {activeMed.length} Med
-              </span>
-            </div>
-          </div>
-          {conflicts.filter((c) => c.status === 'UNRESOLVED').length > 0 && onOpenConflictCenter && (
-            <button
-              onClick={onOpenConflictCenter}
-              className="px-3 py-2 text-xs font-semibold rounded-lg bg-amber-600/30 hover:bg-amber-600/40 text-amber-300 border border-amber-500/50 transition-colors flex items-center gap-1.5"
-            >
-              <AlertTriangle className="w-3.5 h-3.5" />
-              Resolve {conflicts.filter((c) => c.status === 'UNRESOLVED').length} Conflicts
-            </button>
-          )}
-        </div>
+        {conflicts.filter((c) => c.status === 'UNRESOLVED').length > 0 && (
+          <button
+            onClick={onOpenConflictCenter}
+            className="px-3.5 py-2 text-xs font-bold rounded-lg bg-rose-600 hover:bg-rose-500 text-white shadow-sm flex items-center gap-1.5 transition-colors"
+          >
+            <AlertTriangle className="w-3.5 h-3.5" />
+            Resolve {conflicts.filter((c) => c.status === 'UNRESOLVED').length} Data Conflict(s)
+          </button>
+        )}
       </div>
 
-      {/* 2. Core Underwriting Metrics Grid */}
+      {/* 2. Top Executive KPI Grid */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        {/* Metric 1: Monthly Deposit Velocity */}
+        {/* Metric 1: Verified Sizing */}
         <div className="bg-slate-900/90 border border-slate-800 rounded-xl p-4 relative overflow-hidden">
           <div className="flex items-center justify-between">
             <span className="text-xs uppercase font-semibold text-slate-400 flex items-center gap-1.5">
               <DollarSign className="w-3.5 h-3.5 text-emerald-400" />
-              Monthly Deposits
+              Facility Sizing
             </span>
-            {getSourceBadge('monthlyRevenue', 'BANK_STATEMENT')}
+            {getSourceBadge('requestedAmount', 'MANUAL')}
           </div>
           <div className="mt-3">
             <div className="text-2xl font-black text-white tracking-tight">
-              ${Number(avgMonthlyDeposits).toLocaleString()}
+              ${Number(requestedAmt).toLocaleString()}
             </div>
             <div className="flex items-center gap-2 mt-1 text-xs text-slate-400">
-              <span className="text-emerald-400 font-medium">
-                ${Number(avgMonthlyDeposits * 12).toLocaleString()}/yr
-              </span>
-              <span>• 4-Mo Avg</span>
+              <span className="text-emerald-400 font-medium">{loanToMonthlyRev}x Monthly Vol</span>
+              <span>• {deal.product}</span>
             </div>
           </div>
         </div>
 
-        {/* Metric 2: Average Daily Balance */}
+        {/* Metric 2: Monthly Cash Flow Velocity */}
         <div className="bg-slate-900/90 border border-slate-800 rounded-xl p-4 relative overflow-hidden">
           <div className="flex items-center justify-between">
             <span className="text-xs uppercase font-semibold text-slate-400 flex items-center gap-1.5">
               <TrendingUp className="w-3.5 h-3.5 text-blue-400" />
-              Avg Daily Balance
+              Monthly Depository Vol
             </span>
-            {getSourceBadge('averageDailyBalance', 'BANK_STATEMENT')}
+            {getSourceBadge('annualRevenue', 'BANK_STATEMENT')}
           </div>
           <div className="mt-3">
             <div className="text-2xl font-black text-white tracking-tight">
-              ${Number(bankAnalysis.avgDailyBalance || 12500).toLocaleString()}
+              ${Number(avgMonthlyDeposits).toLocaleString()}
             </div>
             <div className="flex items-center gap-2 mt-1 text-xs text-slate-400">
               <span className={bankAnalysis.negativeBalanceDays > 0 ? 'text-amber-400' : 'text-emerald-400'}>
@@ -398,6 +393,80 @@ export const ApplicantRiskSummaryTab: React.FC<ApplicantRiskSummaryTabProps> = (
                 </div>
                 {getSourceBadge('financingDebits', 'BANK_STATEMENT')}
               </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* 4. Application Review & Verification Review Side-by-Side */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        {/* Application Review */}
+        <div className="bg-slate-900 border border-slate-800 rounded-xl p-5 space-y-4">
+          <div className="flex items-center gap-2 pb-3 border-b border-slate-800">
+            <FileText className="w-4 h-4 text-purple-400" />
+            <div>
+              <h4 className="text-sm font-bold text-white">Application Review (As Submitted)</h4>
+              <p className="text-xs text-slate-400">Original borrower self-reported data</p>
+            </div>
+          </div>
+
+          <div className="space-y-3 text-xs">
+            <div className="flex items-center justify-between p-2 rounded bg-slate-950/60 border border-slate-800">
+              <span className="text-slate-400">Application Date:</span>
+              <span className="font-mono text-slate-200">{client.applicationDate || client.createdAt?.slice(0, 10) || 'Recent'}</span>
+            </div>
+            <div className="flex items-center justify-between p-2 rounded bg-slate-950/60 border border-slate-800">
+              <span className="text-slate-400">Self-Reported Annual Revenue:</span>
+              <span className="font-mono font-bold text-slate-200">${Number(client.annualRevenue || 0).toLocaleString()}</span>
+            </div>
+            <div className="flex items-center justify-between p-2 rounded bg-slate-950/60 border border-slate-800">
+              <span className="text-slate-400">Stated Purpose of Funds:</span>
+              <span className="text-slate-200">{client.useOfFunds || 'Working Capital & Inventory Growth'}</span>
+            </div>
+            <div className="flex items-center justify-between p-2 rounded bg-slate-950/60 border border-slate-800">
+              <span className="text-slate-400">Stated Credit Score:</span>
+              <span className="font-mono text-slate-200">{client.creditScore || '700'}</span>
+            </div>
+          </div>
+        </div>
+
+        {/* Verification Review */}
+        <div className="bg-slate-900 border border-slate-800 rounded-xl p-5 space-y-4">
+          <div className="flex items-center justify-between pb-3 border-b border-slate-800">
+            <div className="flex items-center gap-2">
+              <PhoneCall className="w-4 h-4 text-emerald-400" />
+              <div>
+                <h4 className="text-sm font-bold text-white">Verification Review (Live Call Audit)</h4>
+                <p className="text-xs text-slate-400">Spoken with borrower & specialist sign-off</p>
+              </div>
+            </div>
+            {onNavigateToTab && (
+              <button
+                onClick={() => onNavigateToTab('verification')}
+                className="px-2.5 py-1 text-[11px] font-bold rounded bg-emerald-950 text-emerald-300 border border-emerald-700 flex items-center gap-1 hover:bg-emerald-900/60"
+              >
+                Verification Hub <ArrowRight className="w-3 h-3" />
+              </button>
+            )}
+          </div>
+
+          <div className="space-y-3 text-xs">
+            <div className="flex items-center justify-between p-2 rounded bg-slate-950/60 border border-slate-800">
+              <span className="text-slate-400">Spoken With:</span>
+              <span className="font-bold text-emerald-400">
+                {client.borrowerSpokenWith || `${client.firstName} ${client.lastName} (Confirmed Principal)`}
+              </span>
+            </div>
+            <div className="flex items-center justify-between p-2 rounded bg-slate-950/60 border border-slate-800">
+              <span className="text-slate-400">Verification Specialist:</span>
+              <span className="text-slate-200">{client.verifiedBy || 'Senior Verification Officer'}</span>
+            </div>
+            <div className="flex items-center justify-between p-2 rounded bg-slate-950/60 border border-slate-800">
+              <span className="text-slate-400">Call Date / Time:</span>
+              <span className="font-mono text-slate-200">{client.verificationDate || 'Verified on file'}</span>
+            </div>
+            <div className="p-2.5 rounded bg-slate-950/80 border border-slate-800 text-slate-300 italic">
+              "{client.verificationSummary || 'Borrower confirmed all commercial details, operating checking account, and intended deployment schedule. Ready for underwriting package.'}"
             </div>
           </div>
         </div>

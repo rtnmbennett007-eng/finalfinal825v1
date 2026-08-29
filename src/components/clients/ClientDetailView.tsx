@@ -72,7 +72,7 @@ import { formatDate, formatDateTime } from '../../utils/dateUtils';
 import { FundingStrategyTab } from './tabs/FundingStrategyTab';
 import { LenderHistoryTab } from './tabs/LenderHistoryTab';
 import { MasterVerificationTab } from './tabs/MasterVerificationTab';
-import { UnderwritingEvaluationTab } from './tabs/UnderwritingEvaluationTab';
+import { CompactUnderwritingSummaryTab } from './tabs/CompactUnderwritingSummaryTab';
 import { ClientTasksTab } from './tabs/ClientTasksTab';
 import { ClientInfoTab } from './tabs/ClientInfoTab';
 import { BusinessInfoTab } from './tabs/BusinessInfoTab';
@@ -133,16 +133,19 @@ interface ClientDetailViewProps {
   clientId: string;
   onBack: () => void;
   initialTab?: string;
+  onNavigateToTab?: (tab: string) => void;
 }
 
 export const ClientDetailView: React.FC<ClientDetailViewProps> = ({
   clientId,
   onBack,
   initialTab = 'overview',
+  onNavigateToTab,
 }) => {
   const { currentUser, staffList } = useAuth();
   const {
     clients,
+    setSelectedClientId,
     updateClient,
     deleteClient,
     createDeal,
@@ -1120,29 +1123,20 @@ export const ClientDetailView: React.FC<ClientDetailViewProps> = ({
         />
       )}
 
-      {/* TAB 4: UNDERWRITING EVALUATION SYSTEM */}
+      {/* TAB 4: COMPACT UNDERWRITING SUMMARY */}
       {activeTab === 'underwriting' && (
-        <UnderwritingEvaluationTab
+        <CompactUnderwritingSummaryTab
           client={client}
           masterVerification={masterVerification}
           documents={safeDocuments}
           deals={safeDeals}
-          initialEvaluation={underwritingEvaluation}
-          onSaveEvaluation={async (evalData: UnderwritingEvaluationRecord) => {
-            try {
-              const saved = await api.saveUnderwritingEvaluation(clientId, evalData);
-              setUnderwritingEvaluation(saved);
-              addToast(
-                'success',
-                'Underwriting Evaluation Saved',
-                `Underwriting file for ${client.businessName || client.firstName} updated (${evalData.status}).`
-              );
-              loadClientDetails();
-            } catch (err: any) {
-              addToast('error', 'Save Failed', err.message || 'Could not save underwriting file');
+          underwritingEvaluation={underwritingEvaluation}
+          onOpenUnderwritingHub={() => {
+            setSelectedClientId(client.id);
+            if (onNavigateToTab) {
+              onNavigateToTab('underwriting');
             }
           }}
-          onRefreshClient={loadClientDetails}
         />
       )}
 

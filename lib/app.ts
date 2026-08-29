@@ -5673,26 +5673,33 @@ app.post('/api/applications/extract', upload.single('file') as any, async (req: 
     return res.status(200).json({
       success: true,
       stage: 'SUCCESS',
+      data: extractedData,
       extractedData,
       application,
       duplicateMatches,
+      hasDuplicates: duplicateMatches.length > 0,
       summary: extractedData.summary || `Business loan application extracted for ${extractedData.businessName || 'Applicant'}.`,
       confidence: extractedData.confidence || 0.94,
-      modelUsed: extractedData.modelUsed || 'Maple X Document Intelligence',
+      modelUsed: extractedData.modelUsed || 'gemini-3.6-flash',
+      fallbackUsed: extractedData.modelUsed !== 'gemini-3.6-flash' && extractedData.modelUsed !== 'gemini-3.1-pro-preview',
       unfoundFields: extractedData.unfoundFields || [],
       source: 'APPLICATION',
       aiFilled: true,
       callVerified: false,
     });
   } catch (err: any) {
+    const apiKey = (process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY || '').trim();
+    const isKeyMissing = !apiKey;
     console.error('Business loan application extraction error:', err);
     return res.status(200).json({
-      success: true,
-      stage: 'FALLBACK',
+      success: false,
+      errorCode: isKeyMissing ? 'AI_KEY_MISSING' : 'AI_EXTRACTION_ERROR',
+      stage: isKeyMissing ? 'AI_AUTH' : 'AI_EXTRACTION',
       error: {
-        code: 'AI_EXTRACTION_ERROR',
+        code: isKeyMissing ? 'AI_KEY_MISSING' : 'AI_EXTRACTION_ERROR',
         message: err?.message || 'Processed with fallback extraction',
       },
+      data: {},
       extractedData: {
         businessName: '',
         firstName: '',
@@ -5709,12 +5716,13 @@ app.post('/api/applications/extract', upload.single('file') as any, async (req: 
         owner: {},
       },
       duplicateMatches: [],
-      summary: 'Processed application with document engine.',
-      confidence: 0.90,
+      hasDuplicates: false,
+      summary: 'Application extraction error occurred.',
+      confidence: 0,
       modelUsed: 'Maple X Document Engine',
       unfoundFields: [],
       source: 'APPLICATION',
-      aiFilled: true,
+      aiFilled: false,
       callVerified: false,
     });
   }

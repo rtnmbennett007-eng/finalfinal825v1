@@ -167,7 +167,7 @@ export const UnderwritingCommandCenter: React.FC<UnderwritingCommandCenterProps>
     checklist,
     riskFlags,
     []
-  ) as any;
+  );
 
   // Handlers for tab actions
   const handleUpdateBankAnalysis = async (updated: BankStatementAnalysisSummary) => {

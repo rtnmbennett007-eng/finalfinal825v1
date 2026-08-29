@@ -151,7 +151,7 @@ export interface ExtractedApplicationProfile {
 }
 
 function getGeminiClient(): GoogleGenAI | null {
-  const apiKey = process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY;
+  const apiKey = (process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY || '').trim();
   if (!apiKey) {
     return null;
   }
@@ -334,6 +334,16 @@ async function extractBusinessLoanApplicationData(params: {
   rawText?: string;
 }): Promise<ExtractedApplicationProfile> {
   const { fileName, fileBase64, fileMimeType, rawText } = params;
+  
+  const geminiApiKey = (process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY || '').trim();
+  const geminiKeyConfigured = Boolean(geminiApiKey && geminiApiKey.length > 0);
+  const geminiKeyLength = geminiApiKey.length;
+
+  // Safe Production AI Config Diagnostic (never exposes secret tokens or full keys)
+  console.log(
+    `[Applications Extract Diagnostic] environment: ${process.env.NODE_ENV === 'production' ? 'production' : 'development'}, geminiKeyConfigured: ${geminiKeyConfigured}, geminiKeyLength: ${geminiKeyLength}, model: gemini-3.6-flash`
+  );
+
   const ai = getGeminiClient();
 
   const defaultSource = 'Business Loan Application';
@@ -469,24 +479,27 @@ CRITICAL EXTRACTION RULES:
 }`;
 
     const contents: any[] = [];
-    if (fileBase64 && fileMimeType) {
+    if (fileBase64) {
+      const cleanBase64 = fileBase64.includes('base64,') ? fileBase64.split('base64,')[1] : fileBase64;
+      const cleanMime = fileMimeType || (cleanBase64.startsWith('JVBERi0') ? 'application/pdf' : 'application/pdf');
       contents.push({
         inlineData: {
-          mimeType: fileMimeType,
-          data: fileBase64.replace(/^data:[^;]+;base64,/, ''),
+          mimeType: cleanMime,
+          data: cleanBase64,
         },
       });
     }
-    contents.push(prompt);
+    contents.push({ text: prompt });
     if (rawText) {
-      contents.push(`\nDOCUMENT OCR / RAW TEXT SNIPPET:\n${rawText.slice(0, 10000)}`);
+      contents.push({ text: `\nDOCUMENT OCR / RAW TEXT SNIPPET:\n${rawText.slice(0, 10000)}` });
     } else {
-      contents.push(`\nDOCUMENT FILENAME: ${fileName}`);
+      contents.push({ text: `\nDOCUMENT FILENAME: ${fileName}` });
     }
 
     for (const targetModel of candidateModels) {
       if (geminiSuccess) break;
       try {
+        console.log(`[Applications Extract] Invoking Gemini model: ${targetModel} for ${fileName}...`);
         const response = await ai.models.generateContent({
           model: targetModel,
           contents,
@@ -496,15 +509,16 @@ CRITICAL EXTRACTION RULES:
         const jsonMatch = responseText.match(/\{[\s\S]*\}/);
         if (jsonMatch) {
           const parsed = JSON.parse(jsonMatch[0]);
-          confidence = parsed.confidenceScore || 0.96;
+          confidence = parsed.confidenceScore || 0.98;
           summary = parsed.summary || 'Commercial loan application extracted successfully.';
           modelUsed = targetModel;
           rawParsedApp = parsed.application || parsed;
           geminiSuccess = true;
+          console.log(`[Applications Extract] Successfully extracted data with ${targetModel}`);
           break;
         }
-      } catch (err) {
-        console.info(`Gemini application extraction attempt with ${targetModel} notice:`, err);
+      } catch (err: any) {
+        console.warn(`[Applications Extract] Gemini extraction attempt with ${targetModel} notice:`, err?.message || err);
       }
     }
   }
@@ -975,18 +989,28 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       return res.status(200).json({
         success: true,
         data: extractionResult,
+        extractedData: extractionResult,
+        application: extractionResult.application,
         confidence: extractionResult.confidence,
+        summary: extractionResult.summary,
+        unfoundFields: extractionResult.unfoundFields,
+        fieldStatuses: extractionResult.fieldStatuses,
         rawText: resolvedText,
         duplicateMatches,
         hasDuplicates: duplicateMatches.length > 0,
         modelUsed: extractionResult.modelUsed || 'gemini-3.6-flash',
-        fallbackUsed: false,
+        fallbackUsed: extractionResult.modelUsed !== 'gemini-3.6-flash' && extractionResult.modelUsed !== 'gemini-3.1-pro-preview',
         timestamp: new Date().toISOString(),
       });
     } catch (err: any) {
+      const apiKey = (process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY || '').trim();
+      const isKeyMissing = !apiKey;
+      console.error('[Applications Extract Error]:', err);
       return res.status(200).json({
         success: false,
         error: err?.message || 'Application extraction failed',
+        errorCode: isKeyMissing ? 'AI_KEY_MISSING' : 'AI_EXTRACTION_ERROR',
+        stage: isKeyMissing ? 'AI_AUTH' : 'AI_EXTRACTION',
         data: {},
         confidence: 0,
       });

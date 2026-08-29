@@ -10,6 +10,8 @@ import {
   BankStatementAnalysisSummary,
   FundingReadinessRecord,
   FundingReadinessChecklist,
+  FundingReadinessSummary,
+  FundingReadinessChecklistItem,
   FieldSourceType,
 } from '../types';
 
@@ -738,7 +740,7 @@ export function evaluateFundingReadiness(
   checklist: UnderwritingChecklistItem[] = [],
   riskFlags: RiskFlagItem[] = [],
   overrides: Array<{ checkKey: string; reason: string; overriddenBy: string; timestamp: string }> = []
-): FundingReadinessRecord {
+): FundingReadinessSummary {
   const overrideSet = new Set(overrides.map((o) => o.checkKey));
 
   // 1. Lender Approval Recorded
@@ -806,6 +808,89 @@ export function evaluateFundingReadiness(
     dealStatusValid,
   };
 
+  const checklistItems: FundingReadinessChecklistItem[] = [
+    {
+      key: 'lenderApprovalRecorded',
+      label: 'Lender Approval Recorded',
+      description: lenderApprovalRecorded
+        ? `Lender assigned (${deal?.lenderName || 'Direct'}) with approved amount recorded`
+        : 'Lender approval details and approved amount missing',
+      isPassing: lenderApprovalRecorded,
+      isBlocking: true,
+      category: 'Lender Terms',
+    },
+    {
+      key: 'fundingAmountConfirmed',
+      label: 'Funding Amount Confirmed',
+      description: fundingAmountConfirmed
+        ? `Approved capital amount verified ($${(deal?.fundingAmount || deal?.approvedAmount || 0).toLocaleString()})`
+        : 'Final approved funding amount not confirmed',
+      isPassing: fundingAmountConfirmed,
+      isBlocking: true,
+      category: 'Financials',
+    },
+    {
+      key: 'termsAndFactorConfirmed',
+      label: 'Terms & Factor Rate Confirmed',
+      description: termsAndFactorConfirmed
+        ? `Term length (${deal?.termLength || 'N/A'}) and factor rate / payment structure validated`
+        : 'Term length, factor rate, or payment frequency missing',
+      isPassing: termsAndFactorConfirmed,
+      isBlocking: true,
+      category: 'Terms',
+    },
+    {
+      key: 'allClosingDocsVerified',
+      label: 'Closing Documents in Vault',
+      description: allClosingDocsVerified
+        ? 'Key closing documentation (Voided check / ID / Agreement) present in document vault'
+        : 'Key closing documents (Voided check / Photo ID) missing from vault',
+      isPassing: allClosingDocsVerified,
+      isBlocking: true,
+      category: 'Documentation',
+    },
+    {
+      key: 'clientAcceptanceConfirmed',
+      label: 'Client Acceptance Confirmed',
+      description: clientAcceptanceConfirmed
+        ? 'Client formal term sheet acceptance recorded'
+        : 'Client formal term sheet acceptance not confirmed',
+      isPassing: clientAcceptanceConfirmed,
+      isBlocking: true,
+      category: 'Compliance',
+    },
+    {
+      key: 'positionAndPayoffsVerified',
+      label: 'Position & Payoffs Verified',
+      description: positionAndPayoffsVerified
+        ? `Lender position assigned (${deal?.position || '1st Position'})`
+        : 'Lender funding position not assigned',
+      isPassing: positionAndPayoffsVerified,
+      isBlocking: false,
+      category: 'Underwriting',
+    },
+    {
+      key: 'commissionManuallyEntered',
+      label: 'Manual Commission Configured',
+      description: commissionManuallyEntered
+        ? `Commission fee/rate manually entered (${deal?.percentage || 0}%)`
+        : 'Commission percentage / fee must be manually entered before funding readiness',
+      isPassing: commissionManuallyEntered,
+      isBlocking: true,
+      category: 'Operations',
+    },
+    {
+      key: 'dealStatusValid',
+      label: 'Deal Status Valid',
+      description: dealStatusValid
+        ? `Active pipeline status (${deal?.status || 'Draft'})`
+        : `Deal is in an invalid status (${deal?.status || 'Draft'}) for funding`,
+      isPassing: dealStatusValid,
+      isBlocking: true,
+      category: 'Workflow',
+    },
+  ];
+
   const blockers: string[] = [];
   if (!lenderApprovalRecorded) blockers.push('Lender approval details and approved amount not recorded');
   if (!fundingAmountConfirmed) blockers.push('Final approved funding amount is not confirmed');
@@ -821,6 +906,13 @@ export function evaluateFundingReadiness(
     blockers.push(`${activeCrit.length} critical risk flag(s) must be mitigated or waived`);
   }
 
+  const passingCount = checklistItems.filter((item) => item.isPassing).length;
+  const readinessScore = Math.round((passingCount / checklistItems.length) * 100);
+  const blockingItems = checklistItems.filter((item) => !item.isPassing && item.isBlocking);
+  const warningItems = checklistItems.filter((item) => !item.isPassing && !item.isBlocking);
+  const blockingIssuesCount = blockingItems.length + (activeCrit.length > 0 && !overrideSet.has('criticalRiskFlags') ? activeCrit.length : 0);
+  const warningsCount = warningItems.length;
+
   const isReadyToFund = blockers.length === 0;
   const isOverridden = overrides.length > 0;
 
@@ -833,11 +925,17 @@ export function evaluateFundingReadiness(
 
   return {
     dealId: deal?.id || '',
+    isReady: isReadyToFund,
     isReadyToFund,
+    readinessScore,
+    checklist: checklistItems,
+    checklistState,
+    blockingIssuesCount,
+    warningsCount,
+    commissionConfigured: commissionManuallyEntered,
     readinessStatus,
     calculatedAt: new Date().toISOString(),
     checkedBy: 'Maple X Underwriting Desk',
-    checklist: checklistState,
     blockers,
     overrides,
   };

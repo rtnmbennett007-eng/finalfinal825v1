@@ -982,11 +982,22 @@ export interface FundingReadinessChecklistItem {
 
 export interface FundingReadinessSummary {
   isReady: boolean;
+  isReadyToFund?: boolean;
   readinessScore: number; // 0 - 100
   checklist: FundingReadinessChecklistItem[];
+  checklistState?: FundingReadinessChecklist;
   blockingIssuesCount: number;
   warningsCount: number;
   commissionConfigured: boolean;
+  dealId?: string;
+  readinessStatus?: 'NOT_READY' | 'READY_TO_FUND' | 'OVERRIDDEN' | 'FUNDED';
+  calculatedAt?: string;
+  checkedBy?: string;
+  blockers?: string[];
+  overrides?: ReadinessOverrideItem[];
+  markedReadyAt?: string;
+  markedReadyBy?: string;
+  notes?: string;
 }
 
 export interface CommissionItem {

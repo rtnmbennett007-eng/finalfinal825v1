@@ -53,7 +53,10 @@ export const ReadyToFundTab: React.FC<ReadyToFundTabProps> = ({
     (deal.fee !== undefined && deal.fee > 0) ||
     commissions.some((c) => (c.percentage && c.percentage > 0) || (c.amount && c.amount > 0));
 
-  const canExecute = readiness.isReady || overrideAuthorized;
+  const isReady = Boolean(readiness?.isReady || readiness?.isReadyToFund);
+  const readinessScore = readiness?.readinessScore ?? 0;
+  const checklist = Array.isArray(readiness?.checklist) ? readiness.checklist : [];
+  const canExecute = isReady || overrideAuthorized;
 
   const handleExecute = async () => {
     setExecuting(true);
@@ -73,7 +76,7 @@ export const ReadyToFundTab: React.FC<ReadyToFundTabProps> = ({
       {/* 1. Readiness Stance Banner */}
       <div
         className={`p-6 rounded-xl border flex flex-col md:flex-row items-start md:items-center justify-between gap-5 ${
-          readiness.isReady
+          isReady
             ? 'bg-emerald-950/30 border-emerald-700 text-emerald-200'
             : 'bg-amber-950/30 border-amber-700 text-amber-200'
         }`}
@@ -81,12 +84,12 @@ export const ReadyToFundTab: React.FC<ReadyToFundTabProps> = ({
         <div className="flex items-start gap-4">
           <div
             className={`w-12 h-12 rounded-xl flex items-center justify-center border flex-shrink-0 ${
-              readiness.isReady
+              isReady
                 ? 'bg-emerald-900/60 border-emerald-600 text-emerald-300'
                 : 'bg-amber-900/60 border-amber-600 text-amber-300'
             }`}
           >
-            {readiness.isReady ? (
+            {isReady ? (
               <ShieldCheck className="w-7 h-7" />
             ) : (
               <AlertTriangle className="w-7 h-7" />
@@ -95,20 +98,20 @@ export const ReadyToFundTab: React.FC<ReadyToFundTabProps> = ({
           <div>
             <div className="flex items-center gap-2">
               <h3 className="text-lg font-black text-white tracking-wide">
-                Funding Readiness Score: {readiness.readinessScore}/100
+                Funding Readiness Score: {readinessScore}/100
               </h3>
               <span
                 className={`px-2.5 py-0.5 text-xs font-bold rounded-full border ${
-                  readiness.isReady
+                  isReady
                     ? 'bg-emerald-950 text-emerald-300 border-emerald-700'
                     : 'bg-amber-950 text-amber-300 border-amber-700'
                 }`}
               >
-                {readiness.isReady ? 'READY TO FUND' : 'CONDITIONS PENDING'}
+                {isReady ? 'READY TO FUND' : 'CONDITIONS PENDING'}
               </span>
             </div>
             <p className="text-xs text-slate-300 mt-1 max-w-xl">
-              {readiness.isReady
+              {isReady
                 ? 'All mandatory underwriting prerequisites, identity audits, bank statement ledgers, and manual commission configurations are verified.'
                 : 'Certain blocking conditions or unconfigured commission terms require resolution before moving this deal to final closing.'}
             </p>
@@ -213,12 +216,12 @@ export const ReadyToFundTab: React.FC<ReadyToFundTabProps> = ({
             </div>
           </div>
           <span className="text-xs text-slate-400 font-mono">
-            {readiness.readinessScore >= 80 ? 'Grade: A' : readiness.readinessScore >= 60 ? 'Grade: B' : 'Grade: C'}
+            {readinessScore >= 80 ? 'Grade: A' : readinessScore >= 60 ? 'Grade: B' : 'Grade: C'}
           </span>
         </div>
 
         <div className="divide-y divide-slate-800">
-          {readiness.checklist.map((item, idx) => (
+          {checklist.map((item, idx) => (
             <div
               key={idx}
               className={`p-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 ${
@@ -280,7 +283,7 @@ export const ReadyToFundTab: React.FC<ReadyToFundTabProps> = ({
       </div>
 
       {/* 4. Manager Override Section (if blocking conditions exist) */}
-      {!readiness.isReady && (
+      {!isReady && (
         <div className="p-5 rounded-xl bg-slate-900 border border-slate-800 space-y-4">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">

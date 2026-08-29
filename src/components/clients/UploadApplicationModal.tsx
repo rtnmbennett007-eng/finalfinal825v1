@@ -28,6 +28,7 @@ import {
 } from 'lucide-react';
 import { useData } from '../../context/DataContext';
 import { useAuth } from '../../context/AuthContext';
+import { ProductSelect } from '../common/ProductSelect';
 import { api } from '../../services/api';
 import { Client, FundingProductType } from '../../types';
 
@@ -1211,21 +1212,13 @@ export const UploadApplicationModal: React.FC<UploadApplicationModalProps> = ({
                     </div>
 
                     <div>
-                      <label className="block text-slate-400 mb-1">Target Funding Product</label>
-                      <select
-                        value={formData.requestedProduct}
-                        onChange={(e) => handleInputChange('requestedProduct', e.target.value)}
-                        className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-white focus:border-emerald-500 outline-none"
-                      >
-                        <option value="Revenue Funding">Revenue Funding (Working Capital)</option>
-                        <option value="Business Line of Credit">Business Line of Credit</option>
-                        <option value="Business Term Loan">Business Term Loan</option>
-                        <option value="SBA 7(a) Loan">SBA 7(a) Loan</option>
-                        <option value="Equipment Financing">Equipment Financing</option>
-                        <option value="Personal Term Loan">Personal Term Loan</option>
-                        <option value="0% Business Credit Cards">0% Business Credit Cards</option>
-                        <option value="Merchant Cash Advance (MCA)">Merchant Cash Advance (MCA)</option>
-                      </select>
+                      <ProductSelect
+                        label="Target Funding Product"
+                        value={formData.requestedProduct || 'Revenue Funding'}
+                        onChange={(val) => handleInputChange('requestedProduct', val)}
+                        sourceType="AI_FILLED"
+                        selectClassName="bg-slate-900 border-slate-700 rounded-lg px-3 py-2 text-white"
+                      />
                     </div>
 
                     <div>

@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { FileText, DollarSign, Edit2, Save, X, Layers, AlertTriangle, CheckCircle } from 'lucide-react';
 import { Client } from '../../../types';
 import { useData } from '../../../context/DataContext';
+import { ProductSelect } from '../../common/ProductSelect';
 
 interface ApplicationTabProps {
   client: Client;
@@ -111,20 +112,16 @@ export const ApplicationTab: React.FC<ApplicationTabProps> = ({ client, onRefres
               />
             </div>
             <div>
-              <label className="block text-slate-300 font-semibold mb-1">Target Product Type</label>
-              <select
-                value={form.requestedProduct || '0% Business Cards & Lines of Credit'}
-                onChange={(e) => setForm({ ...form, requestedProduct: e.target.value as any })}
-                className="w-full bg-[#070d18] border border-blue-900/70 rounded-xl p-2.5 text-slate-100 focus:outline-none"
-              >
-                <option value="0% Business Cards & Lines of Credit">0% Business Cards & Lines of Credit</option>
-                <option value="Personal Term Loans">Personal Term Loans</option>
-                <option value="Business Line of Credit">Business Line of Credit</option>
-                <option value="Revenue Funding">Revenue Funding</option>
-                <option value="SBA 7(a) / SBA Express">SBA 7(a) / SBA Express</option>
-                <option value="Equipment Financing">Equipment Financing</option>
-                <option value="Real Estate Bridge / DSCR">Real Estate Bridge / DSCR</option>
-              </select>
+              <ProductSelect
+                label="Target Product Type"
+                value={form.requestedProduct || ''}
+                onChange={(val) => setForm({ ...form, requestedProduct: val })}
+                otherType={form.otherProductType || ''}
+                onChangeOtherType={(val) => setForm({ ...form, otherProductType: val })}
+                otherDescription={form.otherProductDescription || ''}
+                onChangeOtherDescription={(val) => setForm({ ...form, otherProductDescription: val })}
+                selectClassName="p-2.5"
+              />
             </div>
           </div>
 
@@ -216,7 +213,7 @@ export const ApplicationTab: React.FC<ApplicationTabProps> = ({ client, onRefres
               <div className="flex items-center justify-between pt-2">
                 <span className="text-slate-400">Product Preference:</span>
                 <span className="px-2 py-0.5 rounded bg-blue-950 text-blue-300 border border-blue-800 text-[10px] font-bold">
-                  {client.requestedProduct || '0% Business Cards'}
+                  {client.requestedProduct || 'Revenue Funding'}
                 </span>
               </div>
               <div className="pt-2">

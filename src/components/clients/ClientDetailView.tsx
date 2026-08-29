@@ -49,6 +49,7 @@ import { firestoreService } from '../../services/firestoreService';
 import { StatusBadge, ProductBadge } from '../common/StatusBadge';
 import { SsnViewer } from '../common/SsnViewer';
 import { ConfirmModal } from '../common/ConfirmModal';
+import { ProductSelect } from '../common/ProductSelect';
 import { ReadyForUnderwritingModal } from '../underwriting/ReadyForUnderwritingModal';
 import {
   Client,
@@ -1506,19 +1507,14 @@ export const ClientDetailView: React.FC<ClientDetailViewProps> = ({
 
             <form onSubmit={handleCreateDeal} className="space-y-3 text-xs">
               <div>
-                <label className="block text-slate-300 font-semibold mb-1">Product</label>
-                <select
-                  value={newDealForm.product}
-                  onChange={(e) => setNewDealForm({ ...newDealForm, product: e.target.value as any })}
-                  className="w-full bg-[#070d18] border border-blue-900/70 rounded-xl p-2.5 text-slate-100 focus:outline-none"
-                >
-                  <option value="Revenue Funding">Revenue Funding</option>
-                  <option value="Personal Term Loan">Personal Term Loan</option>
-                  <option value="Business Term Loan">Business Term Loan</option>
-                  <option value="Business Line of Credit">Business Line of Credit</option>
-                  <option value="Equipment Financing">Equipment Financing</option>
-                  <option value="HELOC">HELOC</option>
-                </select>
+                <ProductSelect
+                  label="Product"
+                  value={newDealForm.product || 'Revenue Funding'}
+                  onChange={(val) => setNewDealForm({ ...newDealForm, product: val as any })}
+                  otherType={newDealForm.otherProductType || ''}
+                  onChangeOtherType={(val) => setNewDealForm({ ...newDealForm, otherProductType: val })}
+                  selectClassName="p-2.5"
+                />
               </div>
 
               <div className="grid grid-cols-2 gap-3">

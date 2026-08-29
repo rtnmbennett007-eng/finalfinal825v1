@@ -23,7 +23,10 @@ import {
 } from 'lucide-react';
 import { useData } from '../../context/DataContext';
 import { FundingDeal, FundingProductType, CANONICAL_DEAL_STATUSES } from '../../types';
+import { PRODUCT_CATEGORIES, getProductsGroupedByCategory } from '../../data/productCatalog';
 import { StatusBadge, ProductBadge, DealStatusBadge } from '../common/StatusBadge';
+
+
 import { ConfirmModal } from '../common/ConfirmModal';
 import { DealDetailModal } from './DealDetailModal';
 import { NewDealModal } from './NewDealModal';
@@ -267,15 +270,22 @@ export const FundingWorkspace: React.FC<FundingWorkspaceProps> = ({ setActiveTab
             className="w-full bg-[#070d18] border border-blue-900/70 rounded-xl px-3 py-2 text-xs text-slate-200 focus:outline-none focus:border-amber-400"
           >
             <option value="ALL">All Funding Products</option>
-            <option value="Revenue Funding">Revenue Funding</option>
-            <option value="Personal Term Loan">Personal Term Loan</option>
-            <option value="HELOC">HELOC</option>
-            <option value="HEI">HEI</option>
-            <option value="Business Term Loan">Business Term Loan</option>
-            <option value="Business Line of Credit">Business Line of Credit</option>
-            <option value="Equipment Financing">Equipment Financing</option>
-            <option value="0% Business Credit Cards">0% Business Credit Cards</option>
-            <option value="SBA Loan">SBA Loan</option>
+            {(() => {
+              const grouped = getProductsGroupedByCategory();
+              return PRODUCT_CATEGORIES.map((cat) => {
+                const prods = grouped[cat] || [];
+                if (prods.length === 0) return null;
+                return (
+                  <optgroup key={cat} label={cat}>
+                    {prods.map((prod) => (
+                      <option key={prod.id} value={prod.name}>
+                        {prod.name}
+                      </option>
+                    ))}
+                  </optgroup>
+                );
+              });
+            })()}
           </select>
         </div>
 

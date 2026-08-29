@@ -4,6 +4,8 @@ import { Client, FundingProductType, CANONICAL_PIPELINE_STAGES, PipelineStage } 
 import { useData } from '../../context/DataContext';
 import { useAuth } from '../../context/AuthContext';
 import { Save, Plus } from 'lucide-react';
+import { ProductSelect } from '../common/ProductSelect';
+
 
 interface NewClientModalProps {
   isOpen: boolean;
@@ -300,22 +302,16 @@ export const NewClientModal: React.FC<NewClientModalProps> = ({
               />
             </div>
             <div>
-              <label className="block text-[10px] font-semibold text-slate-400 uppercase mb-1">Requested Product</label>
-              <select
-                value={formData.requestedProduct}
-                onChange={(e) => setFormData({ ...formData, requestedProduct: e.target.value as FundingProductType })}
-                className="w-full bg-slate-950 border border-slate-800 rounded-xl p-2 text-xs text-slate-100 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500/50"
-              >
-                <option value="Revenue Funding">Revenue Funding</option>
-                <option value="Personal Term Loan">Personal Term Loan</option>
-                <option value="HELOC">HELOC</option>
-                <option value="HEI">HEI</option>
-                <option value="Business Term Loan">Business Term Loan</option>
-                <option value="Business Line of Credit">Business Line of Credit</option>
-                <option value="Equipment Financing">Equipment Financing</option>
-                <option value="0% Business Credit Cards">0% Business Credit Cards</option>
-                <option value="SBA Loan">SBA Loan</option>
-              </select>
+              <ProductSelect
+                label="Requested Product"
+                value={formData.requestedProduct || 'Revenue Funding'}
+                onChange={(val) => setFormData({ ...formData, requestedProduct: val as FundingProductType })}
+                otherType={formData.otherProductType || ''}
+                onChangeOtherType={(val) => setFormData({ ...formData, otherProductType: val })}
+                otherDescription={formData.otherProductDescription || ''}
+                onChangeOtherDescription={(val) => setFormData({ ...formData, otherProductDescription: val })}
+                selectClassName="p-2"
+              />
             </div>
             <div>
               <label className="block text-[10px] font-semibold text-slate-400 uppercase mb-1">Assigned Operations Staff</label>

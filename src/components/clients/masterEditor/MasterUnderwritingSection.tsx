@@ -1,30 +1,18 @@
 import React from 'react';
 import { Scale, CheckCircle2, DollarSign, ShieldAlert, FileText, Percent } from 'lucide-react';
 import { FundingProductType, UnderwritingRecord } from '../../../types';
+import { ProductSelect } from '../../common/ProductSelect';
 
 interface MasterUnderwritingSectionProps {
   underwriting: Partial<UnderwritingRecord>;
   onChangeUnderwriting: (updated: Partial<UnderwritingRecord>) => void;
 }
 
-const PRODUCTS: FundingProductType[] = [
-  'Revenue Funding',
-  'Personal Term Loan',
-  'HELOC',
-  'HEI',
-  'Business Term Loan',
-  'Business Line of Credit',
-  'Equipment Financing',
-  '0% Business Credit Cards',
-  '0% Business Cards & Lines of Credit',
-  'SBA Loan',
-  'Other Valid Product',
-];
-
 export const MasterUnderwritingSection: React.FC<MasterUnderwritingSectionProps> = ({
   underwriting,
   onChangeUnderwriting,
 }) => {
+
   return (
     <div className="space-y-6">
       {/* Underwriting Decision & Offer */}
@@ -69,18 +57,12 @@ export const MasterUnderwritingSection: React.FC<MasterUnderwritingSectionProps>
           </div>
 
           <div>
-            <label className="block text-xs font-semibold text-slate-300 mb-1">Recommended Product</label>
-            <select
+            <ProductSelect
+              label="Recommended Product"
               value={underwriting.recommendedProduct || 'Business Line of Credit'}
-              onChange={(e) => onChangeUnderwriting({ ...underwriting, recommendedProduct: e.target.value as FundingProductType })}
-              className="w-full bg-[#070d18] border border-blue-900/70 rounded-xl p-2.5 text-xs text-slate-100 focus:border-amber-400 focus:outline-none"
-            >
-              {PRODUCTS.map((prod) => (
-                <option key={prod} value={prod}>
-                  {prod}
-                </option>
-              ))}
-            </select>
+              onChange={(val) => onChangeUnderwriting({ ...underwriting, recommendedProduct: val as FundingProductType })}
+              selectClassName="p-2.5"
+            />
           </div>
         </div>
 

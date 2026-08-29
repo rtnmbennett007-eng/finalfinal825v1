@@ -28,6 +28,8 @@ import {
   Building2,
   UserCheck,
 } from 'lucide-react';
+import { ProductSelect } from '../common/ProductSelect';
+
 
 interface UnderwritingChecklistTabProps {
   deal: FundingDeal;
@@ -540,19 +542,12 @@ export const UnderwritingChecklistTab: React.FC<UnderwritingChecklistTabProps> =
           </div>
 
           <div>
-            <label className="text-xs font-semibold text-slate-300 block mb-1.5">Recommended Product</label>
-            <select
+            <ProductSelect
+              label="Recommended Product"
               value={recProduct}
-              onChange={(e) => setRecProduct(e.target.value)}
-              className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-xs text-white focus:outline-none focus:border-amber-500"
-            >
-              <option value="Revenue Funding">Revenue Funding</option>
-              <option value="Business Line of Credit">Business Line of Credit</option>
-              <option value="SBA Loan">SBA Loan</option>
-              <option value="Equipment Financing">Equipment Financing</option>
-              <option value="Term Loan">Term Loan</option>
-              <option value="Merchant Cash Advance (MCA)">Merchant Cash Advance (MCA)</option>
-            </select>
+              onChange={(val) => setRecProduct(val)}
+              selectClassName="px-3 py-2 text-xs"
+            />
           </div>
 
           <div>

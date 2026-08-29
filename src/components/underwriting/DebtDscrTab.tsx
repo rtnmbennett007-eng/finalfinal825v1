@@ -21,6 +21,8 @@ import {
   Landmark,
   Calculator,
 } from 'lucide-react';
+import { ProductSelect } from '../common/ProductSelect';
+
 
 interface DebtDscrTabProps {
   deal: FundingDeal;
@@ -389,6 +391,15 @@ export const DebtDscrTab: React.FC<DebtDscrTabProps> = ({
                     placeholder="e.g. OnDeck / Fundbox"
                   />
                 </div>
+              </div>
+
+              <div>
+                <ProductSelect
+                  label="Product Type"
+                  value={newPosition.product || 'Revenue Funding'}
+                  onChange={(val) => setNewPosition({ ...newPosition, product: val })}
+                  selectClassName="px-2.5 py-1.5"
+                />
               </div>
 
               <div className="grid grid-cols-2 gap-3">

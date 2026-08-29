@@ -31,6 +31,7 @@ import { useAuth } from '../../../context/AuthContext';
 import { StatusBadge, ProductBadge } from '../../common/StatusBadge';
 import { ConfirmModal } from '../../common/ConfirmModal';
 import { ProductSelect } from '../../common/ProductSelect';
+import { MASTER_FUNDING_PRODUCTS } from '../../../data/productCatalog';
 import { formatDate } from '../../../utils/dateUtils';
 import { calculateDealCommission } from '../../../utils/commissionCalculator';
 
@@ -42,26 +43,8 @@ interface FundingDealsTabProps {
   onNavigateToTab?: (tab: string) => void;
 }
 
-const FUNDING_PRODUCTS: FundingProductType[] = [
-  'Revenue Funding',
-  'Personal Term Loan',
-  'Business Line of Credit',
-  'Business Term Loan',
-  '0% Business Credit Cards',
-  '0% Business Cards & Lines of Credit',
-  'Equipment Financing & Leasing',
-  'SBA 7(a) Loan',
-  'SBA Express Loan',
-  'SBA 504 Loan',
-  'HELOC',
-  'Home Equity Line of Credit (HELOC)',
-  'HEI',
-  'Home Equity Investment (HEI)',
-  'Accounts Receivable / Invoice Factoring',
-  'Merchant Cash Advance (MCA)',
-  'Other / Custom Product',
-  'Other Valid Product',
-];
+const FUNDING_PRODUCTS: FundingProductType[] = MASTER_FUNDING_PRODUCTS.map((p) => p.name);
+
 
 const DEAL_STATUS_OPTIONS: { value: FundingDeal['status']; label: string; description: string }[] = [
   { value: 'PROPOSED', label: 'Proposed', description: 'Initial deal structure under Maple X review' },

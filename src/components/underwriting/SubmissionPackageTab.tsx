@@ -28,6 +28,8 @@ import {
   Layers,
   FileCheck2,
 } from 'lucide-react';
+import { ProductSelect } from '../common/ProductSelect';
+
 
 interface SubmissionPackageTabProps {
   deal: FundingDeal;
@@ -251,19 +253,12 @@ export const SubmissionPackageTab: React.FC<SubmissionPackageTabProps> = ({
           </div>
 
           <div>
-            <label className="text-xs font-semibold text-slate-300 block mb-1.5">Target Product</label>
-            <select
+            <ProductSelect
+              label="Target Product"
               value={lenderProduct}
-              onChange={(e) => setLenderProduct(e.target.value)}
-              className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-xs text-white focus:outline-none focus:border-amber-500"
-            >
-              <option value="Revenue Funding">Revenue Funding</option>
-              <option value="Business Line of Credit">Business Line of Credit</option>
-              <option value="SBA Loan">SBA Loan</option>
-              <option value="Equipment Financing">Equipment Financing</option>
-              <option value="Term Loan">Term Loan</option>
-              <option value="Merchant Cash Advance (MCA)">Merchant Cash Advance (MCA)</option>
-            </select>
+              onChange={(val) => setLenderProduct(val)}
+              selectClassName="px-3 py-2 text-xs"
+            />
           </div>
 
           <div>

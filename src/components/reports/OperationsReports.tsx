@@ -23,6 +23,8 @@ import { useData } from '../../context/DataContext';
 import { useAuth } from '../../context/AuthContext';
 import { calculateDashboardMetrics } from '../../utils/dashboardMetrics';
 import { Client, CommissionParticipant, FundingDeal, Lead, PipelineStage } from '../../types';
+import { MASTER_FUNDING_PRODUCTS } from '../../data/productCatalog';
+
 
 // Tab Subcomponents
 import { PipelineReportTab } from './tabs/PipelineReportTab';
@@ -132,14 +134,7 @@ export const OperationsReports: React.FC<OperationsReportsProps> = ({
   }, [deals]);
 
   const distinctProducts = useMemo(() => {
-    const set = new Set<string>([
-      'Revenue Funding',
-      'Personal Term Loan',
-      'Business Line of Credit',
-      'HELOC',
-      'Equipment Financing',
-      'SBA 7(a) Loan',
-    ]);
+    const set = new Set<string>(MASTER_FUNDING_PRODUCTS.map((p) => p.name));
     deals.forEach((d) => d.product && set.add(d.product));
     return Array.from(set).sort();
   }, [deals]);

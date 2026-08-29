@@ -1,30 +1,18 @@
 import React from 'react';
 import { FileText, DollarSign, CreditCard, Home, ShieldAlert, AlertCircle } from 'lucide-react';
 import { Client, FundingProductType } from '../../../types';
+import { ProductSelect } from '../../common/ProductSelect';
 
 interface MasterApplicationSectionProps {
   form: Partial<Client>;
   onChange: (updates: Partial<Client>) => void;
 }
 
-const FUNDING_PRODUCTS: FundingProductType[] = [
-  'Revenue Funding',
-  'Personal Term Loan',
-  'HELOC',
-  'HEI',
-  'Business Term Loan',
-  'Business Line of Credit',
-  'Equipment Financing',
-  '0% Business Credit Cards',
-  '0% Business Cards & Lines of Credit',
-  'SBA Loan',
-  'Other Valid Product',
-];
-
 export const MasterApplicationSection: React.FC<MasterApplicationSectionProps> = ({
   form,
   onChange,
 }) => {
+
   return (
     <div className="space-y-6">
       {/* Funding Request Details */}
@@ -52,18 +40,17 @@ export const MasterApplicationSection: React.FC<MasterApplicationSectionProps> =
           </div>
 
           <div>
-            <label className="block text-xs font-semibold text-slate-300 mb-1">Requested Funding Product *</label>
-            <select
+            <ProductSelect
+              label="Requested Funding Product"
+              required
               value={form.requestedProduct || 'Business Line of Credit'}
-              onChange={(e) => onChange({ requestedProduct: e.target.value as FundingProductType })}
-              className="w-full bg-[#070d18] border border-blue-900/70 rounded-xl p-2.5 text-xs text-slate-100 focus:border-amber-400 focus:outline-none"
-            >
-              {FUNDING_PRODUCTS.map((prod) => (
-                <option key={prod} value={prod}>
-                  {prod}
-                </option>
-              ))}
-            </select>
+              onChange={(val) => onChange({ requestedProduct: val as FundingProductType })}
+              otherType={form.otherProductType || ''}
+              onChangeOtherType={(val) => onChange({ otherProductType: val })}
+              otherDescription={form.otherProductDescription || ''}
+              onChangeOtherDescription={(val) => onChange({ otherProductDescription: val })}
+              selectClassName="p-2.5"
+            />
           </div>
 
           <div>

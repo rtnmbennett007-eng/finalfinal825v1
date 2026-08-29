@@ -1006,18 +1006,18 @@ export const api = {
         const data = await res.json().catch(() => ({}));
         if (data.folderAccessible || data.driveAuthenticated || data.success) {
           driveStatus = 'GREEN';
-          driveMsg = `Connected (${driveLatency}ms) - Folder 1qTQe0N8Wb_5MTDrp_BmOrdSjI5QWGqVm`;
+          driveMsg = `Connected (${driveLatency}ms) - Folder ${data.folderId || '1qTQe0N8Wb_5MTDrp_BmOrdSjI5QWGqVm'}`;
         } else {
-          driveStatus = 'YELLOW';
-          driveMsg = data.error || 'Operating in resilient document storage mode';
+          driveStatus = 'RED';
+          driveMsg = data.error || 'GOOGLE DRIVE UNAVAILABLE: Service Account or folder unverified';
         }
       } else {
-        driveStatus = 'YELLOW';
-        driveMsg = `HTTP ${res.status}: Using active local drive vault`;
+        driveStatus = 'RED';
+        driveMsg = `HTTP ${res.status}: GOOGLE DRIVE UNAVAILABLE`;
       }
     } catch (err: any) {
-      driveStatus = 'YELLOW';
-      driveMsg = 'Operating in active resilient mode';
+      driveStatus = 'RED';
+      driveMsg = 'GOOGLE DRIVE UNAVAILABLE: Endpoint unreachable';
     }
     items.push({
       key: 'googleDrive',

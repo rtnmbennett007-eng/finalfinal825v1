@@ -7,9 +7,27 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   const apiKey = process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY;
   const isConfigured = Boolean(apiKey && apiKey.trim().length > 0);
 
+  if (!isConfigured) {
+    return res.status(200).json({
+      success: false,
+      environment: 'production',
+      aiConfigured: false,
+      apiKeyConfigured: false,
+      errorCode: 'AI_KEY_MISSING',
+      error: 'GEMINI_API_KEY is not configured in Production',
+      status: 'degraded',
+      primaryModel: 'gemini-3.6-flash',
+      fallbackModel: 'gemini-3.1-pro-preview',
+      timestamp: new Date().toISOString(),
+    });
+  }
+
   return res.status(200).json({
-    status: isConfigured ? 'healthy' : 'degraded',
-    apiKeyConfigured: isConfigured,
+    success: true,
+    environment: 'production',
+    aiConfigured: true,
+    apiKeyConfigured: true,
+    status: 'healthy',
     primaryModel: 'gemini-3.6-flash',
     fallbackModel: 'gemini-3.1-pro-preview',
     features: [
@@ -22,3 +40,4 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     timestamp: new Date().toISOString(),
   });
 }
+

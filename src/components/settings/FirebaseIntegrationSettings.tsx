@@ -26,6 +26,7 @@ import {
   resetFirebaseConfigToDefaults,
   testFirestoreConnection,
 } from '../../firebase';
+import { firestoreService } from '../../services/firestoreService';
 
 export const FirebaseIntegrationSettings: React.FC = () => {
   const { addToast, updateFirebaseConfig: updateServerFirebaseConfig } = useData();
@@ -441,8 +442,6 @@ export const FirebaseIntegrationSettings: React.FC = () => {
             type="button"
             onClick={async () => {
               try {
-                const { runDbMigration } = (await import('../../context/DataContext')).useData ? { runDbMigration: (window as any).__runMigration } : { runDbMigration: null };
-                const firestoreService = (await import('../../services/firestoreService')).firestoreService;
                 const res = await firestoreService.seedFirestoreFromDbJson(true);
                 addToast('success', 'Migration Completed', res.details);
               } catch (err: any) {

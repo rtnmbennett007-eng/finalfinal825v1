@@ -251,6 +251,13 @@ export const api = {
   // Master Verification Form
   getMasterVerification: async (clientId: string) => firestoreService.getMasterVerification(clientId),
   saveMasterVerification: async (clientId: string, data: Partial<MasterVerificationData>) => firestoreService.saveMasterVerification(clientId, data),
+  completeVerificationAndSyncUnderwriting: async (params: {
+    clientId: string;
+    dealId?: string;
+    verifiedBy: string;
+    worksheetData: MasterVerificationData;
+    notes?: string;
+  }) => firestoreService.completeVerificationAndSyncUnderwriting(params),
 
   // Funding Deals
   getDeals: async (): Promise<FundingDeal[]> => {

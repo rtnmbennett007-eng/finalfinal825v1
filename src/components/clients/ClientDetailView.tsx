@@ -185,6 +185,9 @@ export const ClientDetailView: React.FC<ClientDetailViewProps> = ({
     notes: '',
   });
 
+  // Deal selection state
+  const [selectedDealId, setSelectedDealId] = useState<string>('');
+
   // Underwriting Workspace State
   const [underwritingChecklist, setUnderwritingChecklist] = useState<Record<string, 'Complete' | 'Incomplete' | 'NA'>>({});
   const [underwritingDecision, setUnderwritingDecision] = useState<'QUALIFIED' | 'PRE_APPROVED' | 'APPROVED' | 'NOT_QUALIFIED' | 'ADDITIONAL_INFO_REQUESTED'>('QUALIFIED');
@@ -1126,6 +1129,22 @@ export const ClientDetailView: React.FC<ClientDetailViewProps> = ({
         <MasterVerificationTab
           client={client}
           masterVerification={masterVerification}
+          deals={safeDeals}
+          selectedDealId={selectedDealId || safeDeals[0]?.id}
+          underwritingEvaluation={underwritingEvaluation}
+          onSelectDeal={(deal) => setSelectedDealId(deal.id)}
+          onOpenUnderwriting={(dealId) => {
+            setSelectedClientId(client.id);
+            if (dealId) {
+              setSelectedDealId(dealId);
+            }
+            if (onNavigateToTab) {
+              onNavigateToTab('underwriting');
+            } else {
+              setActiveTab('underwriting');
+            }
+          }}
+          onNavigateToTab={onNavigateToTab}
           onRefresh={loadClientDetails}
         />
       )}

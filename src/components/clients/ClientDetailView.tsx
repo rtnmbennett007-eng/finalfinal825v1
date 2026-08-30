@@ -341,6 +341,12 @@ export const ClientDetailView: React.FC<ClientDetailViewProps> = ({
     loadClientDetails();
   }, [clientId]);
 
+  useEffect(() => {
+    if (initialTab) {
+      setActiveTab(initialTab);
+    }
+  }, [initialTab, clientId]);
+
   // Save Master Record Details
   const handleSaveMasterClient = async (e: React.FormEvent) => {
     e.preventDefault();

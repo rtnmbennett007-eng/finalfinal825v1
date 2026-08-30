@@ -59,6 +59,7 @@ interface DataContextType {
   productionErrors: ProductionErrorRecord[];
 
   selectedClientId: string | null;
+  selectedClientTab: string | null;
   selectedClientData: any | null;
   isLoading: boolean;
   isSaving: boolean;
@@ -66,6 +67,8 @@ interface DataContextType {
 
   // General Actions
   setSelectedClientId: (id: string | null) => void;
+  setSelectedClientTab: (tab: string | null) => void;
+  navigateToClientVerification: (clientId: string) => void;
   refreshAll: () => Promise<void>;
   refreshClientDetail: (clientId: string) => Promise<void>;
   addToast: (type: ToastMessage['type'], title: string, message: string) => void;
@@ -200,7 +203,13 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [productionErrors, setProductionErrors] = useState<ProductionErrorRecord[]>([]);
 
   const [selectedClientId, setSelectedClientId] = useState<string | null>(null);
+  const [selectedClientTab, setSelectedClientTab] = useState<string | null>(null);
   const [selectedClientData, setSelectedClientData] = useState<any | null>(null);
+
+  const navigateToClientVerification = useCallback((clientId: string) => {
+    setSelectedClientId(clientId);
+    setSelectedClientTab('verification');
+  }, []);
 
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [isSaving, setIsSaving] = useState<boolean>(false);
@@ -1455,12 +1464,15 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
         productionErrors,
 
         selectedClientId,
+        selectedClientTab,
         selectedClientData,
         isLoading,
         isSaving,
         toasts,
 
         setSelectedClientId,
+        setSelectedClientTab,
+        navigateToClientVerification,
         refreshAll,
         refreshClientDetail,
         addToast,

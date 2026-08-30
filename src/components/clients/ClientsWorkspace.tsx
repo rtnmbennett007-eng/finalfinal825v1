@@ -48,6 +48,8 @@ export const ClientsWorkspace: React.FC<ClientsWorkspaceProps> = ({
     tasks,
     selectedClientId,
     setSelectedClientId,
+    selectedClientTab,
+    setSelectedClientTab,
     deleteClient,
     leadSources,
     referralPartners,
@@ -94,11 +96,18 @@ export const ClientsWorkspace: React.FC<ClientsWorkspaceProps> = ({
     return (
       <ErrorBoundary
         fallbackTitle="Error Loading Client 360 File"
-        onReset={() => setSelectedClientId(null)}
+        onReset={() => {
+          setSelectedClientId(null);
+          setSelectedClientTab(null);
+        }}
       >
         <ClientDetailView
           clientId={selectedClientId}
-          onBack={() => setSelectedClientId(null)}
+          initialTab={selectedClientTab || 'overview'}
+          onBack={() => {
+            setSelectedClientId(null);
+            setSelectedClientTab(null);
+          }}
           onNavigateToTab={onNavigateToTab}
         />
       </ErrorBoundary>

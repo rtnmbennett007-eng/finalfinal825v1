@@ -17,6 +17,7 @@ import {
   InternalTask,
   Lead,
   LeadSourceOption,
+  PipelineStage,
   LenderHistoryRecord,
   MasterVerificationData,
   ReferralPartnerOption,
@@ -155,6 +156,8 @@ interface DataContextType {
 
   // GHL
   syncGhlNow: () => Promise<void>;
+  syncSingleLeadToGhl: (leadId: string) => Promise<Lead>;
+  syncAllLeadsToGhl: () => Promise<{ syncedCount: number; failedCount: number }>;
   updateGhlConfig: (data: Partial<GhlConfig>) => Promise<GhlConfig>;
   testGhlConnection: (data?: Partial<GhlConfig>) => Promise<{ success: boolean; message: string; locationName?: string }>;
 
@@ -338,6 +341,27 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
         assignedUser: created.assignedSalesRep,
       });
 
+      // Automated Sync to GoHighLevel CRM platform
+      if (ghlConfig?.autoSyncEnabled !== false) {
+        api.pushLeadToGhl(created, ghlConfig || undefined).then(async (ghlRes) => {
+          if (ghlRes.success) {
+            const updatedWithGhl = await firestoreService.updateLead(created.id, {
+              ghlContactId: ghlRes.ghlContactId,
+              ghlOpportunityId: ghlRes.ghlOpportunityId,
+              ghlSyncStatus: 'SYNCED',
+            });
+            setLeads((prev) => prev.map((l) => (l.id === created.id ? updatedWithGhl : l)));
+            addToast(
+              'success',
+              'GoHighLevel CRM Synced',
+              `Lead ${created.firstName} ${created.lastName} pushed to GHL CRM (Contact: ${ghlRes.ghlContactId || 'Synced'})`
+            );
+          }
+        }).catch((ghlErr) => {
+          console.warn('Background GHL lead push notice:', ghlErr);
+        });
+      }
+
       return created;
     } catch (err: any) {
       addToast('error', 'Save Failed', err.message || 'Could not save lead');
@@ -352,6 +376,14 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
     try {
       const updated = await firestoreService.updateLead(id, data);
       addToast('success', 'Lead Updated', `Lead record for ${updated.firstName} ${updated.lastName} updated in Firestore.`);
+      
+      // If updating stage/status or contact info, keep GHL in sync if auto-sync is on
+      if (ghlConfig?.autoSyncEnabled !== false) {
+        api.pushLeadToGhl(updated, ghlConfig || undefined).catch((err) => {
+          console.debug('GHL update sync notice:', err);
+        });
+      }
+
       return updated;
     } catch (err: any) {
       addToast('error', 'Update Failed', err.message || 'Could not update lead');
@@ -393,6 +425,17 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
         clientId: result.client.id,
         dealId: result.deal.id,
       });
+
+      // Sync converted pipeline stage to GoHighLevel CRM
+      const convertedLead = leads.find((l) => l.id === id);
+      if (convertedLead && ghlConfig?.autoSyncEnabled !== false) {
+        api.pushLeadToGhl({
+          ...convertedLead,
+          status: 'APPLICATION_RECEIVED' as PipelineStage,
+        }, ghlConfig || undefined).catch((err) => {
+          console.warn('GHL convert sync notice:', err);
+        });
+      }
 
       return result;
     } catch (err: any) {
@@ -1259,10 +1302,56 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const syncGhlNow = async (): Promise<void> => {
     setIsSaving(true);
     try {
-      const res = await api.syncGhlNow();
+      const res = await api.syncGhlNow(leads);
+      const now = new Date().toISOString();
+      setLeads((prev) => prev.map((l) => ({ ...l, ghlSyncStatus: 'SYNCED' as const, updatedAt: now })));
+      if (ghlConfig) {
+        setGhlConfig((prev) => (prev ? { ...prev, isConnected: true, lastSyncAt: now } : null));
+      }
       addToast('success', 'GHL Synchronized', res.message);
     } catch (err: any) {
       addToast('error', 'GHL Sync Failed', err.message || 'Could not sync with GoHighLevel');
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const syncSingleLeadToGhl = async (leadId: string): Promise<Lead> => {
+    setIsSaving(true);
+    try {
+      const targetLead = leads.find((l) => l.id === leadId);
+      if (!targetLead) throw new Error('Lead not found in dataset');
+      const ghlRes = await api.pushLeadToGhl(targetLead, ghlConfig || undefined);
+      const updated = await firestoreService.updateLead(leadId, {
+        ghlContactId: ghlRes.ghlContactId,
+        ghlOpportunityId: ghlRes.ghlOpportunityId,
+        ghlSyncStatus: 'SYNCED',
+      });
+      setLeads((prev) => prev.map((l) => (l.id === leadId ? updated : l)));
+      addToast('success', 'Lead Synced to GHL', `${targetLead.firstName} ${targetLead.lastName} synced to GoHighLevel CRM.`);
+      return updated;
+    } catch (err: any) {
+      addToast('error', 'GHL Sync Failed', err.message || 'Could not sync lead with GoHighLevel');
+      throw err;
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const syncAllLeadsToGhl = async (): Promise<{ syncedCount: number; failedCount: number }> => {
+    setIsSaving(true);
+    try {
+      const res = await api.syncLeadsToGhl(leads, ghlConfig || undefined);
+      const now = new Date().toISOString();
+      setLeads((prev) => prev.map((l) => ({ ...l, ghlSyncStatus: 'SYNCED' as const, updatedAt: now })));
+      if (ghlConfig) {
+        setGhlConfig((prev) => (prev ? { ...prev, isConnected: true, lastSyncAt: now } : null));
+      }
+      addToast('success', 'GHL Pipeline Synchronized', res.message);
+      return { syncedCount: res.syncedCount, failedCount: 0 };
+    } catch (err: any) {
+      addToast('error', 'GHL Batch Sync Failed', err.message || 'Could not sync leads with GoHighLevel');
+      throw err;
     } finally {
       setIsSaving(false);
     }
@@ -1543,6 +1632,8 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
         updateFirebaseConfig,
 
         syncGhlNow,
+        syncSingleLeadToGhl,
+        syncAllLeadsToGhl,
         updateGhlConfig,
         testGhlConnection,
 

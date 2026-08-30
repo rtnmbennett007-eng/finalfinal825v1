@@ -454,6 +454,13 @@ export function detectDealConflicts(
     { source: 'MANUAL', sourceLabel: 'Current Deal Structure', value: dealReq, confidence: 0.95 },
   ]);
 
+  // Retain all resolved conflicts so the Reconciliation & Provenance Audit History accurately reflects resolved items
+  existingMap.forEach((c) => {
+    if (c.status === 'RESOLVED' && !conflicts.some((item) => item.fieldKey === c.fieldKey)) {
+      conflicts.push(c);
+    }
+  });
+
   return conflicts;
 }
 

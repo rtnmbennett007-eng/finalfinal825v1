@@ -14,6 +14,8 @@ import {
   Edit2,
   CheckCircle2,
   Sparkles,
+  RefreshCw,
+  Zap,
 } from 'lucide-react';
 import { useData } from '../../context/DataContext';
 import { Lead, PipelineStage } from '../../types';
@@ -38,6 +40,9 @@ export const LeadsWorkspace: React.FC<LeadsWorkspaceProps> = ({
     leadSources,
     referralPartners,
     syncGhlNow,
+    syncSingleLeadToGhl,
+    syncAllLeadsToGhl,
+    ghlConfig,
     setSelectedClientId,
   } = useData();
 
@@ -48,6 +53,8 @@ export const LeadsWorkspace: React.FC<LeadsWorkspaceProps> = ({
   const [leadToEdit, setLeadToEdit] = useState<Lead | null>(null);
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const [convertingId, setConvertingId] = useState<string | null>(null);
+  const [syncingLeadId, setSyncingLeadId] = useState<string | null>(null);
+  const [isSyncingAll, setIsSyncingAll] = useState(false);
   const [leadToDelete, setLeadToDelete] = useState<{ id: string; name: string } | null>(null);
   const [isDeletingLead, setIsDeletingLead] = useState(false);
 
@@ -103,6 +110,28 @@ export const LeadsWorkspace: React.FC<LeadsWorkspaceProps> = ({
     }
   };
 
+  const handleSyncSingleLead = async (leadId: string) => {
+    setSyncingLeadId(leadId);
+    try {
+      await syncSingleLeadToGhl(leadId);
+    } catch (err) {
+      console.error('Single lead GHL sync failed:', err);
+    } finally {
+      setSyncingLeadId(null);
+    }
+  };
+
+  const handleSyncAllLeads = async () => {
+    setIsSyncingAll(true);
+    try {
+      await syncAllLeadsToGhl();
+    } catch (err) {
+      console.error('Batch GHL sync failed:', err);
+    } finally {
+      setIsSyncingAll(false);
+    }
+  };
+
   return (
     <div className="space-y-6 pb-12">
       {/* Header */}
@@ -114,27 +143,33 @@ export const LeadsWorkspace: React.FC<LeadsWorkspaceProps> = ({
             </span>
             <span className="text-xs text-slate-500">•</span>
             <span className="text-xs text-slate-400">Total Leads: {leads.length}</span>
+            <span className="text-xs text-slate-500">•</span>
+            <span className="text-xs text-emerald-400 font-mono">
+              GHL Auto-Sync: {ghlConfig?.autoSyncEnabled !== false ? 'Active' : 'Manual'}
+            </span>
           </div>
           <h1 className="text-xl font-bold text-slate-100 mt-1 flex items-center gap-2">
             <Users className="w-5 h-5 text-blue-400" />
             Leads Operations Workspace
           </h1>
           <p className="text-xs text-slate-400 mt-0.5">
-            Organize inbound leads, track independent Lead Sources and Referral Partners, and convert qualified files to active Client Master Records.
+            Organize inbound leads, push new intake records directly to GoHighLevel CRM, track Referral Partners, and convert qualified files.
           </p>
         </div>
 
         <div className="flex items-center space-x-2.5">
           <button
-            onClick={() => syncGhlNow()}
-            className="flex items-center space-x-1.5 px-3 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 rounded-xl text-xs font-semibold transition-all shadow-xs"
+            onClick={handleSyncAllLeads}
+            disabled={isSyncingAll}
+            className="flex items-center space-x-1.5 px-3 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 rounded-xl text-xs font-semibold transition-all shadow-xs disabled:opacity-50"
+            title="Push and synchronize all leads with GoHighLevel CRM"
           >
-            <ArrowRightLeft className="w-3.5 h-3.5 text-blue-400" />
-            <span>Sync GHL CRM</span>
+            <RefreshCw className={`w-3.5 h-3.5 text-blue-400 ${isSyncingAll ? 'animate-spin' : ''}`} />
+            <span>{isSyncingAll ? 'Syncing...' : 'Sync GHL CRM'}</span>
           </button>
           <button
             onClick={onOpenNewLeadModal}
-            className="flex items-center space-x-1.5 px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-xl text-xs font-bold transition-all shadow-md shadow-blue-600/20"
+            className="flex items-center space-x-1.5 px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-xl text-xs font-bold transition-all shadow-md shadow-blue-600/20 active:scale-95"
           >
             <Plus className="w-4 h-4" />
             <span>+ Add Lead</span>
@@ -277,13 +312,31 @@ export const LeadsWorkspace: React.FC<LeadsWorkspaceProps> = ({
                     </td>
 
                     <td className="py-3 px-3">
-                      <div className="flex items-center space-x-1 text-[10px] text-emerald-400">
-                        <CheckCircle2 className="w-3 h-3 text-emerald-400" />
-                        <span className="font-mono">Synced</span>
-                      </div>
-                      <div className="text-[9px] text-slate-500 font-mono">
-                        {lead.ghlContactId || 'ghl_cnt_auto'}
-                      </div>
+                      {lead.ghlSyncStatus === 'PENDING' ? (
+                        <div className="space-y-1">
+                          <span className="inline-flex items-center space-x-1 text-[10px] text-amber-400 bg-amber-500/10 border border-amber-500/20 px-1.5 py-0.5 rounded font-mono">
+                            <span>Pending</span>
+                          </span>
+                          <button
+                            onClick={() => handleSyncSingleLead(lead.id)}
+                            disabled={syncingLeadId === lead.id}
+                            className="flex items-center space-x-1 text-[9px] text-blue-400 hover:text-blue-300 font-semibold"
+                          >
+                            <RefreshCw className={`w-2.5 h-2.5 ${syncingLeadId === lead.id ? 'animate-spin' : ''}`} />
+                            <span>{syncingLeadId === lead.id ? 'Pushing...' : 'Push to GHL'}</span>
+                          </button>
+                        </div>
+                      ) : (
+                        <div>
+                          <div className="flex items-center space-x-1 text-[10px] text-emerald-400">
+                            <CheckCircle2 className="w-3 h-3 text-emerald-400" />
+                            <span className="font-mono">Synced</span>
+                          </div>
+                          <div className="text-[9px] text-slate-500 font-mono truncate max-w-[110px]" title={lead.ghlContactId}>
+                            {lead.ghlContactId || 'ghl_cnt_auto'}
+                          </div>
+                        </div>
+                      )}
                     </td>
 
                     <td className="py-3 px-3 text-slate-400 text-[11px] font-mono">
@@ -292,6 +345,16 @@ export const LeadsWorkspace: React.FC<LeadsWorkspaceProps> = ({
 
                     <td className="py-3 px-4 text-right">
                       <div className="flex items-center justify-end space-x-1.5">
+                        {/* Quick Push to GHL */}
+                        <button
+                          onClick={() => handleSyncSingleLead(lead.id)}
+                          disabled={syncingLeadId === lead.id}
+                          title="Push lead directly to GoHighLevel CRM"
+                          className="p-1.5 text-slate-400 hover:text-blue-400 hover:bg-slate-800 rounded-lg transition-colors disabled:opacity-50"
+                        >
+                          <RefreshCw className={`w-3.5 h-3.5 ${syncingLeadId === lead.id ? 'animate-spin text-blue-400' : ''}`} />
+                        </button>
+
                         {/* Convert to Client File */}
                         <button
                           onClick={() => handleConvertToClient(lead)}

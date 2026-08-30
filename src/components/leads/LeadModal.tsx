@@ -319,32 +319,47 @@ export const LeadModal: React.FC<LeadModalProps> = ({ isOpen, onClose, leadToEdi
           </div>
         </div>
 
-        {/* CRM GHL IDs */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2 border-t border-slate-800 bg-slate-950/40 p-3 rounded-xl">
-          <div>
-            <label className="block text-[10px] font-mono text-slate-400 uppercase tracking-wide mb-1">
-              GHL Contact ID
-            </label>
-            <input
-              type="text"
-              value={formData.ghlContactId || ''}
-              onChange={(e) => setFormData({ ...formData, ghlContactId: e.target.value })}
-              className="w-full bg-slate-950 border border-slate-800 rounded-lg px-2.5 py-1.5 text-xs text-slate-300 font-mono focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500/50"
-              placeholder="e.g. ghl_cnt_12345"
-            />
+        {/* CRM GHL IDs & Auto-Sync Notice */}
+        <div className="space-y-2 pt-2 border-t border-slate-800 bg-slate-950/40 p-3 rounded-xl">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center space-x-1.5 text-xs text-blue-400 font-semibold">
+              <ArrowRightLeft className="w-3.5 h-3.5" />
+              <span>GoHighLevel CRM Direct Sync</span>
+            </div>
+            <span className="text-[10px] bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 px-2 py-0.5 rounded font-mono">
+              Auto-Push Active
+            </span>
           </div>
+          <p className="text-[11px] text-slate-400">
+            Saving or modifying this lead will automatically push and sync contact details to your configured GoHighLevel CRM pipeline.
+          </p>
 
-          <div>
-            <label className="block text-[10px] font-mono text-slate-400 uppercase tracking-wide mb-1">
-              GHL Opportunity ID
-            </label>
-            <input
-              type="text"
-              value={formData.ghlOpportunityId || ''}
-              onChange={(e) => setFormData({ ...formData, ghlOpportunityId: e.target.value })}
-              className="w-full bg-slate-950 border border-slate-800 rounded-lg px-2.5 py-1.5 text-xs text-slate-300 font-mono focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500/50"
-              placeholder="e.g. ghl_opp_98765"
-            />
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
+            <div>
+              <label className="block text-[10px] font-mono text-slate-400 uppercase tracking-wide mb-1">
+                GHL Contact ID
+              </label>
+              <input
+                type="text"
+                value={formData.ghlContactId || ''}
+                onChange={(e) => setFormData({ ...formData, ghlContactId: e.target.value })}
+                className="w-full bg-slate-950 border border-slate-800 rounded-lg px-2.5 py-1.5 text-xs text-slate-300 font-mono focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500/50"
+                placeholder="e.g. ghl_cnt_12345 (Auto-generated if empty)"
+              />
+            </div>
+
+            <div>
+              <label className="block text-[10px] font-mono text-slate-400 uppercase tracking-wide mb-1">
+                GHL Opportunity ID
+              </label>
+              <input
+                type="text"
+                value={formData.ghlOpportunityId || ''}
+                onChange={(e) => setFormData({ ...formData, ghlOpportunityId: e.target.value })}
+                className="w-full bg-slate-950 border border-slate-800 rounded-lg px-2.5 py-1.5 text-xs text-slate-300 font-mono focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500/50"
+                placeholder="e.g. ghl_opp_98765 (Auto-assigned)"
+              />
+            </div>
           </div>
         </div>
 

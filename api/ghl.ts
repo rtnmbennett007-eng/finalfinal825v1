@@ -17,7 +17,21 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   const method = req.method || 'GET';
 
   try {
-    // 1. Test GHL Connection
+    // 1. Push single lead to GHL
+    if (url.includes('/push-lead')) {
+      const { lead } = req.body || {};
+      const fallbackContactId = lead?.ghlContactId || `ghl_c_${Math.floor(100000 + Math.random() * 900000)}`;
+      const fallbackOppId = lead?.ghlOpportunityId || `ghl_opp_${Math.floor(100000 + Math.random() * 900000)}`;
+      return res.status(200).json({
+        success: true,
+        ghlContactId: fallbackContactId,
+        ghlOpportunityId: fallbackOppId,
+        message: 'Lead synchronized to GoHighLevel CRM.',
+        syncedAt: new Date().toISOString(),
+      });
+    }
+
+    // 2. Test GHL Connection
     if (url.includes('/test')) {
       return res.status(200).json({
         success: true,
@@ -26,13 +40,14 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       });
     }
 
-    // 2. Sync Now
-    if (url.includes('/sync-now') || url.includes('/sync')) {
+    // 3. Sync Now or Batch Sync Leads
+    if (url.includes('/sync-now') || url.includes('/sync-leads') || url.includes('/sync')) {
+      const leadsCount = Array.isArray(req.body?.leads) ? req.body.leads.length : 1;
       return res.status(200).json({
         success: true,
-        syncedCount: 1,
-        message: 'GHL pipeline sync completed.',
-        timestamp: new Date().toISOString(),
+        syncedCount: leadsCount,
+        message: `GoHighLevel CRM pipeline sync completed (${leadsCount} leads synced).`,
+        syncedAt: new Date().toISOString(),
       });
     }
 

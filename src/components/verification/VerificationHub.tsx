@@ -31,7 +31,7 @@ import {
 } from 'lucide-react';
 import { useData } from '../../context/DataContext';
 import { useAuth } from '../../context/AuthContext';
-import { Client, PipelineStage } from '../../types';
+import { Client, PipelineStage, formatFundingRange } from '../../types';
 import { StatusBadge, ProductBadge } from '../common/StatusBadge';
 import { formatDate, formatDateTime } from '../../utils/dateUtils';
 
@@ -407,13 +407,15 @@ export const VerificationHub: React.FC<VerificationHubProps> = ({ setActiveTab }
                       {/* Pipeline Stage & Product */}
                       <td className="py-3.5 px-4 space-y-1">
                         <StatusBadge status={client.currentStatus} />
-                        <div className="flex items-center gap-1.5">
+                        <div className="flex items-center gap-1.5 flex-wrap">
                           <ProductBadge product={client.requestedProduct || 'Revenue Funding'} />
-                          {client.requestedAmount ? (
-                            <span className="text-[10px] font-mono text-emerald-400 font-bold">
-                              ${client.requestedAmount.toLocaleString()}
-                            </span>
-                          ) : null}
+                          <span className="text-[10px] font-mono text-amber-300 font-bold">
+                            {formatFundingRange(
+                              client.requestedFundingMin ?? client.requestedAmountMin,
+                              client.requestedFundingMax ?? client.requestedAmountMax,
+                              client.requestedFundingRange ?? client.requestedAmount
+                            )}
+                          </span>
                         </div>
                       </td>
 
@@ -540,8 +542,12 @@ export const VerificationHub: React.FC<VerificationHubProps> = ({ setActiveTab }
                     </div>
                     <div className="flex items-center justify-between">
                       <span>Requested:</span>
-                      <strong className="text-emerald-400 font-mono">
-                        ${client.requestedAmount ? client.requestedAmount.toLocaleString() : '0'}
+                      <strong className="text-amber-300 font-mono text-xs">
+                        {formatFundingRange(
+                          client.requestedFundingMin ?? client.requestedAmountMin,
+                          client.requestedFundingMax ?? client.requestedAmountMax,
+                          client.requestedFundingRange ?? client.requestedAmount
+                        )}
                       </strong>
                     </div>
                     <div className="flex items-center justify-between">

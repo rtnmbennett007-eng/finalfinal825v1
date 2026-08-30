@@ -540,6 +540,9 @@ export interface Lead {
   estimatedAmount?: number;
   requestedAmountMin?: number;
   requestedAmountMax?: number;
+  requestedFundingMin?: number;
+  requestedFundingMax?: number;
+  requestedFundingRange?: string;
   originalRequestedFundingText?: string;
 }
 
@@ -639,6 +642,9 @@ export interface Client {
   requestedAmount: number;
   requestedAmountMin?: number;
   requestedAmountMax?: number;
+  requestedFundingMin?: number;
+  requestedFundingMax?: number;
+  requestedFundingRange?: string;
   originalRequestedFundingText?: string;
   requestedProduct: FundingProductType;
   otherProductType?: string;
@@ -943,6 +949,9 @@ export interface SubmissionPackageRecord {
   requestedAmount: number;
   requestedAmountMin?: number;
   requestedAmountMax?: number;
+  requestedFundingMin?: number;
+  requestedFundingMax?: number;
+  requestedFundingRange?: string;
   originalRequestedFundingText?: string;
   lenderName: string;
   lenderContact?: string;
@@ -1066,10 +1075,17 @@ export interface FundingDeal {
   requestedAmount?: number;
   requestedAmountMin?: number;
   requestedAmountMax?: number;
+  requestedFundingMin?: number;
+  requestedFundingMax?: number;
+  requestedFundingRange?: string;
   originalRequestedFundingText?: string;
   approvedAmount?: number;
   fundedAmount?: number;
   fundingAmount: number; // Backward compatibility / primary amount
+
+  // Stage and lifecycle metadata
+  lifecycleStatus?: string; // e.g. "UNDERWRITING", "KYC_VERIFIED", "LEAD"
+  fundingStage?: string;    // e.g. "PRE_APPROVED", "APPROVED", "FUNDED"
 
   // Funder / Lender details
   lenderName: string;
@@ -2471,4 +2487,35 @@ export interface FullDiagnosticReport {
       message: string;
     };
   }>;
+}
+
+/**
+ * Formats a min/max requested funding range into a standard display string
+ * e.g. "$50,000 - $100,000" or "$50,000+" or fallback
+ */
+export function formatFundingRange(
+  min?: number | null,
+  max?: number | null,
+  fallback?: string | number | null
+): string {
+  const numMin = typeof min === 'number' && !isNaN(min) && min > 0 ? min : null;
+  const numMax = typeof max === 'number' && !isNaN(max) && max > 0 ? max : null;
+
+  if (numMin !== null && numMax !== null) {
+    if (numMin === numMax) return `$${numMin.toLocaleString()}`;
+    return `$${numMin.toLocaleString()} - $${numMax.toLocaleString()}`;
+  }
+  if (numMin !== null) {
+    return `$${numMin.toLocaleString()}+`;
+  }
+  if (numMax !== null) {
+    return `Up to $${numMax.toLocaleString()}`;
+  }
+  if (typeof fallback === 'string' && fallback.trim()) {
+    return fallback.trim();
+  }
+  if (typeof fallback === 'number' && !isNaN(fallback) && fallback > 0) {
+    return `$${fallback.toLocaleString()}`;
+  }
+  return '$50,000 - $100,000';
 }

@@ -30,7 +30,7 @@ import { UserProfileModal } from '../auth/UserProfileModal';
 
 interface HeaderProps {
   activeTab?: string;
-  onOpenNewLeadModal: () => void;
+  onOpenNewLeadModal?: () => void;
   onOpenNewClientModal: () => void;
   setActiveTab: (tab: string) => void;
   onOpenCommandCenter?: () => void;
@@ -128,7 +128,7 @@ export const Header: React.FC<HeaderProps> = ({
   };
 
   const handleSelectLead = () => {
-    setActiveTab('leads');
+    setActiveTab('clients');
     setShowSearchDropdown(false);
     setSearchQuery('');
   };
@@ -398,14 +398,6 @@ export const Header: React.FC<HeaderProps> = ({
         </button>
 
         {/* Quick Action Buttons */}
-        <button
-          onClick={onOpenNewLeadModal}
-          className="flex items-center space-x-1.5 px-3 py-1.5 rounded-xl bg-blue-900/60 hover:bg-blue-800 text-blue-200 border border-blue-700/60 text-xs font-semibold transition-all shadow-xs"
-        >
-          <Plus className="w-3.5 h-3.5" />
-          <span className="hidden sm:inline">Lead</span>
-        </button>
-
         <button
           onClick={onOpenNewClientModal}
           className="flex items-center space-x-1.5 px-3.5 py-1.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 text-xs font-bold transition-all shadow-md shadow-amber-500/20"

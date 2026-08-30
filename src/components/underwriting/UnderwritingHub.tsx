@@ -35,7 +35,7 @@ import {
 import { useData } from '../../context/DataContext';
 import { UnderwritingCommandCenter } from './UnderwritingCommandCenter';
 import { ClientUnderwritingWorkspace } from './ClientUnderwritingWorkspace';
-import { FundingDeal, Client, DocumentItem, ConflictItem } from '../../types';
+import { FundingDeal, Client, DocumentItem, ConflictItem, formatFundingRange } from '../../types';
 import {
   analyzeClientUnderwriting,
   ClientUnderwritingSummary,
@@ -816,8 +816,12 @@ export const UnderwritingHub: React.FC<UnderwritingHubProps> = ({ setActiveTab }
 
                           {/* Column 3: Volume metrics */}
                           <td className="py-3.5 px-3 font-mono">
-                            <div className="text-xs font-black text-white">
-                              ${summary.totalRequestedAmount.toLocaleString()}
+                            <div className="text-xs font-bold text-amber-300">
+                              {formatFundingRange(
+                                summary.requestedFundingMin ?? summary.client.requestedAmountMin,
+                                summary.requestedFundingMax ?? summary.client.requestedAmountMax,
+                                summary.requestedFundingRange ?? summary.client.requestedAmount
+                              )}
                             </div>
                             <div className="text-[10px] text-emerald-400 mt-0.5">
                               ${summary.totalFundedAmount.toLocaleString()} funded
@@ -1019,8 +1023,14 @@ export const UnderwritingHub: React.FC<UnderwritingHubProps> = ({ setActiveTab }
                   {/* Volume Summary */}
                   <div className="bg-slate-950 p-3 rounded-xl border border-slate-800/80 grid grid-cols-2 gap-2 text-xs font-mono">
                     <div>
-                      <span className="text-[10px] text-slate-500 uppercase font-bold block">Total Requested</span>
-                      <span className="font-bold text-white text-sm">${summary.totalRequestedAmount.toLocaleString()}</span>
+                      <span className="text-[10px] text-slate-500 uppercase font-bold block">Requested Range</span>
+                      <span className="font-bold text-amber-300 text-xs truncate block">
+                        {formatFundingRange(
+                          summary.requestedFundingMin ?? summary.client.requestedAmountMin,
+                          summary.requestedFundingMax ?? summary.client.requestedAmountMax,
+                          summary.requestedFundingRange ?? summary.client.requestedAmount
+                        )}
+                      </span>
                     </div>
                     <div>
                       <span className="text-[10px] text-slate-500 uppercase font-bold block">Total Funded</span>

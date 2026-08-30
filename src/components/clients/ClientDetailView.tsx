@@ -824,12 +824,16 @@ export const ClientDetailView: React.FC<ClientDetailViewProps> = ({
           <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
             <div className="bg-[#0b1528] border border-blue-900/60 p-4 rounded-2xl shadow-lg">
               <div className="text-[10px] text-slate-400 uppercase font-bold tracking-wider">
-                Requested Funding
+                Requested Funding Range
               </div>
               <div className="text-xl font-bold text-slate-100 font-mono mt-1">
-                {formatFundingRange(client.requestedAmountMin, client.requestedAmountMax, client.requestedAmount)}
+                {formatFundingRange(
+                  client.requestedFundingMin ?? client.requestedAmountMin,
+                  client.requestedFundingMax ?? client.requestedAmountMax,
+                  client.requestedFundingRange ?? client.requestedAmount
+                )}
               </div>
-              <div className="text-[10px] text-amber-400 mt-1 font-medium">{client.requestedProduct}</div>
+              <div className="text-[10px] text-amber-400 mt-1 font-medium">{client.requestedProduct || 'Revenue Funding'}</div>
             </div>
 
             <div className="bg-[#0b1528] border border-blue-900/60 p-4 rounded-2xl shadow-lg">

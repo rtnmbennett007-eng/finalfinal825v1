@@ -5,8 +5,6 @@ import { Sidebar } from './components/layout/Sidebar';
 import { Header } from './components/layout/Header';
 import { ToastContainer } from './components/common/Toast';
 import { DashboardOverview } from './components/dashboard/DashboardOverview';
-import { LeadsWorkspace } from './components/leads/LeadsWorkspace';
-import { LeadModal } from './components/leads/LeadModal';
 import { ClientsWorkspace } from './components/clients/ClientsWorkspace';
 import { NewClientModal } from './components/clients/NewClientModal';
 import { VerificationHub } from './components/verification/VerificationHub';
@@ -28,7 +26,6 @@ const MainLayout: React.FC = () => {
     commissionStatus?: string;
     quickPreset?: string;
   } | null>(null);
-  const [isNewLeadModalOpen, setIsNewLeadModalOpen] = useState(false);
   const [isNewClientModalOpen, setIsNewClientModalOpen] = useState(false);
   const { setSelectedClientId } = useData();
 
@@ -61,7 +58,6 @@ const MainLayout: React.FC = () => {
     return <LoginView />;
   }
 
-  const handleOpenNewLeadModal = () => setIsNewLeadModalOpen(true);
   const handleOpenNewClientModal = () => setIsNewClientModalOpen(true);
 
   const handleNavigateToReports = (filters?: {
@@ -81,7 +77,7 @@ const MainLayout: React.FC = () => {
 
       {/* Main Persistent Sidebar */}
       <Sidebar
-        activeTab={activeTab}
+        activeTab={activeTab === 'leads' ? 'clients' : activeTab}
         setActiveTab={(tab) => {
           if (tab !== 'clients') {
             setSelectedClientId(null);
@@ -93,9 +89,8 @@ const MainLayout: React.FC = () => {
       {/* Primary Workspace Area */}
       <div className="flex-1 flex flex-col min-w-0 overflow-hidden bg-[#070e22]">
         <Header
-          activeTab={activeTab}
+          activeTab={activeTab === 'leads' ? 'clients' : activeTab}
           setActiveTab={setActiveTab}
-          onOpenNewLeadModal={handleOpenNewLeadModal}
           onOpenNewClientModal={handleOpenNewClientModal}
           onOpenCommandCenter={() => setIsCommandCenterOpen(true)}
         />
@@ -104,20 +99,12 @@ const MainLayout: React.FC = () => {
           {activeTab === 'dashboard' && (
             <DashboardOverview
               setActiveTab={setActiveTab}
-              onOpenNewLeadModal={handleOpenNewLeadModal}
               onOpenNewClientModal={handleOpenNewClientModal}
               onNavigateToReports={handleNavigateToReports}
             />
           )}
 
-          {activeTab === 'leads' && (
-            <LeadsWorkspace
-              onOpenNewLeadModal={handleOpenNewLeadModal}
-              setActiveTab={setActiveTab}
-            />
-          )}
-
-          {activeTab === 'clients' && (
+          {(activeTab === 'clients' || activeTab === 'leads') && (
             <ClientsWorkspace
               onOpenNewClientModal={handleOpenNewClientModal}
               isNewClientModalOpen={isNewClientModalOpen}
@@ -158,14 +145,6 @@ const MainLayout: React.FC = () => {
         </main>
       </div>
 
-      {/* Global Modals */}
-      {isNewLeadModalOpen && (
-        <LeadModal
-          isOpen={isNewLeadModalOpen}
-          onClose={() => setIsNewLeadModalOpen(false)}
-        />
-      )}
-
       {isNewClientModalOpen && (
         <NewClientModal
           isOpen={isNewClientModalOpen}
@@ -183,7 +162,6 @@ const MainLayout: React.FC = () => {
         onClose={() => setIsCommandCenterOpen(false)}
         setActiveTab={setActiveTab}
         onOpenNewClientModal={handleOpenNewClientModal}
-        onOpenNewLeadModal={handleOpenNewLeadModal}
       />
     </div>
   );

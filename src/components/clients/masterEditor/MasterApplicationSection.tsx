@@ -24,23 +24,31 @@ export const MasterApplicationSection: React.FC<MasterApplicationSectionProps> =
     } else {
       setRangeError(null);
     }
+    const formatted = formatFundingRange(nextMin, nextMax);
     onChange({
       requestedAmountMin: nextMin,
+      requestedFundingMin: nextMin,
+      requestedFundingMax: nextMax,
+      requestedFundingRange: formatted !== 'Not Available' ? formatted : undefined,
       requestedAmount: nextMax ?? nextMin ?? 0,
     });
   };
 
   const handleMaxChange = (val?: number) => {
     const nextMax = val;
-    const nextMin = form.requestedAmountMin ?? form.requestedAmount;
+    const nextMin = form.requestedFundingMin ?? form.requestedAmountMin ?? form.requestedAmount;
     if (nextMin !== undefined && nextMax !== undefined) {
       const v = validateFundingRange(nextMin, nextMax);
       setRangeError(v.isValid ? null : v.error || 'Invalid range');
     } else {
       setRangeError(null);
     }
+    const formatted = formatFundingRange(nextMin, nextMax);
     onChange({
       requestedAmountMax: nextMax,
+      requestedFundingMin: nextMin,
+      requestedFundingMax: nextMax,
+      requestedFundingRange: formatted !== 'Not Available' ? formatted : undefined,
       requestedAmount: nextMax ?? nextMin ?? 0,
     });
   };

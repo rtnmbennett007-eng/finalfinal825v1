@@ -125,11 +125,15 @@ export const NewClientModal: React.FC<NewClientModalProps> = ({
     }
 
     const primaryRequested = canonicalMax ?? canonicalMin ?? 0;
+    const formattedRange = formatFundingRange(canonicalMin, canonicalMax);
 
     const payload: Partial<Client> = {
       ...formData,
       requestedAmountMin: canonicalMin,
       requestedAmountMax: canonicalMax,
+      requestedFundingMin: canonicalMin,
+      requestedFundingMax: canonicalMax,
+      requestedFundingRange: formattedRange !== 'Not Available' ? formattedRange : undefined,
       requestedAmount: primaryRequested, // backward compatibility
     };
 

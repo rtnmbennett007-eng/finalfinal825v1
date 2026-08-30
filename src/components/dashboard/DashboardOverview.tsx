@@ -55,7 +55,7 @@ import { formatDate, formatDateTime, formatTime } from '../../utils/dateUtils';
 
 interface DashboardOverviewProps {
   setActiveTab: (tab: string) => void;
-  onOpenNewLeadModal: () => void;
+  onOpenNewLeadModal?: () => void;
   onOpenNewClientModal: () => void;
   onNavigateToReports?: (filters?: {
     view?: any;
@@ -198,7 +198,7 @@ export const DashboardOverview: React.FC<DashboardOverviewProps> = ({
     const fundedVol = totalFunded;
 
     return [
-      { id: 'leads', name: 'Leads', count: leadsCount, volume: leadsVolume, color: 'from-blue-600 to-blue-500', tab: 'leads' },
+      { id: 'leads', name: 'Intake & Leads', count: leadsCount, volume: leadsVolume, color: 'from-blue-600 to-blue-500', tab: 'clients' },
       { id: 'qualified', name: 'Qualified', count: qualifiedCount, volume: qualifiedVolume, color: 'from-cyan-600 to-cyan-500', tab: 'clients' },
       { id: 'application', name: 'Application', count: appCount, volume: appVolume, color: 'from-amber-600 to-amber-500', tab: 'clients' },
       { id: 'underwriting', name: 'Underwriting', count: underwritingCount, volume: underwritingVolume, color: 'from-purple-600 to-purple-500', tab: 'underwriting' },
@@ -542,13 +542,6 @@ export const DashboardOverview: React.FC<DashboardOverviewProps> = ({
             </button>
           </div>
 
-          <button
-            onClick={onOpenNewLeadModal}
-            className="flex items-center space-x-1.5 px-3 py-2 bg-blue-950 hover:bg-blue-900 text-blue-200 rounded-xl text-xs font-semibold border border-blue-800 transition-all shadow-xs"
-          >
-            <Plus className="w-4 h-4 text-amber-400" />
-            <span>Add Lead</span>
-          </button>
           <button
             onClick={onOpenNewClientModal}
             className="flex items-center space-x-1.5 px-3.5 py-2 bg-amber-500 hover:bg-amber-400 text-slate-950 rounded-xl text-xs font-bold transition-all shadow-md shadow-amber-500/20"

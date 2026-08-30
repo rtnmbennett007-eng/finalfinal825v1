@@ -24,7 +24,6 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeTab, setActiveTab }) => 
   const { leads, clients, deals, ghlConfig } = useData();
 
   // Metrics for badges synchronized with central command center
-  const newLeadsCount = leads.filter((l) => l.status === 'NEW_LEAD' || l.status === 'SALES_CONTACT').length;
   const pendingVerificationCount = clients.filter((c) => !c.isVerified && (c.currentStatus.includes('VERIFICATION') || c.currentStatus === 'APPLICATION_RECEIVED')).length;
   const pendingUnderwritingCount = clients.filter((c) => c.currentStatus === 'UNDERWRITING' || c.currentStatus === 'READY_FOR_LENDER').length;
   const activeFundingCount = deals.filter((d) => isDealInActivePipeline(d)).length;
@@ -32,7 +31,6 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeTab, setActiveTab }) => 
 
   const navItems = [
     { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
-    { id: 'leads', label: 'Leads Workspace', icon: Users, badge: newLeadsCount, badgeColor: 'bg-amber-500/15 text-amber-300 border-amber-500/30' },
     { id: 'clients', label: 'Client Master 360', icon: Building2, count: clients.length },
     { id: 'verification', label: 'Verification Hub', icon: FileCheck2, badge: pendingVerificationCount, badgeColor: 'bg-blue-500/20 text-blue-300 border-blue-500/30' },
     { id: 'underwriting', label: 'Underwriting Hub', icon: Scale, badge: pendingUnderwritingCount, badgeColor: 'bg-purple-500/20 text-purple-300 border-purple-500/30' },
@@ -118,7 +116,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeTab, setActiveTab }) => 
             </span>
           </div>
           <div className="text-[10px] text-slate-400 mt-1 truncate">
-            {leads.length} Leads • {clients.length} Clients • {deals.length} Deals
+            {clients.length} Clients • {deals.length} Deals
           </div>
         </div>
 

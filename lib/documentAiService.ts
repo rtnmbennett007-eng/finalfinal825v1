@@ -937,6 +937,8 @@ export interface ExtractedApplicationProfile {
 
   // Funding Request & Loan Product
   requestedAmount?: number;
+  requestedFundingMin?: number;
+  requestedFundingMax?: number;
   requestedFundingRange?: string;
   requestedProduct?: string;
   useOfFunds?: string;
@@ -979,6 +981,8 @@ export interface ExtractedApplicationProfile {
       entityStructure: string | null;
       annualRevenue: number | null;
       requestedFundingRange: string | null;
+      requestedFundingMin?: number | null;
+      requestedFundingMax?: number | null;
       requestedAmount: number | null;
       useOfFunds: string | null;
     };
@@ -1106,20 +1110,43 @@ function validateAndSanitizeApplicationData(appData: any) {
     if (!isNaN(parsedScore) && parsedScore >= 300 && parsedScore <= 850) cScore = parsedScore;
   }
 
-  // 7. Requested Amount
+  // 7. Requested Funding Range & Amount
   let reqAmount: number | null = null;
+  let reqMin: number | null = null;
+  let reqMax: number | null = null;
+  let reqRangeStr: string | null = null;
+
   const rawAmt = business.requestedAmount;
+  const rawRange = business.requestedFundingRange;
+
+  if (rawRange && String(rawRange).trim()) {
+    const rangeText = String(rawRange).trim();
+    reqRangeStr = rangeText;
+    // Extract numbers
+    const cleanNumbers = rangeText
+      .replace(/\$?\s*(\d+(?:\.\d+)?)\s*k\b/gi, (_, n) => String(Math.round(parseFloat(n) * 1000)))
+      .replace(/\$?\s*(\d+(?:\.\d+)?)\s*m\b/gi, (_, n) => String(Math.round(parseFloat(n) * 1000000)))
+      .replace(/[$,]/g, '');
+    const matched = cleanNumbers.match(/\d+/g);
+    if (matched && matched.length >= 2) {
+      reqMin = parseInt(matched[0], 10);
+      reqMax = parseInt(matched[1], 10);
+      reqRangeStr = `$${reqMin.toLocaleString()} - $${reqMax.toLocaleString()}`;
+    } else if (matched && matched.length === 1) {
+      reqMin = parseInt(matched[0], 10);
+      reqMax = reqMin;
+      reqRangeStr = `$${reqMin.toLocaleString()} - $${reqMin.toLocaleString()}`;
+    }
+  }
+
   if (rawAmt !== undefined && rawAmt !== null && String(rawAmt).trim() !== '') {
     const parsedAmt = Number(String(rawAmt).replace(/[^0-9.]/g, ''));
-    if (!isNaN(parsedAmt)) reqAmount = Math.round(parsedAmt);
-  } else if (business.requestedFundingRange) {
-    const numbers = String(business.requestedFundingRange).match(/\d+/g);
-    if (numbers && numbers.length > 0) {
-      const lastNum = Number(numbers[numbers.length - 1]);
-      if (String(business.requestedFundingRange).toLowerCase().includes('k')) {
-        reqAmount = lastNum * 1000;
-      } else {
-        reqAmount = lastNum;
+    if (!isNaN(parsedAmt) && parsedAmt > 0) {
+      reqAmount = Math.round(parsedAmt);
+      if (reqMin === null && reqMax === null) {
+        reqMin = reqAmount;
+        reqMax = reqAmount;
+        reqRangeStr = `$${reqAmount.toLocaleString()} - $${reqAmount.toLocaleString()}`;
       }
     }
   }
@@ -1167,7 +1194,9 @@ function validateAndSanitizeApplicationData(appData: any) {
       stateOfOrganization: cleanVal(business.stateOfOrganization || business.businessState || business.state) || null,
       entityStructure: cleanVal(business.entityStructure) || 'LLC',
       annualRevenue: annualRev,
-      requestedFundingRange: cleanVal(business.requestedFundingRange) || null,
+      requestedFundingRange: reqRangeStr || cleanVal(business.requestedFundingRange) || null,
+      requestedFundingMin: reqMin,
+      requestedFundingMax: reqMax,
       requestedAmount: reqAmount,
       useOfFunds: cleanVal(business.useOfFunds) || null,
     },
@@ -1610,6 +1639,8 @@ CRITICAL EXTRACTION RULES:
     creditScore: own.creditScore !== null ? own.creditScore : undefined,
 
     requestedAmount: biz.requestedAmount !== null ? biz.requestedAmount : undefined,
+    requestedFundingMin: biz.requestedFundingMin !== null ? biz.requestedFundingMin : undefined,
+    requestedFundingMax: biz.requestedFundingMax !== null ? biz.requestedFundingMax : undefined,
     requestedFundingRange: biz.requestedFundingRange || undefined,
     requestedProduct: 'Revenue Funding',
     useOfFunds: biz.useOfFunds || undefined,

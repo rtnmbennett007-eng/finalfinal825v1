@@ -18,7 +18,7 @@ import {
   Layers,
 } from 'lucide-react';
 import { useData } from '../../context/DataContext';
-import { Client, PipelineStage, CANONICAL_PIPELINE_STAGES, normalizePipelineStage } from '../../types';
+import { Client, PipelineStage, CANONICAL_PIPELINE_STAGES, normalizePipelineStage, formatFundingRange } from '../../types';
 import { StatusBadge, ProductBadge } from '../common/StatusBadge';
 import { SsnViewer } from '../common/SsnViewer';
 import { ErrorBoundary } from '../common/ErrorBoundary';
@@ -344,12 +344,29 @@ export const ClientsWorkspace: React.FC<ClientsWorkspaceProps> = ({
                         </td>
 
                         <td className="py-3.5 px-3">
-                          <div className="font-bold text-slate-100 font-mono text-xs">
-                            ${totalVolume.toLocaleString()}
-                          </div>
-                          <div className="text-[10px] text-slate-400 mt-0.5">
-                            {clientDeals.length} {clientDeals.length === 1 ? 'Deal' : 'Deals Stacked'}
-                          </div>
+                          {clientDeals.length > 0 ? (
+                            <>
+                              <div className="font-bold text-slate-100 font-mono text-xs">
+                                ${totalVolume.toLocaleString()}
+                              </div>
+                              <div className="text-[10px] text-slate-400 mt-0.5">
+                                {clientDeals.length} {clientDeals.length === 1 ? 'Deal' : 'Deals Stacked'}
+                              </div>
+                            </>
+                          ) : (
+                            <>
+                              <div className="font-bold text-amber-300 font-mono text-xs">
+                                {formatFundingRange(
+                                  client.requestedFundingMin ?? client.requestedAmountMin,
+                                  client.requestedFundingMax ?? client.requestedAmountMax,
+                                  client.requestedFundingRange ?? client.requestedAmount
+                                )}
+                              </div>
+                              <div className="text-[10px] text-slate-400 mt-0.5">
+                                Target Range
+                              </div>
+                            </>
+                          )}
                         </td>
 
                         <td className="py-3.5 px-3">

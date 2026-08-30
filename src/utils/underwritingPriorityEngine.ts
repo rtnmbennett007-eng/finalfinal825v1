@@ -53,6 +53,9 @@ export interface ClientUnderwritingSummary {
   rawDeals: FundingDeal[];
   totalDealsCount: number;
   totalRequestedAmount: number;
+  requestedFundingMin?: number;
+  requestedFundingMax?: number;
+  requestedFundingRange?: string;
   totalApprovedAmount: number;
   totalFundedAmount: number;
   remainingCapitalNeed: number;
@@ -438,6 +441,9 @@ export function analyzeClientUnderwriting(
     rawDeals,
     totalDealsCount,
     totalRequestedAmount,
+    requestedFundingMin: client.requestedFundingMin ?? client.requestedAmountMin,
+    requestedFundingMax: client.requestedFundingMax ?? client.requestedAmountMax,
+    requestedFundingRange: client.requestedFundingRange,
     totalApprovedAmount,
     totalFundedAmount,
     remainingCapitalNeed,

@@ -1,8 +1,9 @@
-import { FundingDeal, CommissionParticipant, CanonicalDealStatus } from '../types';
+import { FundingDeal, CommissionParticipant, CanonicalDealStatus, Client } from '../types';
+import { getCanonicalFundingRange } from './fundingUtils';
 
 export type CanonicalDealCategory =
   | 'PROPOSED'       // Initial lead / draft / application stage
-  | 'PRE_APPROVED'   // Qualified / Pre-Approved / Approved / Stacking / Ready to Fund (Active Pipeline)
+  | 'PRE_APPROVED'   // Qualified / Pre-Approved / Approved in Underwriting (Active Pipeline)
   | 'FUNDED'         // Closed / Funded / Active Capital / Paid Off
   | 'INACTIVE';      // Declined / Rejected / Withdrawn / Lost / Cancelled
 
@@ -31,13 +32,17 @@ export interface DealFinancialSummary {
   isStacked: boolean;
 
   // Amounts
-  fundingAmount: number;
-  requestedAmount: number;
-  approvedAmount: number;
-  fundedAmount: number;
+  fundingAmount: number;     // Canonical resolved financial amount (Approved for Pre-Approved, Funded for Funded)
+  approvedAmount: number;    // Approved funding amount
+  fundedAmount: number;      // Actual funded disbursement
+  
+  // Requested Target Range (Client goal context - NEVER SUMMED into pipeline metrics)
+  requestedFundingMin: number | null;
+  requestedFundingMax: number | null;
+  requestedFundingRange: string;
 
   // Category flags
-  inActivePipeline: boolean; // Strictly PRE-APPROVED & Not Funded / Not Inactive
+  inActivePipeline: boolean; // Strictly (Lifecycle == UNDERWRITING) AND (Stage == PRE-APPROVED or APPROVED)
   isFunded: boolean;
   isProposed: boolean;
   isInactive: boolean;
@@ -55,10 +60,10 @@ export interface DealFinancialSummary {
   grossCommission: number;
 
   // Metric-specific commissions
-  predictedCommission: number;       // grossCommission if inActivePipeline, else 0
-  fundedCommission: number;          // grossCommission if isFunded, else 0
+  predictedCommission: number;        // grossCommission if inActivePipeline, else 0
+  fundedCommission: number;           // grossCommission if isFunded, else 0
   alreadyCollectedCommission: number; // Actual collected
-  toBeCollectedCommission: number;   // Remaining on funded deals
+  toBeCollectedCommission: number;    // Remaining on funded deals
 
   // Participant Distribution
   totalAllocatedPoints: number;
@@ -84,16 +89,16 @@ export interface DealFinancialSummary {
 
 export interface AggregateFinancialsResult {
   // Primary Metrics
-  activePipelineVolume: number;
-  activePipelineCount: number;
-  totalFundedVolume: number;
-  totalFundedCount: number;
+  activePipelineVolume: number; // Sum of Approved Amounts for deals in Underwriting + Pre-Approved/Approved
+  activePipelineCount: number;  // Number of qualifying deals
+  totalFundedVolume: number;    // Sum of Funded Amounts for Funded deals
+  totalFundedCount: number;     // Number of funded deals
   proposedVolume: number;
   proposedCount: number;
   totalPortfolioVolume: number;
 
   // Commission Metrics
-  commissionPrediction: number;     // On Active Pipeline (Pre-Approved) deals ONLY
+  commissionPrediction: number;     // On Active Pipeline (Pre-Approved / Approved) deals ONLY
   commissionExpected: number;       // Total expected across all deals with commission
   commissionToBeCollected: number; // On Funded deals with remaining balance
   commissionCollected: number;     // Actual money received/collected
@@ -108,7 +113,7 @@ export interface AggregateFinancialsResult {
 }
 
 /**
- * Normalizes any deal status string to upper snake case for robust matching.
+ * Normalizes any deal status or lifecycle string to upper snake case for robust matching.
  */
 export function normalizeDealStatus(status?: string | null): string {
   if (!status) return '';
@@ -116,18 +121,116 @@ export function normalizeDealStatus(status?: string | null): string {
 }
 
 /**
- * Categorizes deal into one of 4 canonical financial lifecycle stages:
- * - PROPOSED (Draft, Submitted, New Application)
- * - PRE_APPROVED (Pre-Approved, Underwriting, Approved, Conditions, Stacking, Ready to Fund)
- * - FUNDED (Funded, Closed, Paid Off, Renewed)
- * - INACTIVE (Declined, Rejected, Withdrawn, Lost, Cancelled, Not Qualified)
+ * Checks if a deal belongs to the ACTIVE PIPELINE according to strict portal rules:
+ * Rule 1: Lifecycle Status MUST be UNDERWRITING
+ * Rule 2: Funding Stage MUST be PRE-APPROVED OR APPROVED
+ *
+ * Excludes: LEADS, QUALIFIED, APPLICATION, DOCUMENT SENT, DOCS PENDING, NO SET,
+ * APPOINTMENT SET, NO SHOW, SHOWED, CREDIT REPAIR, NOT INTERESTED, DQC,
+ * UNDERWRITING without PRE-APPROVED or APPROVED, FUNDED, COMMISSION RECEIVED, LOST,
+ * DECLINED, WITHDRAWN, CANCELLED.
  */
-export function categorizeDealStatus(status?: string | null): CanonicalDealCategory {
-  const norm = normalizeDealStatus(status);
-  if (!norm) return 'PROPOSED';
+export function isDealInActivePipeline(
+  deal: Partial<FundingDeal>,
+  clientOrClients?: Partial<Client> | Record<string, Client> | Client[]
+): boolean {
+  if (!deal) return false;
 
-  // 1. INACTIVE
+  const rawStatus = normalizeDealStatus(deal.status || deal.fundingStage || deal.lenderStatus);
+
+  // Exclude terminal / non-pipeline stages immediately
   if (
+    rawStatus === 'FUNDED' ||
+    rawStatus.includes('CLOSED') ||
+    rawStatus.includes('PAID_OFF') ||
+    rawStatus.includes('DECLINED') ||
+    rawStatus.includes('REJECTED') ||
+    rawStatus.includes('LOST') ||
+    rawStatus.includes('WITHDRAWN') ||
+    rawStatus.includes('CANCELLED') ||
+    rawStatus.includes('CANCELED') ||
+    rawStatus.includes('NOT_QUALIFIED') ||
+    rawStatus.includes('EXPIRED') ||
+    rawStatus.includes('ARCHIVED') ||
+    rawStatus.includes('NOT_INTERESTED') ||
+    rawStatus.includes('CREDIT_REPAIR')
+  ) {
+    return false;
+  }
+
+  // Check Funding Stage condition: Pre-Approved OR Approved
+  const isStagePreApprovedOrApproved =
+    rawStatus === 'PRE_APPROVED' ||
+    rawStatus === 'APPROVED' ||
+    rawStatus.includes('PRE_APPROVED') ||
+    rawStatus.includes('PRE_APPROVAL') ||
+    rawStatus.includes('PRE_QUALIFIED') ||
+    rawStatus.includes('CLEAR_TO_CLOSE') ||
+    rawStatus.includes('CLOSING_DOCS') ||
+    rawStatus.includes('READY_TO_FUND') ||
+    (rawStatus.includes('APPROVED') && !rawStatus.includes('NOT_APPROVED'));
+
+  if (!isStagePreApprovedOrApproved) {
+    return false;
+  }
+
+  // Check Lifecycle Status condition: Underwriting
+  let lifecycle = normalizeDealStatus(deal.lifecycleStatus || deal.underwritingStatus);
+
+  // Look up client lifecycle status if available
+  if (!lifecycle && clientOrClients) {
+    if (Array.isArray(clientOrClients)) {
+      const foundClient = clientOrClients.find((c) => c.id === deal.clientId);
+      if (foundClient) {
+        lifecycle = normalizeDealStatus(foundClient.currentStatus);
+      }
+    } else if (typeof clientOrClients === 'object' && (clientOrClients as any)[deal.clientId || '']) {
+      const foundClient = (clientOrClients as any)[deal.clientId || ''];
+      lifecycle = normalizeDealStatus(foundClient.currentStatus);
+    } else if ((clientOrClients as Client).id === deal.clientId || (clientOrClients as Client).currentStatus) {
+      lifecycle = normalizeDealStatus((clientOrClients as Client).currentStatus);
+    }
+  }
+
+  // If lifecycle is not explicitly set to something conflicting (like LEAD or CLOSED),
+  // default to UNDERWRITING for in-flight pre-approved deals
+  if (!lifecycle) {
+    lifecycle = 'UNDERWRITING';
+  }
+
+  const isLifecycleUnderwriting =
+    lifecycle.includes('UNDERWRITING') ||
+    lifecycle.includes('READY_FOR_LENDER') ||
+    lifecycle.includes('KYC_VERIFIED') ||
+    lifecycle.includes('IN_REVIEW') ||
+    lifecycle.includes('STACKING') ||
+    lifecycle === 'QUALIFIED';
+
+  return isStagePreApprovedOrApproved && isLifecycleUnderwriting;
+}
+
+/**
+ * Checks if a deal is FUNDED.
+ */
+export function isDealFunded(deal: Partial<FundingDeal>): boolean {
+  if (!deal) return false;
+  const norm = normalizeDealStatus(deal.status || deal.fundingStage || deal.lenderStatus);
+  return (
+    norm === 'FUNDED' ||
+    norm.includes('CLOSED') ||
+    norm.includes('PAID_OFF') ||
+    norm.includes('COMMISSION_PENDING') ||
+    norm.includes('COMMISSION_RECEIVED')
+  );
+}
+
+/**
+ * Checks if a deal is Inactive / Closed-Lost / Declined / Cancelled.
+ */
+export function isDealInactive(deal: Partial<FundingDeal>): boolean {
+  if (!deal) return false;
+  const norm = normalizeDealStatus(deal.status || deal.fundingStage || deal.lenderStatus);
+  return (
     norm.includes('DECLINED') ||
     norm.includes('REJECTED') ||
     norm.includes('NOT_QUALIFIED') ||
@@ -137,64 +240,8 @@ export function categorizeDealStatus(status?: string | null): CanonicalDealCateg
     norm.includes('CANCELED') ||
     norm.includes('EXPIRED') ||
     norm.includes('ARCHIVED') ||
-    norm.includes('DQ')
-  ) {
-    return 'INACTIVE';
-  }
-
-  // 2. FUNDED
-  if (
-    norm === 'FUNDED' ||
-    norm.includes('CLOSED') ||
-    norm.includes('PAID_OFF') ||
-    norm.includes('RENEWED') ||
-    norm.includes('COMMISSION_PENDING') ||
-    norm.includes('COMMISSION_RECEIVED')
-  ) {
-    return 'FUNDED';
-  }
-
-  // 3. PRE-APPROVED (Active Pipeline)
-  if (
-    norm.includes('PRE_APPROVED') ||
-    norm.includes('PRE_APPROVAL') ||
-    norm.includes('PRE_QUALIFIED') ||
-    norm.includes('APPROVED') ||
-    norm.includes('CONDITIONS') ||
-    norm.includes('STIPS') ||
-    norm.includes('READY_TO_FUND') ||
-    norm.includes('CLEAR_TO_CLOSE') ||
-    norm.includes('CLOSING_DOCS') ||
-    norm.includes('PRE_CLOSING') ||
-    norm.includes('READY_FOR_LENDER') ||
-    norm.includes('STACKING') ||
-    norm.includes('UNDERWRITING') ||
-    norm.includes('IN_REVIEW') ||
-    norm.includes('KYC_VERIFIED') ||
-    norm.includes('VERIFICATION_CALL')
-  ) {
-    return 'PRE_APPROVED';
-  }
-
-  // 4. PROPOSED (Draft / Initial Intake)
-  return 'PROPOSED';
-}
-
-/**
- * Checks if a deal belongs to the ACTIVE PIPELINE.
- * Active Pipeline STRICTLY includes Pre-Approved deals moving toward funding.
- */
-export function isDealInActivePipeline(deal: Partial<FundingDeal>): boolean {
-  if (!deal) return false;
-  return categorizeDealStatus(deal.status) === 'PRE_APPROVED';
-}
-
-/**
- * Checks if a deal is FUNDED.
- */
-export function isDealFunded(deal: Partial<FundingDeal>): boolean {
-  if (!deal) return false;
-  return categorizeDealStatus(deal.status) === 'FUNDED';
+    norm.includes('NOT_INTERESTED')
+  );
 }
 
 /**
@@ -202,32 +249,101 @@ export function isDealFunded(deal: Partial<FundingDeal>): boolean {
  */
 export function isDealProposed(deal: Partial<FundingDeal>): boolean {
   if (!deal) return false;
-  return categorizeDealStatus(deal.status) === 'PROPOSED';
+  return !isDealFunded(deal) && !isDealInActivePipeline(deal) && !isDealInactive(deal);
 }
 
 /**
- * Checks if a deal is Inactive / Closed-Lost.
+ * Categorizes deal into one of 4 canonical financial lifecycle stages:
+ * - PRE_APPROVED (Active Pipeline: Underwriting + Pre-Approved/Approved)
+ * - FUNDED (Funded, Closed, Paid Off)
+ * - INACTIVE (Declined, Rejected, Withdrawn, Lost, Cancelled)
+ * - PROPOSED (Draft, Submitted, Application Received)
  */
-export function isDealInactive(deal: Partial<FundingDeal>): boolean {
-  if (!deal) return false;
-  return categorizeDealStatus(deal.status) === 'INACTIVE';
+export function categorizeDealStatus(status?: string | null, deal?: Partial<FundingDeal>): CanonicalDealCategory {
+  if (deal && isDealFunded(deal)) return 'FUNDED';
+  if (deal && isDealInactive(deal)) return 'INACTIVE';
+  if (deal && isDealInActivePipeline(deal)) return 'PRE_APPROVED';
+
+  const norm = normalizeDealStatus(status);
+  if (!norm) return 'PROPOSED';
+
+  if (
+    norm.includes('DECLINED') ||
+    norm.includes('REJECTED') ||
+    norm.includes('NOT_QUALIFIED') ||
+    norm.includes('LOST') ||
+    norm.includes('WITHDRAWN') ||
+    norm.includes('CANCELLED') ||
+    norm.includes('CANCELED') ||
+    norm.includes('EXPIRED')
+  ) {
+    return 'INACTIVE';
+  }
+
+  if (
+    norm === 'FUNDED' ||
+    norm.includes('CLOSED') ||
+    norm.includes('PAID_OFF') ||
+    norm.includes('COMMISSION_PENDING') ||
+    norm.includes('COMMISSION_RECEIVED')
+  ) {
+    return 'FUNDED';
+  }
+
+  if (
+    norm.includes('PRE_APPROVED') ||
+    norm.includes('PRE_APPROVAL') ||
+    norm.includes('APPROVED') ||
+    norm.includes('CLEAR_TO_CLOSE') ||
+    norm.includes('READY_TO_FUND')
+  ) {
+    return 'PRE_APPROVED';
+  }
+
+  return 'PROPOSED';
 }
 
 /**
- * Resolves the canonical funding volume of a deal based on status priority.
+ * Resolves the Active Pipeline value for a deal.
+ * RULE: MUST use the approvedAmount from the deal record.
+ * NEVER use requested funding ranges, min, max, or midpoint.
+ */
+export function resolveActivePipelineDealAmount(deal: Partial<FundingDeal>): number {
+  if (!deal) return 0;
+  if (!isDealInActivePipeline(deal)) return 0;
+
+  // Use explicit approvedAmount if available
+  const approvedAmt = Number(deal.approvedAmount);
+  if (!isNaN(approvedAmt) && approvedAmt > 0) {
+    return approvedAmt;
+  }
+
+  // Fallback to fundingAmount on the deal if approvedAmount is not yet separated
+  const fundingAmt = Number(deal.fundingAmount);
+  if (!isNaN(fundingAmt) && fundingAmt > 0) {
+    return fundingAmt;
+  }
+
+  return 0;
+}
+
+/**
+ * Resolves canonical financial amount for calculation:
+ * - Funded deals: uses actual funded amount
+ * - Active Pipeline deals: uses approved amount
+ * - Proposed / Draft deals: uses proposed amount
+ * NEVER uses requested funding range.
  */
 export function resolveDealFundingAmount(deal: Partial<FundingDeal>): number {
   if (!deal) return 0;
-  const category = categorizeDealStatus(deal.status);
-
-  if (category === 'FUNDED') {
+  if (isDealFunded(deal)) {
     return Math.max(0, Number(deal.fundedAmount ?? deal.fundingAmount ?? 0) || 0);
   }
-  if (category === 'PRE_APPROVED') {
-    return Math.max(0, Number(deal.approvedAmount ?? deal.fundingAmount ?? deal.requestedAmount ?? 0) || 0);
+  if (isDealInActivePipeline(deal)) {
+    return resolveActivePipelineDealAmount(deal);
   }
-  // Proposed / Inactive fallback
-  return Math.max(0, Number(deal.fundingAmount ?? deal.requestedAmount ?? deal.approvedAmount ?? 0) || 0);
+  // Proposed / Draft deal amount
+  return Math.max(0, Number(deal.approvedAmount ?? deal.fundingAmount ?? 0) || 0);
 }
 
 /**
@@ -245,22 +361,32 @@ export function calculateDealFinancials(
   const product = deal.product || 'Funding Product';
   const rawStatus = deal.status || 'Draft';
   const normalizedStatus = normalizeDealStatus(rawStatus);
-  const category = categorizeDealStatus(rawStatus);
+
+  // Category determination
+  const inActivePipeline = isDealInActivePipeline(deal);
+  const isFunded = isDealFunded(deal);
+  const isInactive = isDealInactive(deal);
+  const isProposed = !inActivePipeline && !isFunded && !isInactive;
+
+  const category: CanonicalDealCategory = isFunded
+    ? 'FUNDED'
+    : inActivePipeline
+    ? 'PRE_APPROVED'
+    : isInactive
+    ? 'INACTIVE'
+    : 'PROPOSED';
+
   const lenderName = deal.lenderName || deal.funder || 'Lender Desk';
   const position = deal.position || (deal.isStacked ? 'Stacked' : '1st Position');
   const isStacked = Boolean(deal.isStacked);
 
-  // Amounts
+  // Financial Amounts
   const fundingAmount = resolveDealFundingAmount(deal);
-  const requestedAmount = Math.max(0, Number(deal.requestedAmount) || 0);
   const approvedAmount = Math.max(0, Number(deal.approvedAmount) || 0);
   const fundedAmount = Math.max(0, Number(deal.fundedAmount) || 0);
 
-  // Stage flags
-  const inActivePipeline = category === 'PRE_APPROVED';
-  const isFunded = category === 'FUNDED';
-  const isProposed = category === 'PROPOSED';
-  const isInactive = category === 'INACTIVE';
+  // Requested Funding Target Range (For reference only - never added to pipeline totals)
+  const rangeInfo = getCanonicalFundingRange(deal);
 
   // Commission Inputs (No fake defaults)
   const rawPct = deal.percentage;
@@ -299,9 +425,10 @@ export function calculateDealFinancials(
 
   const participantSummaries: ParticipantFinancialSummary[] = dealParticipants.map((p) => {
     const points = Math.max(0, Number(p.points) || 0);
-    const dollarAmount = p.dollarAmount !== undefined && p.dollarAmount !== null && Number(p.dollarAmount) > 0
-      ? Number(p.dollarAmount)
-      : (fundingAmount * points) / 100;
+    const dollarAmount =
+      p.dollarAmount !== undefined && p.dollarAmount !== null && Number(p.dollarAmount) > 0
+        ? Number(p.dollarAmount)
+        : (fundingAmount * points) / 100;
 
     totalAllocatedPoints += points;
     totalAllocatedDollars += dollarAmount;
@@ -326,7 +453,11 @@ export function calculateDealFinancials(
   // Calculate actual collected commission
   let alreadyCollectedCommission = 0;
   if (isFunded) {
-    if ((deal as any).commissionReceivedAmount !== undefined && (deal as any).commissionReceivedAmount !== null && !isNaN(Number((deal as any).commissionReceivedAmount))) {
+    if (
+      (deal as any).commissionReceivedAmount !== undefined &&
+      (deal as any).commissionReceivedAmount !== null &&
+      !isNaN(Number((deal as any).commissionReceivedAmount))
+    ) {
       alreadyCollectedCommission = Math.max(0, Number((deal as any).commissionReceivedAmount) || 0);
     } else if (
       (deal.commissionStatus as string) === 'COLLECTED' ||
@@ -341,7 +472,6 @@ export function calculateDealFinancials(
   }
 
   // Formula: Remaining Commission = max(Expected Commission - Already Collected, 0)
-  // If deal is marked COLLECTED/DISTRIBUTED/PAID/RECEIVED or if alreadyCollected >= grossCommission - 0.99, balance is 0.
   let toBeCollectedCommission = 0;
   if (isFunded) {
     if (
@@ -369,7 +499,7 @@ export function calculateDealFinancials(
   const amountFormula = isFunded
     ? `Funded Amount: $${fundingAmount.toLocaleString()} (Status: ${rawStatus})`
     : inActivePipeline
-    ? `Pre-Approved Volume: $${fundingAmount.toLocaleString()} (Status: ${rawStatus})`
+    ? `Approved Pre-Approval Amount: $${fundingAmount.toLocaleString()} (Status: ${rawStatus})`
     : `Proposed/Draft: $${fundingAmount.toLocaleString()} (Status: ${rawStatus})`;
 
   const commissionFormula = hasPercentage
@@ -383,7 +513,7 @@ export function calculateDealFinancials(
     : 'Not Funded — Commission not yet collectible';
 
   const qualifyingReason = inActivePipeline
-    ? 'Qualifies for Active Pipeline and Commission Prediction (Pre-Approved)'
+    ? 'Qualifies for Active Pipeline and Commission Prediction (Lifecycle: Underwriting, Stage: Pre-Approved/Approved)'
     : isFunded
     ? 'Qualifies for Total Funded and Commission Collection (Funded)'
     : isProposed
@@ -403,9 +533,11 @@ export function calculateDealFinancials(
     position,
     isStacked,
     fundingAmount,
-    requestedAmount,
     approvedAmount,
     fundedAmount,
+    requestedFundingMin: rangeInfo.min,
+    requestedFundingMax: rangeInfo.max,
+    requestedFundingRange: rangeInfo.range,
     inActivePipeline,
     isFunded,
     isProposed,
@@ -442,6 +574,7 @@ export function calculateDealFinancials(
 
 /**
  * Master aggregation engine that processes all deals with zero duplicate counting.
+ * NEVER sums requested funding ranges.
  */
 export function calculateAggregateFinancials(
   deals: FundingDeal[] = [],
@@ -482,7 +615,7 @@ export function calculateAggregateFinancials(
     totalPortfolioVolume += summary.fundingAmount;
     commissionExpected += summary.grossCommission;
 
-    // 1. ACTIVE PIPELINE (Strictly Pre-Approved deals)
+    // 1. ACTIVE PIPELINE (Strictly Pre-Approved / Approved Underwriting deals)
     if (summary.inActivePipeline) {
       activePipelineDeals.push(summary);
       activePipelineVolume += summary.fundingAmount;

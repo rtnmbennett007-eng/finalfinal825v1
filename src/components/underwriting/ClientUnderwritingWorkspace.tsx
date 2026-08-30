@@ -29,7 +29,7 @@ import {
   Tag,
   AlertCircle,
 } from 'lucide-react';
-import { Client, FundingDeal, DocumentItem, ConflictItem, FundingStrategyRecord } from '../../types';
+import { Client, FundingDeal, DocumentItem, ConflictItem, FundingStrategyRecord, formatFundingRange } from '../../types';
 import { ClientUnderwritingSummary, DealUnderwritingAnalysis } from '../../utils/underwritingPriorityEngine';
 import { formatDate } from '../../utils/dateUtils';
 import { useData } from '../../context/DataContext';
@@ -233,12 +233,16 @@ export const ClientUnderwritingWorkspace: React.FC<ClientUnderwritingWorkspacePr
 
           <div className="bg-slate-950/80 p-3 rounded-xl border border-slate-800/80">
             <span className="text-[10px] text-slate-400 uppercase font-bold tracking-wider block">
-              Total Requested
+              Requested Range
             </span>
-            <div className="text-lg font-black text-white font-mono mt-1">
-              ${summary.totalRequestedAmount.toLocaleString()}
+            <div className="text-base font-black text-amber-300 font-mono mt-1 truncate" title={formatFundingRange(summary.requestedFundingMin ?? client.requestedAmountMin, summary.requestedFundingMax ?? client.requestedAmountMax, summary.requestedFundingRange ?? client.requestedAmount)}>
+              {formatFundingRange(
+                summary.requestedFundingMin ?? client.requestedAmountMin,
+                summary.requestedFundingMax ?? client.requestedAmountMax,
+                summary.requestedFundingRange ?? client.requestedAmount
+              )}
             </div>
-            <span className="text-[11px] text-slate-500 block mt-0.5">Aggregate request</span>
+            <span className="text-[11px] text-slate-500 block mt-0.5">Target range</span>
           </div>
 
           <div className="bg-slate-950/80 p-3 rounded-xl border border-slate-800/80">

@@ -23,6 +23,7 @@ import {
   CanonicalPipelineStage,
   normalizePipelineStage,
   PipelineStage,
+  formatFundingRange,
 } from '../../types';
 import { StatusBadge } from '../common/StatusBadge';
 import { useData } from '../../context/DataContext';
@@ -518,15 +519,17 @@ export const ClientsKanbanView: React.FC<ClientsKanbanViewProps> = ({
 
                           {/* Contact & Deal Overview */}
                           <div className="mt-2 space-y-1 text-[10px]">
-                            {/* Product & Requested / Deal Amount */}
+                            {/* Product & Requested Target Range */}
                             <div className="flex items-center justify-between gap-1 bg-slate-900/80 px-2 py-1 rounded border border-slate-800">
                               <span className="text-amber-400 font-semibold truncate max-w-[120px]">
                                 {client.requestedProduct || clientDeals[0]?.product || 'Revenue Funding'}
                               </span>
-                              <span className="font-mono font-bold text-emerald-400">
-                                {client.requestedAmount
-                                  ? `$${Number(client.requestedAmount).toLocaleString()}`
-                                  : (totalVolume > 0 ? `$${totalVolume.toLocaleString()}` : '$0')}
+                              <span className="font-mono font-semibold text-blue-300 text-[10px]">
+                                {formatFundingRange(
+                                  client.requestedFundingMin ?? client.requestedAmountMin,
+                                  client.requestedFundingMax ?? client.requestedAmountMax,
+                                  client.requestedFundingRange ?? client.requestedAmount
+                                )}
                               </span>
                             </div>
 

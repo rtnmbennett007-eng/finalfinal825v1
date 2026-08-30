@@ -34,7 +34,7 @@ interface CommandCenterModalProps {
   onClose: () => void;
   setActiveTab: (tab: string) => void;
   onOpenNewClientModal: () => void;
-  onOpenNewLeadModal: () => void;
+  onOpenNewLeadModal?: () => void;
 }
 
 export const CommandCenterModal: React.FC<CommandCenterModalProps> = ({

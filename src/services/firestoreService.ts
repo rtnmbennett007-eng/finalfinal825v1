@@ -1616,7 +1616,10 @@ export const firestoreService = {
       currentStatus: data.currentStatus || 'No Set – Follow Up',
       createdAt: data.createdAt || now,
       updatedAt: now,
-      requestedAmount: data.requestedAmount || 50000,
+      requestedAmount: data.requestedAmount ?? data.requestedAmountMax ?? data.requestedAmountMin ?? 50000,
+      requestedAmountMin: data.requestedAmountMin ?? data.requestedAmount ?? 50000,
+      requestedAmountMax: data.requestedAmountMax ?? data.requestedAmount ?? data.requestedAmountMin ?? 50000,
+      originalRequestedFundingText: data.originalRequestedFundingText || undefined,
       requestedProduct: data.requestedProduct || 'Revenue Funding',
       useOfFunds: data.useOfFunds || 'Working Capital',
       creditScore: data.creditScore || 700,
@@ -1790,7 +1793,9 @@ export const firestoreService = {
     const dealSeq = (ds.deals.length + 101);
     const canonicalDealId = data.dealId || `DEAL-${String(dealSeq).padStart(6, '0')}`;
 
-    const reqAmt = Number(data.requestedAmount !== undefined ? data.requestedAmount : (data.fundingAmount || 25000));
+    const reqAmtMin = data.requestedAmountMin !== undefined ? Number(data.requestedAmountMin) : undefined;
+    const reqAmtMax = data.requestedAmountMax !== undefined ? Number(data.requestedAmountMax) : undefined;
+    const reqAmt = Number(data.requestedAmount !== undefined ? data.requestedAmount : (reqAmtMax || reqAmtMin || data.fundingAmount || 25000));
     const appAmt = Number(data.approvedAmount !== undefined ? data.approvedAmount : (data.status === 'APPROVED' || data.status === 'FUNDED' ? reqAmt : 0));
     const fndAmt = Number(data.fundedAmount !== undefined ? data.fundedAmount : (data.status === 'FUNDED' ? (appAmt || reqAmt) : 0));
     const fundingAmount = fndAmt > 0 ? fndAmt : (appAmt > 0 ? appAmt : reqAmt);
@@ -1820,6 +1825,9 @@ export const firestoreService = {
       otherProductType: data.otherProductType,
       otherProductDescription: data.otherProductDescription,
       requestedAmount: reqAmt,
+      requestedAmountMin: reqAmtMin ?? reqAmt,
+      requestedAmountMax: reqAmtMax ?? reqAmt,
+      originalRequestedFundingText: data.originalRequestedFundingText,
       approvedAmount: appAmt,
       fundedAmount: fndAmt,
       fundingAmount,

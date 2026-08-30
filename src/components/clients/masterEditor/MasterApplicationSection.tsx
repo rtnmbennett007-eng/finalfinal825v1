@@ -1,7 +1,8 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { FileText, DollarSign, CreditCard, Home, ShieldAlert, AlertCircle } from 'lucide-react';
 import { Client, FundingProductType } from '../../../types';
 import { ProductSelect } from '../../common/ProductSelect';
+import { formatFundingRange, validateFundingRange } from '../../../utils/fundingUtils';
 
 interface MasterApplicationSectionProps {
   form: Partial<Client>;
@@ -12,29 +13,93 @@ export const MasterApplicationSection: React.FC<MasterApplicationSectionProps> =
   form,
   onChange,
 }) => {
+  const [rangeError, setRangeError] = useState<string | null>(null);
+
+  const handleMinChange = (val?: number) => {
+    const nextMin = val;
+    const nextMax = form.requestedAmountMax ?? form.requestedAmount;
+    if (nextMin !== undefined && nextMax !== undefined) {
+      const v = validateFundingRange(nextMin, nextMax);
+      setRangeError(v.isValid ? null : v.error || 'Invalid range');
+    } else {
+      setRangeError(null);
+    }
+    onChange({
+      requestedAmountMin: nextMin,
+      requestedAmount: nextMax ?? nextMin ?? 0,
+    });
+  };
+
+  const handleMaxChange = (val?: number) => {
+    const nextMax = val;
+    const nextMin = form.requestedAmountMin ?? form.requestedAmount;
+    if (nextMin !== undefined && nextMax !== undefined) {
+      const v = validateFundingRange(nextMin, nextMax);
+      setRangeError(v.isValid ? null : v.error || 'Invalid range');
+    } else {
+      setRangeError(null);
+    }
+    onChange({
+      requestedAmountMax: nextMax,
+      requestedAmount: nextMax ?? nextMin ?? 0,
+    });
+  };
 
   return (
     <div className="space-y-6">
       {/* Funding Request Details */}
       <div className="bg-[#0b1528] border border-blue-900/60 p-5 rounded-2xl shadow-lg space-y-4">
-        <div className="flex items-center space-x-2 border-b border-blue-900/40 pb-3">
-          <DollarSign className="w-4 h-4 text-emerald-400" />
-          <h3 className="text-sm font-bold text-slate-100 uppercase tracking-wider">
-            Funding Request & Capital Requirements
-          </h3>
+        <div className="flex items-center justify-between border-b border-blue-900/40 pb-3">
+          <div className="flex items-center space-x-2">
+            <DollarSign className="w-4 h-4 text-emerald-400" />
+            <h3 className="text-sm font-bold text-slate-100 uppercase tracking-wider">
+              Funding Request & Capital Requirements
+            </h3>
+          </div>
+          {(form.requestedAmountMin !== undefined || form.requestedAmountMax !== undefined || form.requestedAmount !== undefined) && (
+            <div className="flex items-center space-x-1.5 px-3 py-1 rounded-full bg-blue-950/80 border border-blue-800 text-xs font-mono text-blue-300">
+              <span className="text-slate-400">Funding Range:</span>
+              <strong className="text-amber-300 font-bold">
+                {formatFundingRange(form.requestedAmountMin, form.requestedAmountMax, form.requestedAmount)}
+              </strong>
+            </div>
+          )}
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        {rangeError && (
+          <div className="flex items-center space-x-1.5 px-3 py-1.5 rounded-lg bg-rose-500/10 border border-rose-500/30 text-rose-300 text-xs">
+            <AlertCircle className="w-3.5 h-3.5 flex-shrink-0 text-rose-400" />
+            <span>{rangeError}</span>
+          </div>
+        )}
+
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
           <div>
-            <label className="block text-xs font-semibold text-slate-300 mb-1">Requested Funding Amount ($) *</label>
+            <label className="block text-xs font-semibold text-slate-300 mb-1">Minimum Requested ($)</label>
             <div className="relative">
               <span className="absolute left-3 top-2.5 text-slate-400 font-mono text-xs">$</span>
               <input
                 type="number"
-                value={form.requestedAmount ?? 0}
-                onChange={(e) => onChange({ requestedAmount: Number(e.target.value) })}
+                min="0"
+                value={form.requestedAmountMin !== undefined ? form.requestedAmountMin : (form.requestedAmount ?? '')}
+                onChange={(e) => handleMinChange(e.target.value === '' ? undefined : Number(e.target.value))}
                 className="w-full bg-[#070d18] border border-blue-900/70 rounded-xl p-2.5 pl-7 text-xs text-amber-300 font-mono font-bold focus:border-amber-400 focus:outline-none"
-                placeholder="250,000"
+                placeholder="50,000"
+              />
+            </div>
+          </div>
+
+          <div>
+            <label className="block text-xs font-semibold text-slate-300 mb-1">Maximum Requested ($)</label>
+            <div className="relative">
+              <span className="absolute left-3 top-2.5 text-slate-400 font-mono text-xs">$</span>
+              <input
+                type="number"
+                min="0"
+                value={form.requestedAmountMax !== undefined ? form.requestedAmountMax : (form.requestedAmount ?? '')}
+                onChange={(e) => handleMaxChange(e.target.value === '' ? undefined : Number(e.target.value))}
+                className="w-full bg-[#070d18] border border-blue-900/70 rounded-xl p-2.5 pl-7 text-xs text-amber-300 font-mono font-bold focus:border-amber-400 focus:outline-none"
+                placeholder="100,000"
               />
             </div>
           </div>

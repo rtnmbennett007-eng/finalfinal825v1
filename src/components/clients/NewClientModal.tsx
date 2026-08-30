@@ -3,8 +3,9 @@ import { Modal } from '../common/Modal';
 import { Client, FundingProductType, CANONICAL_PIPELINE_STAGES, PipelineStage } from '../../types';
 import { useData } from '../../context/DataContext';
 import { useAuth } from '../../context/AuthContext';
-import { Save, Plus } from 'lucide-react';
+import { Save, Plus, AlertCircle, DollarSign } from 'lucide-react';
 import { ProductSelect } from '../common/ProductSelect';
+import { formatFundingRange, validateFundingRange } from '../../utils/fundingUtils';
 
 
 interface NewClientModalProps {
@@ -46,6 +47,8 @@ export const NewClientModal: React.FC<NewClientModalProps> = ({
     referralPartner: '',
     assignedSalesRep: currentUser?.name || 'Steve',
     assignedStaff: 'Dana',
+    requestedAmountMin: undefined,
+    requestedAmountMax: undefined,
     requestedAmount: undefined,
     requestedProduct: 'Revenue Funding',
     useOfFunds: '',
@@ -55,6 +58,36 @@ export const NewClientModal: React.FC<NewClientModalProps> = ({
     currentStatus: 'No Set – Follow Up',
   });
 
+  const [rangeError, setRangeError] = useState<string | null>(null);
+
+  const handleMinChange = (val?: number) => {
+    const nextMin = val;
+    setFormData((prev) => {
+      const nextData = { ...prev, requestedAmountMin: nextMin };
+      if (nextMin !== undefined && prev.requestedAmountMax !== undefined) {
+        const validation = validateFundingRange(nextMin, prev.requestedAmountMax);
+        setRangeError(validation.isValid ? null : validation.error || 'Invalid range');
+      } else {
+        setRangeError(null);
+      }
+      return nextData;
+    });
+  };
+
+  const handleMaxChange = (val?: number) => {
+    const nextMax = val;
+    setFormData((prev) => {
+      const nextData = { ...prev, requestedAmountMax: nextMax };
+      if (prev.requestedAmountMin !== undefined && nextMax !== undefined) {
+        const validation = validateFundingRange(prev.requestedAmountMin, nextMax);
+        setRangeError(validation.isValid ? null : validation.error || 'Invalid range');
+      } else {
+        setRangeError(null);
+      }
+      return nextData;
+    });
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!formData.firstName || !formData.lastName || !formData.businessName || !formData.email) {
@@ -62,9 +95,44 @@ export const NewClientModal: React.FC<NewClientModalProps> = ({
       return;
     }
 
+    // Validate range logic
+    const minVal = formData.requestedAmountMin;
+    const maxVal = formData.requestedAmountMax;
+
+    if (minVal !== undefined && maxVal !== undefined) {
+      const validation = validateFundingRange(minVal, maxVal);
+      if (!validation.isValid) {
+        addToast('error', 'Invalid Funding Range', validation.error || 'Minimum requested cannot exceed maximum requested.');
+        setRangeError(validation.error || 'Minimum requested cannot exceed maximum.');
+        return;
+      }
+    } else if (minVal !== undefined && minVal < 0) {
+      addToast('error', 'Invalid Amount', 'Minimum requested funding cannot be negative.');
+      return;
+    } else if (maxVal !== undefined && maxVal < 0) {
+      addToast('error', 'Invalid Amount', 'Maximum requested funding cannot be negative.');
+      return;
+    }
+
+    // Canonical range normalization: If only one is provided, set both to that value
+    let canonicalMin = minVal;
+    let canonicalMax = maxVal;
+
+    if (canonicalMin !== undefined && canonicalMax === undefined) {
+      canonicalMax = canonicalMin;
+    } else if (canonicalMax !== undefined && canonicalMin === undefined) {
+      canonicalMin = canonicalMax;
+    }
+
+    const primaryRequested = canonicalMax ?? canonicalMin ?? 0;
+
     const payload: Partial<Client> = {
       ...formData,
+      requestedAmountMin: canonicalMin,
+      requestedAmountMax: canonicalMax,
+      requestedAmount: primaryRequested, // backward compatibility
     };
+
     if (payload.annualRevenue !== undefined && payload.monthlyRevenue === undefined) {
       payload.monthlyRevenue = Math.round(payload.annualRevenue / 12);
     } else if (payload.monthlyRevenue !== undefined && payload.annualRevenue === undefined) {
@@ -287,18 +355,59 @@ export const NewClientModal: React.FC<NewClientModalProps> = ({
 
         {/* Deal Request & CRM Attribution */}
         <div className="pt-3 border-t border-slate-800">
-          <h4 className="text-[11px] font-bold text-blue-400 uppercase tracking-wider mb-2">
-            3. Deal Request & CRM Attribution
-          </h4>
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+          <div className="flex items-center justify-between mb-2">
+            <h4 className="text-[11px] font-bold text-blue-400 uppercase tracking-wider">
+              3. Deal Request & CRM Attribution
+            </h4>
+            {(formData.requestedAmountMin !== undefined || formData.requestedAmountMax !== undefined) && (
+              <div className="flex items-center space-x-1.5 px-2.5 py-0.5 rounded-full bg-blue-500/10 border border-blue-500/30 text-[11px] font-medium text-blue-300">
+                <DollarSign className="w-3 h-3 text-blue-400" />
+                <span>
+                  Requested Funding:{' '}
+                  <strong className="font-semibold text-white">
+                    {formatFundingRange(formData.requestedAmountMin, formData.requestedAmountMax)}
+                  </strong>
+                </span>
+              </div>
+            )}
+          </div>
+
+          {rangeError && (
+            <div className="mb-3 flex items-center space-x-1.5 px-3 py-1.5 rounded-lg bg-rose-500/10 border border-rose-500/30 text-rose-300 text-xs">
+              <AlertCircle className="w-3.5 h-3.5 flex-shrink-0 text-rose-400" />
+              <span>{rangeError}</span>
+            </div>
+          )}
+
+          <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
             <div>
-              <label className="block text-[10px] font-semibold text-slate-400 uppercase mb-1">Initial Requested Amount ($)</label>
+              <label className="block text-[10px] font-semibold text-slate-400 uppercase mb-1">
+                Minimum Requested ($)
+              </label>
               <input
                 type="number"
-                value={formData.requestedAmount !== undefined ? formData.requestedAmount : ''}
-                onChange={(e) => setFormData({ ...formData, requestedAmount: e.target.value === '' ? undefined : Number(e.target.value) })}
-                placeholder="Optional"
-                className="w-full bg-slate-950 border border-slate-800 rounded-xl p-2 text-xs text-slate-100 font-mono focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500/50"
+                min="0"
+                value={formData.requestedAmountMin !== undefined ? formData.requestedAmountMin : ''}
+                onChange={(e) => handleMinChange(e.target.value === '' ? undefined : Number(e.target.value))}
+                placeholder="e.g. 50000"
+                className={`w-full bg-slate-950 border ${
+                  rangeError ? 'border-rose-500/60 focus:border-rose-500' : 'border-slate-800 focus:border-blue-500'
+                } rounded-xl p-2 text-xs text-slate-100 font-mono focus:outline-none focus:ring-1 focus:ring-blue-500/50`}
+              />
+            </div>
+            <div>
+              <label className="block text-[10px] font-semibold text-slate-400 uppercase mb-1">
+                Maximum Requested ($)
+              </label>
+              <input
+                type="number"
+                min="0"
+                value={formData.requestedAmountMax !== undefined ? formData.requestedAmountMax : ''}
+                onChange={(e) => handleMaxChange(e.target.value === '' ? undefined : Number(e.target.value))}
+                placeholder="e.g. 100000"
+                className={`w-full bg-slate-950 border ${
+                  rangeError ? 'border-rose-500/60 focus:border-rose-500' : 'border-slate-800 focus:border-blue-500'
+                } rounded-xl p-2 text-xs text-slate-100 font-mono focus:outline-none focus:ring-1 focus:ring-blue-500/50`}
               />
             </div>
             <div>
@@ -327,6 +436,9 @@ export const NewClientModal: React.FC<NewClientModalProps> = ({
                 ))}
               </select>
             </div>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mt-3">
             <div>
               <label className="block text-[10px] font-semibold text-slate-400 uppercase mb-1">Initial Pipeline Stage</label>
               <select
@@ -341,9 +453,6 @@ export const NewClientModal: React.FC<NewClientModalProps> = ({
                 ))}
               </select>
             </div>
-          </div>
-
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-3">
             <div>
               <label className="block text-[10px] font-semibold text-slate-400 uppercase mb-1">Lead Source</label>
               <select

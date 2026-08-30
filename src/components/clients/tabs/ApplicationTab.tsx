@@ -1,8 +1,9 @@
 import React, { useState } from 'react';
-import { FileText, DollarSign, Edit2, Save, X, Layers, AlertTriangle, CheckCircle } from 'lucide-react';
+import { FileText, DollarSign, Edit2, Save, X, Layers, AlertTriangle, CheckCircle, AlertCircle } from 'lucide-react';
 import { Client } from '../../../types';
 import { useData } from '../../../context/DataContext';
 import { ProductSelect } from '../../common/ProductSelect';
+import { formatFundingRange, validateFundingRange } from '../../../utils/fundingUtils';
 
 interface ApplicationTabProps {
   client: Client;
@@ -13,8 +14,12 @@ export const ApplicationTab: React.FC<ApplicationTabProps> = ({ client, onRefres
   const { updateClient, addToast } = useData();
   const [isEditing, setIsEditing] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
+  const [rangeError, setRangeError] = useState<string | null>(null);
   const [form, setForm] = useState<Partial<Client>>({
+    requestedAmountMin: client.requestedAmountMin ?? client.requestedAmount,
+    requestedAmountMax: client.requestedAmountMax ?? client.requestedAmount,
     requestedAmount: client.requestedAmount,
+    originalRequestedFundingText: client.originalRequestedFundingText,
     requestedProduct: client.requestedProduct || '0% Business Cards & Lines of Credit',
     useOfFunds: client.useOfFunds || '',
     creditScore: client.creditScore,
@@ -27,11 +32,61 @@ export const ApplicationTab: React.FC<ApplicationTabProps> = ({ client, onRefres
     assignedStaff: client.assignedStaff || 'Dana',
   });
 
+  const handleMinChange = (val?: number) => {
+    setForm((prev) => {
+      const next = { ...prev, requestedAmountMin: val };
+      if (val !== undefined && prev.requestedAmountMax !== undefined) {
+        const v = validateFundingRange(val, prev.requestedAmountMax);
+        setRangeError(v.isValid ? null : v.error || 'Invalid range');
+      } else {
+        setRangeError(null);
+      }
+      return next;
+    });
+  };
+
+  const handleMaxChange = (val?: number) => {
+    setForm((prev) => {
+      const next = { ...prev, requestedAmountMax: val };
+      if (prev.requestedAmountMin !== undefined && val !== undefined) {
+        const v = validateFundingRange(prev.requestedAmountMin, val);
+        setRangeError(v.isValid ? null : v.error || 'Invalid range');
+      } else {
+        setRangeError(null);
+      }
+      return next;
+    });
+  };
+
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
+    const minVal = form.requestedAmountMin;
+    const maxVal = form.requestedAmountMax;
+
+    if (minVal !== undefined && maxVal !== undefined) {
+      const validation = validateFundingRange(minVal, maxVal);
+      if (!validation.isValid) {
+        addToast('error', 'Invalid Funding Range', validation.error || 'Min cannot exceed Max.');
+        setRangeError(validation.error || 'Invalid range');
+        return;
+      }
+    }
+
+    let canonicalMin = minVal;
+    let canonicalMax = maxVal;
+    if (canonicalMin !== undefined && canonicalMax === undefined) canonicalMax = canonicalMin;
+    if (canonicalMax !== undefined && canonicalMin === undefined) canonicalMin = canonicalMax;
+
+    const payload: Partial<Client> = {
+      ...form,
+      requestedAmountMin: canonicalMin,
+      requestedAmountMax: canonicalMax,
+      requestedAmount: canonicalMax ?? canonicalMin ?? form.requestedAmount,
+    };
+
     setIsSaving(true);
     try {
-      await updateClient(client.id, form);
+      await updateClient(client.id, payload);
       addToast('success', 'Application Record Updated', 'Loan request and financial profile updated.');
       setIsEditing(false);
       onRefresh();
@@ -58,7 +113,7 @@ export const ApplicationTab: React.FC<ApplicationTabProps> = ({ client, onRefres
             Funding Application & Financial Requests
           </h2>
           <p className="text-xs text-slate-400">
-            Initial loan application details, requested amounts, intended use of funds, and existing debt disclosures.
+            Initial loan application details, requested funding range, intended use of funds, and existing debt disclosures.
           </p>
         </div>
 
@@ -66,7 +121,10 @@ export const ApplicationTab: React.FC<ApplicationTabProps> = ({ client, onRefres
           <button
             onClick={() => {
               setForm({
+                requestedAmountMin: client.requestedAmountMin ?? client.requestedAmount,
+                requestedAmountMax: client.requestedAmountMax ?? client.requestedAmount,
                 requestedAmount: client.requestedAmount,
+                originalRequestedFundingText: client.originalRequestedFundingText,
                 requestedProduct: client.requestedProduct || '0% Business Cards & Lines of Credit',
                 useOfFunds: client.useOfFunds || '',
                 creditScore: client.creditScore,
@@ -78,6 +136,7 @@ export const ApplicationTab: React.FC<ApplicationTabProps> = ({ client, onRefres
                 referralPartner: client.referralPartner || 'Direct',
                 assignedStaff: client.assignedStaff || 'Dana',
               });
+              setRangeError(null);
               setIsEditing(true);
             }}
             className="flex items-center space-x-1.5 px-4 py-2.5 bg-slate-900 hover:bg-slate-800 text-slate-200 border border-blue-800 rounded-xl text-xs font-bold transition-all shadow-xs shrink-0"
@@ -98,16 +157,45 @@ export const ApplicationTab: React.FC<ApplicationTabProps> = ({ client, onRefres
 
       {isEditing ? (
         <form onSubmit={handleSave} className="bg-[#0b1528] border border-blue-900/60 p-6 rounded-2xl shadow-xl space-y-4 text-xs">
-          <h3 className="text-xs font-bold text-amber-400 uppercase tracking-wider">Modify Application Data</h3>
+          <div className="flex items-center justify-between">
+            <h3 className="text-xs font-bold text-amber-400 uppercase tracking-wider">Modify Application Data</h3>
+            {(form.requestedAmountMin !== undefined || form.requestedAmountMax !== undefined) && (
+              <span className="text-xs text-blue-300 font-mono">
+                Preview:{' '}
+                <strong className="text-white">
+                  {formatFundingRange(form.requestedAmountMin, form.requestedAmountMax)}
+                </strong>
+              </span>
+            )}
+          </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          {rangeError && (
+            <div className="flex items-center space-x-1.5 px-3 py-1.5 rounded-lg bg-rose-500/10 border border-rose-500/30 text-rose-300 text-xs">
+              <AlertCircle className="w-3.5 h-3.5 flex-shrink-0 text-rose-400" />
+              <span>{rangeError}</span>
+            </div>
+          )}
+
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
             <div>
-              <label className="block text-slate-300 font-semibold mb-1">Requested Funding Amount ($)</label>
+              <label className="block text-slate-300 font-semibold mb-1">Minimum Requested ($)</label>
               <input
                 type="number"
-                value={form.requestedAmount !== undefined && form.requestedAmount !== null ? form.requestedAmount : ''}
-                onChange={(e) => setForm({ ...form, requestedAmount: e.target.value === '' ? undefined : parseFloat(e.target.value) })}
-                placeholder="e.g. 150,000"
+                min="0"
+                value={form.requestedAmountMin !== undefined && form.requestedAmountMin !== null ? form.requestedAmountMin : ''}
+                onChange={(e) => handleMinChange(e.target.value === '' ? undefined : parseFloat(e.target.value))}
+                placeholder="e.g. 50000"
+                className="w-full bg-[#070d18] border border-blue-900/70 rounded-xl p-2.5 text-slate-100 focus:outline-none font-mono font-bold text-amber-400"
+              />
+            </div>
+            <div>
+              <label className="block text-slate-300 font-semibold mb-1">Maximum Requested ($)</label>
+              <input
+                type="number"
+                min="0"
+                value={form.requestedAmountMax !== undefined && form.requestedAmountMax !== null ? form.requestedAmountMax : ''}
+                onChange={(e) => handleMaxChange(e.target.value === '' ? undefined : parseFloat(e.target.value))}
+                placeholder="e.g. 100000"
                 className="w-full bg-[#070d18] border border-blue-900/70 rounded-xl p-2.5 text-slate-100 focus:outline-none font-mono font-bold text-amber-400"
               />
             </div>
@@ -205,9 +293,9 @@ export const ApplicationTab: React.FC<ApplicationTabProps> = ({ client, onRefres
 
             <div className="space-y-3 text-xs text-slate-200 divide-y divide-blue-900/40">
               <div className="flex items-center justify-between pt-2">
-                <span className="text-slate-400">Target Funding Amount:</span>
+                <span className="text-slate-400">Requested Funding:</span>
                 <span className="font-mono font-bold text-amber-300 text-sm">
-                  {client.requestedAmount !== undefined && client.requestedAmount !== null ? `$${Number(client.requestedAmount).toLocaleString()}` : 'Not Provided'}
+                  {formatFundingRange(client.requestedAmountMin, client.requestedAmountMax, client.requestedAmount)}
                 </span>
               </div>
               <div className="flex items-center justify-between pt-2">

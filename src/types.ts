@@ -538,6 +538,9 @@ export interface Lead {
   applicationStatus: 'NOT_STARTED' | 'SENT' | 'IN_PROGRESS' | 'SUBMITTED' | 'REVIEWED';
   ghlSyncStatus: 'SYNCED' | 'PENDING' | 'FAILED' | 'NOT_CONNECTED';
   estimatedAmount?: number;
+  requestedAmountMin?: number;
+  requestedAmountMax?: number;
+  originalRequestedFundingText?: string;
 }
 
 export interface Client {
@@ -634,6 +637,9 @@ export interface Client {
 
   // Financial request & Underwriting Profile details
   requestedAmount: number;
+  requestedAmountMin?: number;
+  requestedAmountMax?: number;
+  originalRequestedFundingText?: string;
   requestedProduct: FundingProductType;
   otherProductType?: string;
   otherProductDescription?: string;
@@ -935,6 +941,9 @@ export interface SubmissionPackageRecord {
   businessName: string;
   product: FundingProductType;
   requestedAmount: number;
+  requestedAmountMin?: number;
+  requestedAmountMax?: number;
+  originalRequestedFundingText?: string;
   lenderName: string;
   lenderContact?: string;
   lenderContactEmail?: string;
@@ -1055,6 +1064,9 @@ export interface FundingDeal {
   
   // Independent amounts
   requestedAmount?: number;
+  requestedAmountMin?: number;
+  requestedAmountMax?: number;
+  originalRequestedFundingText?: string;
   approvedAmount?: number;
   fundedAmount?: number;
   fundingAmount: number; // Backward compatibility / primary amount

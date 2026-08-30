@@ -68,6 +68,7 @@ import {
   UnderwritingEvaluationRecord,
 } from '../../types';
 import { formatDate, formatDateTime } from '../../utils/dateUtils';
+import { formatFundingRange } from '../../utils/fundingUtils';
 
 // Tab Subcomponents
 import { FundingStrategyTab } from './tabs/FundingStrategyTab';
@@ -826,7 +827,7 @@ export const ClientDetailView: React.FC<ClientDetailViewProps> = ({
                 Requested Funding
               </div>
               <div className="text-xl font-bold text-slate-100 font-mono mt-1">
-                ${Number(client.requestedAmount || 0).toLocaleString()}
+                {formatFundingRange(client.requestedAmountMin, client.requestedAmountMax, client.requestedAmount)}
               </div>
               <div className="text-[10px] text-amber-400 mt-1 font-medium">{client.requestedProduct}</div>
             </div>
